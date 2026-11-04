@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build & Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --release --locked
+      - name: Build
+        run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WiFiAnalyzer-${{ github.sha }}
+          path: target/release/wifi-analyzer.exe
+          retention-days: 14

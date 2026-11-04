@@ -1,8 +1,17 @@
 [package]
 name = "wifi-analyzer"
-version = "1.3.0"
+version = "2.0.0"
 edition = "2021"
-description = "WLAN-Analyzer für Windows (Native WiFi API + egui)"
+rust-version = "1.80"
+authors = ["Thomas Schöpf"]
+description = "Wi-Fi analyzer for Windows technicians: networks, channels, findings, walk surveys with roaming detection"
+license = "GPL-3.0-or-later"
+homepage = "https://wifianalyzer.schoepf-tirol.at"
+repository = "https://github.com/zenutrix/wifianalyzer"
+readme = "README.md"
+keywords = ["wifi", "wlan", "analyzer", "windows", "survey"]
+categories = ["network-programming", "command-line-utilities"]
+publish = false
 
 [dependencies]
 eframe = "0.29.1"
@@ -29,6 +38,9 @@ features = [
     "Win32_System_Registry",
     "Win32_Globalization",
 ]
+
+[build-dependencies]
+embed-resource = "2.5"
 
 [profile.release]
 opt-level = 3

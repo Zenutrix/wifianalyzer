@@ -1,24 +1,16 @@
-//! Bettet Icon und Versionsinfos (assets/app.rc) in die EXE ein. Nutzt windres aus MinGW.
-
-use std::env;
-use std::path::PathBuf;
-use std::process::Command;
+//! Bettet Icon, Versionsinfos und Anwendungsmanifest (assets/app.rc) in die EXE ein.
+//! Funktioniert mit MSVC (rc.exe) und GNU/MinGW (windres).
 
 fn main() {
     println!("cargo:rerun-if-changed=assets/app.rc");
+    println!("cargo:rerun-if-changed=assets/app.manifest");
     println!("cargo:rerun-if-changed=assets/icon.ico");
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
-        return;
-    }
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("app_res.o");
-    let status = Command::new("windres")
-        .current_dir(manifest_dir.join("assets"))
-        .args(["--input", "app.rc", "--output-format=coff", "--output"])
-        .arg(&out)
-        .status();
-    match status {
-        Ok(s) if s.success() => println!("cargo:rustc-link-arg-bins={}", out.display()),
-        _ => println!("cargo:warning=windres nicht gefunden - EXE wird ohne eingebettetes Icon gebaut"),
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
+        let mut macros = vec![format!("APP_VERSION=\\\"{version}\\\"")];
+        if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+            macros.push("APP_MANIFEST".into());
+        }
+        embed_resource::compile("assets/app.rc", macros);
     }
 }

@@ -1,0 +1,42 @@
+name: Release
+
+# Neues Release:  Version in Cargo.toml anheben, CHANGELOG ergänzen, dann
+#   git tag v2.0.0 && git push origin v2.0.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check tag matches Cargo.toml version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} passt nicht zu Cargo.toml ($v)" }
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Build & package
+        shell: pwsh
+        run: ./tools/package.ps1
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: WiFi Analyzer ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/WiFiAnalyzer-*-win64.zip
+            dist/WiFiAnalyzer.exe
+            dist/SHA256SUMS.txt

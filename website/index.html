@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WiFi Analyzer – WLAN-Analyse für Windows</title>
+  <meta name="description" content="Kostenloser WLAN-Analyzer für Windows: Netzwerke, Kanäle, Befunde mit Empfehlungen und Walk-Survey mit Roaming-Erkennung. Open Source (GPL-3.0) von Thomas Schöpf.">
+  <meta name="author" content="Thomas Schöpf">
+  <link rel="icon" type="image/png" href="icon.png">
+  <meta property="og:title" content="WiFi Analyzer – WLAN-Analyse für Windows">
+  <meta property="og:description" content="Netzwerke, Kanäle, Befunde und Walk-Survey mit Roaming-Erkennung. Kostenlos und Open Source.">
+  <meta property="og:image" content="icon.png">
+  <style>
+    :root {
+      --bg: #f6f8fa; --surface: #ffffff; --surface2: #f0f3f6; --border: #d0d7de;
+      --text: #1f2328; --weak: #59636e; --accent: #0969da; --accent-ink: #ffffff;
+      --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --shadow: 0 8px 30px rgba(31,35,40,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --surface: #161b22; --surface2: #1e242d; --border: #30363d;
+        --text: #e6edf3; --weak: #8b949e; --accent: #2f81f7; --accent-ink: #ffffff;
+        --ok: #3fb950; --warn: #d29922; --bad: #f85149; --shadow: 0 8px 30px rgba(0,0,0,.35);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+    header.top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+    .top .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--text); }
+    .brand img { width: 30px; height: 30px; }
+    nav.links { margin-left: auto; display: flex; gap: 18px; font-size: 15px; }
+    nav.links a { color: var(--weak); }
+    .lang { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px;
+      padding: 4px 10px; font: inherit; font-size: 14px; cursor: pointer; }
+
+    .hero { padding: 72px 0 40px; text-align: center; }
+    .hero img.logo { width: 132px; height: 132px; filter: drop-shadow(0 12px 30px rgba(47,129,247,.35)); }
+    .hero h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.1; margin: 22px 0 12px; letter-spacing: -.02em; }
+    .hero p.lead { font-size: 19px; color: var(--weak); max-width: 680px; margin: 0 auto 30px; }
+    .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px; border-radius: 10px;
+      font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+    .btn:hover { text-decoration: none; border-color: var(--weak); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .btn.primary:hover { filter: brightness(1.08); }
+    .meta { margin-top: 16px; font-size: 14px; color: var(--weak); }
+
+    section { padding: 44px 0; }
+    h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -.01em; }
+    .sub { color: var(--weak); margin: 0 0 26px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+      box-shadow: var(--shadow); }
+    .card h3 { margin: 10px 0 6px; font-size: 17px; }
+    .card p { margin: 0; color: var(--weak); font-size: 15px; }
+    .ico { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+    .ico svg { width: 22px; height: 22px; }
+
+    .steps { counter-reset: s; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .step { position: relative; padding-left: 54px; }
+    .step::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: 0; width: 38px; height: 38px;
+      border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--accent); color: var(--accent-ink); }
+    .step h3 { margin: 4px 0 4px; font-size: 17px; }
+    .step p { margin: 0; color: var(--weak); }
+
+    details { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p { color: var(--weak); margin: 10px 0 0; }
+
+    footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--weak); font-size: 14px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
+    footer .right { margin-left: auto; display: flex; gap: 18px; }
+
+    [data-en] { display: none; }
+    html[lang="en"] [data-de] { display: none; }
+    html[lang="en"] [data-en] { display: revert; }
+
+    @media (max-width: 640px) {
+      nav.links { display: none; }
+      .hero { padding-top: 48px; }
+      footer .right { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#"><img src="icon.png" alt=""> WiFi Analyzer</a>
+      <nav class="links">
+        <a href="#features"><span data-de>Funktionen</span><span data-en>Features</span></a>
+        <a href="#start"><span data-de>Erste Schritte</span><span data-en>Getting started</span></a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/zenutrix/wifianalyzer">GitHub</a>
+      </nav>
+      <button class="lang" id="lang" type="button" aria-label="Sprache / language">EN</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero wrap">
+      <img class="logo" src="icon.png" alt="WiFi Analyzer">
+      <h1>WiFi Analyzer</h1>
+      <p class="lead">
+        <span data-de>WLAN-Analyse für Techniker unter Windows: Netzwerke, Kanäle, Sicherheitsbefunde mit Empfehlungen und Walk-Survey mit Roaming-Erkennung. Kostenlos und Open Source.</span>
+        <span data-en>Wi-Fi analysis for technicians on Windows: networks, channels, security findings with recommendations and walk surveys with roaming detection. Free and open source.</span>
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer.exe">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+          <span data-de>Für Windows herunterladen</span><span data-en>Download for Windows</span>
+        </a>
+        <a class="btn" href="https://github.com/zenutrix/wifianalyzer">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span data-de>Quellcode auf GitHub</span><span data-en>Source on GitHub</span>
+        </a>
+      </div>
+      <p class="meta">
+        <span data-de>Windows 10 / 11 · 64 Bit · keine Installation · Deutsch &amp; Englisch · <a href="https://github.com/zenutrix/wifianalyzer/releases">alle Versionen</a></span>
+        <span data-en>Windows 10 / 11 · 64-bit · no installation · German &amp; English · <a href="https://github.com/zenutrix/wifianalyzer/releases">all releases</a></span>
+      </p>
+    </div>
+
+    <section id="features">
+      <div class="wrap">
+        <h2><span data-de>Alles, was ein WLAN-Techniker braucht</span><span data-en>Everything a Wi-Fi technician needs</span></h2>
+        <p class="sub"><span data-de>Übersichtlich wie ein Business-Tool – mit allen Details, wenn man sie braucht.</span><span data-en>Clean like a business tool – with every detail when you need it.</span></p>
+        <div class="grid">
+          <div class="card">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9a13 13 0 0 1 18 0M6.5 12.5a8 8 0 0 1 11 0M10 16a3 3 0 0 1 4 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/></svg></div>
+            <h3><span data-de>Netzwerke &amp; Access Points</span><span data-en>Networks &amp; access points</span></h3>
+            <p><span data-de>Alle BSSIDs, nach SSID gruppiert: Signal, Kanal, Breite, Wi-Fi 4–7, Sicherheit, PHY-Rate, Clients, Auslastung und Hersteller.</span><span data-en>All BSSIDs grouped by SSID: signal, channel, width, Wi-Fi 4–7, security, PHY rate, clients, load and vendor.</span></p>
+          </div>
+          <div class="card">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 20h18M5 20c1-8 3-12 4-12s3 4 4 12M11 20c1.5-6 3-9 4-9s2.5 3 4 9"/></svg></div>
+            <h3><span data-de>Kanäle &amp; Empfehlung</span><span data-en>Channels &amp; recommendation</span></h3>
+            <p><span data-de>Spektrum für 2,4 / 5 / 6 GHz mit echter Kanalbreite und Bewertung des Störpegels – inklusive bester 80-MHz-Block und DFS.</span><span data-en>Spectrum for 2.4 / 5 / 6 GHz with real channel width and an interference rating – incl. best 80 MHz block and DFS.</span></p>
+          </div>
+          <div class="card">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4m0 3v.01"/></svg></div>
+            <h3><span data-de>Befunde mit Empfehlung</span><span data-en>Findings with advice</span></h3>
+            <p><span data-de>Offene Netze, WEP/TKIP, WPS, Überlappung, Co-Channel, fehlendes PMF oder 802.11k/v, Evil Twin – jeweils mit konkretem Lösungsvorschlag.</span><span data-en>Open networks, WEP/TKIP, WPS, overlap, co-channel, missing PMF or 802.11k/v, evil twin – each with a concrete fix.</span></p>
+          </div>
+          <div class="card">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l5-6 4 4 4-7 5 9"/><path d="M3 21h18"/></svg></div>
+            <h3><span data-de>Walk-Survey &amp; Roaming</span><span data-en>Walk survey &amp; roaming</span></h3>
+            <p><span data-de>Verbindung jede Sekunde messen, Roams, Abbrüche und Sticky Clients erkennen, Räume markieren und als CSV exportieren.</span><span data-en>Measure the connection every second, detect roams, disconnects and sticky clients, mark rooms and export to CSV.</span></p>
+          </div>
+          <div class="card">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></div>
+            <h3>Signal-Finder</h3>
+            <p><span data-de>Einen Access Point über die Signalstärke orten – mit großer Anzeige und optionalem „Geigerzähler“-Ton.</span><span data-en>Locate an access point by signal strength – with a large gauge and an optional Geiger counter tone.</span></p>
+          </div>
+          <div class="card">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+            <h3><span data-de>Privat &amp; offen</span><span data-en>Private &amp; open</span></h3>
+            <p><span data-de>Alle Daten bleiben auf dem PC. Quellcode unter GPL-3.0 auf GitHub – nachvollziehbar und frei.</span><span data-en>All data stays on your PC. Source code under GPL-3.0 on GitHub – transparent and free.</span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="wrap">
+        <h2><span data-de>In drei Schritten loslegen</span><span data-en>Get started in three steps</span></h2>
+        <p class="sub"><span data-de>Keine Installation, keine Adminrechte.</span><span data-en>No installation, no admin rights.</span></p>
+        <div class="steps">
+          <div class="step card">
+            <h3><span data-de>Herunterladen</span><span data-en>Download</span></h3>
+            <p><span data-de><code>WiFiAnalyzer.exe</code> laden und an einem beliebigen Ort speichern.</span><span data-en>Download <code>WiFiAnalyzer.exe</code> and save it anywhere.</span></p>
+          </div>
+          <div class="step card">
+            <h3><span data-de>Starten &amp; erlauben</span><span data-en>Run &amp; allow</span></h3>
+            <p><span data-de>Beim ersten Start fragt Windows nach dem Standortzugriff – ohne ihn gibt Windows keine WLAN-Scans heraus.</span><span data-en>On first start Windows asks for location access – without it Windows does not provide Wi-Fi scans.</span></p>
+          </div>
+          <div class="step card">
+            <h3><span data-de>Analysieren</span><span data-en>Analyse</span></h3>
+            <p><span data-de>Die Übersicht zeigt sofort Netze, Befunde und Kanalempfehlungen.</span><span data-en>The overview instantly shows networks, findings and channel recommendations.</span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="wrap">
+        <h2>FAQ</h2>
+        <p class="sub"></p>
+        <details>
+          <summary><span data-de>Warum braucht die App den Standortzugriff?</span><span data-en>Why does the app need location access?</span></summary>
+          <p><span data-de>WLAN-Netze verraten den Aufenthaltsort. Deshalb gibt Windows BSSIDs und Signalstärken nur an Apps heraus, die auf den Standort zugreifen dürfen. Der WiFi Analyzer nutzt selbst keine Standortdaten.</span><span data-en>Wi-Fi networks reveal where you are, so Windows only hands out BSSIDs and signal strengths to apps that may access the location. WiFi Analyzer itself does not use location data.</span></p>
+        </details>
+        <details>
+          <summary><span data-de>Windows SmartScreen warnt beim Start – ist das normal?</span><span data-en>Windows SmartScreen warns on start – is that normal?</span></summary>
+          <p><span data-de>Ja, solange die EXE nicht digital signiert ist. Über „Weitere Informationen“ → „Trotzdem ausführen“ startet sie. Der Quellcode ist öffentlich auf GitHub einsehbar, die Prüfsummen liegen jedem Release bei.</span><span data-en>Yes, as long as the EXE is not code-signed. Choose “More info” → “Run anyway”. The source code is public on GitHub and every release ships checksums.</span></p>
+        </details>
+        <details>
+          <summary><span data-de>Welche Daten werden übertragen?</span><span data-en>Which data is transmitted?</span></summary>
+          <p><span data-de>Keine Messdaten. Einmalig wird die öffentliche Hersteller-Datenbank (Wireshark/IEEE) geladen, und – abschaltbar – prüft die App bei GitHub, ob es eine neue Version gibt.</span><span data-en>No measurement data. The public vendor database (Wireshark/IEEE) is downloaded once and – optionally – the app checks GitHub for a new version.</span></p>
+        </details>
+        <details>
+          <summary><span data-de>Was kostet der WiFi Analyzer?</span><span data-en>How much does it cost?</span></summary>
+          <p><span data-de>Nichts. Er ist freie Software unter der GNU GPL v3 – auch für den beruflichen Einsatz.</span><span data-en>Nothing. It is free software under the GNU GPL v3 – including professional use.</span></p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>© <span id="year">2026</span> Thomas Schöpf · <span data-de>Freie Software unter der</span><span data-en>Free software under the</span> <a href="https://github.com/zenutrix/wifianalyzer/blob/main/LICENSE">GPL-3.0</a></span>
+      <span class="right">
+        <a href="https://github.com/zenutrix/wifianalyzer">GitHub</a>
+        <a href="https://github.com/zenutrix/wifianalyzer/issues"><span data-de>Fehler melden</span><span data-en>Report a bug</span></a>
+        <!-- TODO: Link zum Impressum der Website eintragen (in Österreich Pflicht, § 5 ECG / § 25 MedienG) -->
+        <a href="#impressum">Impressum</a>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    // Sprache: gespeicherte Wahl, sonst Browsersprache
+    (function () {
+      var root = document.documentElement, btn = document.getElementById('lang');
+      var saved = null;
+      try { saved = localStorage.getItem('wa-lang'); } catch (e) {}
+      var lang = saved || ((navigator.language || 'de').toLowerCase().indexOf('de') === 0 ? 'de' : 'en');
+      function apply(l) { root.lang = l; btn.textContent = l === 'de' ? 'EN' : 'DE'; }
+      apply(lang);
+      btn.addEventListener('click', function () {
+        lang = root.lang === 'de' ? 'en' : 'de';
+        apply(lang);
+        try { localStorage.setItem('wa-lang', lang); } catch (e) {}
+      });
+      document.getElementById('year').textContent = new Date().getFullYear();
+    })();
+  </script>
+</body>
+</html>

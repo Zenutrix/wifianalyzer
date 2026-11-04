@@ -1,51 +1,162 @@
-# WiFi Analyzer (Rust, Windows)
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="WiFi Analyzer">
+</p>
 
-WLAN-Analyse-Tool für Techniker. Nutzt die Windows Native WiFi API (`wlanapi.dll`) und eine egui-Oberfläche.
-Die fertige EXE ist eigenständig und braucht nur Windows-System-DLLs.
+<h1 align="center">WiFi Analyzer</h1>
 
-## Starten
+<p align="center">
+  <b>WLAN-Analyse für Techniker unter Windows</b> · <i>Wi-Fi analysis for technicians on Windows</i><br>
+  <a href="https://wifianalyzer.schoepf-tirol.at">wifianalyzer.schoepf-tirol.at</a> ·
+  <a href="https://github.com/zenutrix/wifianalyzer/releases/latest">Download</a> ·
+  <a href="#english">English</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/zenutrix/wifianalyzer/releases/latest"><img src="https://img.shields.io/github/v/release/zenutrix/wifianalyzer?label=Version" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-GPL--3.0-blue" alt="GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4" alt="Windows 10 | 11">
+</p>
+
+---
+
+## Deutsch
+
+WiFi Analyzer ist ein kostenloses, quelloffenes Werkzeug für die Analyse von WLAN-Umgebungen.
+Es zeigt alle Netze und Access Points mit technischen Details, bewertet Kanäle, findet
+Konfigurations- und Sicherheitsprobleme und misst bei einem Rundgang die Verbindung inklusive
+Roaming. Eine einzelne EXE ohne Installation.
+
+### Funktionen
+
+| Bereich | Was es kann |
+|---|---|
+| **Übersicht** | Kennzahlen, aktuelle Verbindung, stärkste Netze, wichtigste Befunde, Verteilung nach Standard, Sicherheit und Hersteller |
+| **Netzwerke** | Tabelle aller BSSIDs, nach SSID gruppiert. Spalten: Signal, Kanal/Band, Breite, Wi-Fi-Generation (4–7), Sicherheit, PHY-Rate, Clients und Auslastung (BSS Load). Mit Suche, Filtern, Rechtsklick-Menü und CSV-Export |
+| **Details** | Hersteller (OUI, auch für virtuelle BSSIDs), Chipsatz, AP-Name, Laufzeit, Land, TPC, BSS Color, Streams, AKM/Cipher/PMF, WPS-Geräteinfo, 802.11k/r/v, MBO, Hotspot 2.0, MLO, rohe Information Elements |
+| **Kanäle** | Spektrum für 2,4 / 5 / 6 GHz mit echter Kanalbreite (20–320 MHz) und DFS-Bereich |
+| **Kanalbewertung** | Störpegel je Kanal mit Empfehlung: 1/6/11, 5 GHz mit/ohne DFS, bester 80-MHz-Block, 6-GHz-PSC |
+| **Befunde** | Offene Netze, WEP/WPA1/TKIP, WPS, 40 MHz im 2,4-GHz-Band, Überlappung, Co-Channel, Auslastung, fehlendes PMF oder 802.11k/v, Evil Twin. Jeweils mit **Empfehlung** |
+| **Messung** | Walk-Survey: Verbindung jede Sekunde, Verlauf je AP eingefärbt. Erkennt **Roams**, Abbrüche und **Sticky Clients**. Markierungen setzen, Statistik, CSV-Export |
+| **Signal-Finder** | Einen AP über die Signalstärke orten, optional mit „Geigerzähler“-Ton |
+| **Signalverlauf / Ereignisse** | Verlauf markierter APs und Protokoll (neue Netze, Roaming, Fehler) |
+
+Weitere Merkmale:
+- Deutsch und Englisch
+- helles und dunkles Design
+- Einstellungen werden gespeichert
+- Tastenkürzel: F5, Strg+F, Strg+E, Strg+1…9
+- Update-Prüfung über GitHub
+
+### Download & Start
+
+1. Unter [Releases](https://github.com/zenutrix/wifianalyzer/releases/latest) die ZIP-Datei oder `WiFiAnalyzer.exe` laden.
+2. Starten, fertig. Eine Installation ist nicht nötig, Administratorrechte auch nicht.
+
+**Voraussetzungen:** Windows 10 oder 11 (64 Bit) mit WLAN-Adapter.
+
+**Standortzugriff:** Windows gibt WLAN-Scans nur an Apps heraus, die auf den Standort zugreifen dürfen.
+Beim ersten Start fragt Windows danach. Bitte mit „Ja“ bestätigen. Fehlt die Freigabe, zeigt die App,
+welcher Schalter in den Einstellungen aus ist, und bietet einen Button direkt zur richtigen Seite.
+
+> Hinweis: Die EXE ist (noch) nicht digital signiert. Windows SmartScreen kann beim ersten Start warnen:
+> „Weitere Informationen“ → „Trotzdem ausführen“.
+
+### Datenschutz
+
+Alle Messwerte bleiben auf dem PC. Netzwerkzugriffe gibt es nur für zwei Dinge:
+- die Hersteller-Datenbank (Wireshark `manuf` bzw. IEEE-OUI-Register), einmalig beim ersten Start
+- die Update-Prüfung bei GitHub (in den Einstellungen abschaltbar)
+
+Standortdaten werden nicht verwendet. Einstellungen und Cache liegen unter `%APPDATA%\WifiAnalyzer`.
+
+### Selbst bauen
+
+```powershell
+# Rust installieren: https://rustup.rs  (Standard-Toolchain MSVC genügt)
+git clone https://github.com/zenutrix/wifianalyzer.git
+cd wifianalyzer
+cargo build --release          # -> target\release\wifi-analyzer.exe
+cargo test --release
+./tools/package.ps1            # -> dist\WiFiAnalyzer-<version>-win64.zip
+```
+
+Alternativ mit der GNU-Toolchain: `rustup default stable-x86_64-pc-windows-gnu` plus MinGW-w64 (z. B. WinLibs) im `PATH`. Siehe `build.cmd`.
+
+### Projektaufbau
 
 ```
-target\release\wifi-analyzer.exe
+src/
+  main.rs          Start, Fenster
+  wlan.rs          Windows Native WiFi API (Scan-Thread, Verbindungsabfrage)
+  ie.rs            Auswertung der 802.11 Information Elements
+  measure.rs       Walk-Survey: Roaming, Abbrüche, Sticky Client (mit Tests)
+  oui.rs           Hersteller-Erkennung
+  perm.rs          Standort-Berechtigung (WinRT + Registry)
+  i18n.rs          Deutsch/Englisch (t!/tf!)
+  settings.rs      gespeicherte Einstellungen
+  theme.rs         Farben/Stil
+  widgets.rs       UI-Bausteine
+  app/             Hauptfenster: shell, inspector, dialogs, pages/*
+assets/            Icon, Ressourcen, Manifest
+tools/             Icon-Generator, Paket-Skript
 ```
 
-Unter Windows 11 gibt Windows WLAN-Scans nur an Apps mit **Standortzugriff** heraus. Die App kümmert sich selbst darum:
-- Beim Start löst sie die offizielle Windows-Berechtigungsabfrage aus (`WiFiAdapter`/`Geolocator.RequestAccessAsync`).
-- Fehlt etwas, erklärt ein Dialog, welcher Schalter aus ist: Standortdienste, Apps oder Desktop-Apps (gelesen aus der Registry).
-  Ein Button öffnet die passende Einstellungsseite. Sobald alles erlaubt ist, schließt sich der Dialog von selbst und der Scan startet.
+Fehler und Ideen gerne als [Issue](https://github.com/zenutrix/wifianalyzer/issues). Pull Requests sind willkommen.
 
-## Bauen
+---
 
-```
-build.cmd
-```
+## English
 
-Voraussetzungen: Rust-Toolchain `stable-x86_64-pc-windows-gnu` (rustup) und MinGW-w64 (winget `BrechtSanders.WinLibs.POSIX.UCRT`).
+WiFi Analyzer is a free, open-source tool for analysing Wi-Fi environments on Windows. It lists all
+networks and access points with technical details, rates channels, detects configuration and security
+issues, and measures your connection, including roaming, during a walk survey. It is a single EXE with
+no installation.
 
-## Funktionen
+**Highlights**
+- **Overview dashboard** with key figures
+- **Network table**, grouped by SSID:
+  - signal, channel, width, Wi-Fi generation, security, PHY rate and BSS load
+  - vendor detection, also for virtual BSSIDs
+  - detailed inspector with all information elements
+- **Spectrum view** for 2.4, 5 and 6 GHz, plus a **channel rating** with recommendations (incl. DFS and PSC)
+- **Findings** with concrete recommendations:
+  - security: open networks, WEP/WPA1/TKIP, WPS
+  - channel planning: overlapping channels, co-channel interference
+  - configuration: missing PMF or 802.11k/v
+  - evil twin
+- **Walk survey**:
+  - connection sampled every second
+  - roam, disconnect and **sticky client** detection
+  - markers, statistics and CSV export
+- **Signal finder** with an optional Geiger counter beep
+- **General**:
+  - German and English UI
+  - light and dark theme
+  - persisted settings
+  - keyboard shortcuts
+  - update check
 
-- **Netzwerke**: Tabelle mit SSID, BSSID, Hersteller, Signal (dBm-Balken), Kanal, Band, Breite, Standard (Wi-Fi 4–7), Sicherheit,
-  max. PHY-Rate, Clients und Kanalauslastung (BSS Load). Sortierbar, mit Filter.
-  - **Nach SSID gruppieren**: eine Zeile je SSID mit dem stärksten AP. Ein Klick klappt alle BSSIDs der SSID auf.
-  - ☆ markiert APs für den Signalverlauf.
-- **Details** je AP: Chipsatz, AP-Name (Cisco/Aruba-IE), Uptime (TSF), Land, Sendeleistung (TPC), BSS Color, Streams,
-  Beacon/DTIM, AKM/Cipher/PMF, WPS-Geräteinfo (Hersteller/Modell/Seriennummer), 802.11k/r/v, MBO, Hotspot 2.0, MLO, rohe IEs.
-- **Kanäle**: Spektrum-Diagramm für 2,4, 5 und 6 GHz mit echter Kanalbreite (20–320 MHz) und DFS-Bereich. Ein Klick wählt einen AP aus.
-- **Signalverlauf**: RSSI über Zeit (1–60 min) für markierte APs plus die aktuelle Verbindung.
-- **Kanalbewertung**: Störpegel je Kanal und Empfehlung (1/6/11, ohne/mit DFS, bester 80-MHz-Block, 6-GHz-PSC).
-- **Analyse**: Warnungen zu offenen Netzen, WEP/WPA1/TKIP, aktivem WPS, 40 MHz im 2,4-GHz-Band, Überlappkanälen,
-  Co-Channel-Interferenz, hoher Auslastung und gleicher SSID mit unterschiedlicher Sicherheit (Evil Twin).
-- **Messung (Walk-Survey)**: SSID wählen, „Messung starten“, Fläche mit dem Laptop ablaufen.
-  - Die Verbindung wird jede Sekunde gemessen. Der Verlauf ist pro AP eingefärbt, dazu kommt der stärkste AP der SSID als Vergleichslinie.
-  - Roams, Abbrüche und **Sticky Client** werden als Ereignis erkannt und erscheinen als Linien im Diagramm.
-    Sticky Client heißt: Der Laptop bleibt ≥ 10 dB unter dem besten AP, und das ≥ 15 s lang.
-  - Markierungen („Raum 1.03“) können per Enter gesetzt werden. Die Statistik zeigt Ø/Min/Max, Anteil ≥ -67 / < -75 dBm, Roams und Abbrüche.
-  - Export als CSV. Ohne Verbindung zur SSID wird der stärkste AP aus dem Scan gemessen.
-- **Signal-Finder**: große Anzeige mit optionalem „Geigerzähler“-Piepton zum Orten eines APs.
-- **Ereignisse**: neue oder verschwundene APs, Roaming, Verbindungswechsel.
-- **Hersteller-DB**: Beim ersten Start wird die vollständige OUI-Liste (Wireshark/IEEE) geladen und unter
-  `%APPDATA%\WifiAnalyzer\oui.txt` gespeichert. Virtuelle BSSIDs (LAA) erben den Hersteller ihrer physischen Radio-BSSID.
-- Startet mit einem kleinen, animierten Lade-Popup (Berechtigungen, Adapter, Hersteller-DB, erster Scan).
-  Danach geht es ins maximierte Hauptfenster.
-- Eigenes App-Icon, eingebettet in die EXE (`assets/icon.ico`). Neu erzeugen mit `python tools/make_icon.py`.
-- **CSV-Export** (Semikolon, Excel-tauglich) und Hell-/Dunkel-Modus.
+**Requirements:** Windows 10/11 (64-bit) with a Wi-Fi adapter. Windows only allows Wi-Fi scans for
+apps with **location access**. The app asks for it on first start and explains which setting is missing.
+
+**Download:** [latest release](https://github.com/zenutrix/wifianalyzer/releases/latest). Just run `WiFiAnalyzer.exe`.
+
+**Build:** `cargo build --release` (Rust stable, MSVC or GNU toolchain). Package with `tools/package.ps1`.
+
+**Privacy:** all measurements stay on your PC. The only network access is the vendor database download
+(Wireshark/IEEE) and the optional GitHub update check.
+
+---
+
+## Lizenz / License
+
+Copyright © 2026 **Thomas Schöpf** · [wifianalyzer.schoepf-tirol.at](https://wifianalyzer.schoepf-tirol.at)
+
+Dieses Programm ist freie Software: Du kannst es unter den Bedingungen der **GNU General Public License**
+Version 3 oder (nach deiner Wahl) jeder späteren Version weitergeben und/oder ändern.
+Es wird **ohne jede Gewährleistung** bereitgestellt. Siehe [LICENSE](LICENSE).
+
+This program is free software under the GNU GPL v3 or later, without any warranty. See [LICENSE](LICENSE).
+
+Verwendete Bibliotheken (Rust-Crates, u. a. egui/eframe, windows-rs) stehen unter MIT- bzw. Apache-2.0-Lizenzen.
+Die mitgelieferten Schriften von egui stehen unter der Ubuntu Font Licence, der OFL bzw. der Apache-2.0-Lizenz.
