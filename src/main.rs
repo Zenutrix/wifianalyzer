@@ -1,12 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+//! WiFi Analyzer – WLAN-Analyse für Windows.
+//! © Thomas Schöpf · https://wifianalyzer.schoepf-tirol.at · GPL-3.0-or-later
+
 mod app;
 mod beeper;
+mod i18n;
 mod ie;
 mod measure;
 mod model;
 mod oui;
 mod perm;
+mod settings;
+mod theme;
+mod widgets;
 mod wlan;
 
 use eframe::egui;

@@ -22,6 +22,8 @@ const OPCODE_RSSI: i32 = 0x1000_0102;
 const BSS_TYPE_ANY: i32 = 3;
 
 pub const ERROR_ACCESS_DENIED: u32 = 5;
+/// ERROR_NDIS_DOT11_POWER_STATE_INVALID: Funk ist aus (Flugmodus / WLAN deaktiviert)
+pub const ERROR_RADIO_OFF: u32 = 0x8034_2002;
 const ERROR_SERVICE_NOT_ACTIVE: u32 = 1062;
 
 static SCAN_DONE: Mutex<u64> = Mutex::new(0);
@@ -117,14 +119,14 @@ const CONN_POLL: Duration = Duration::from_secs(1);
 
 fn state_name(s: i32) -> &'static str {
     match s {
-        0 => "nicht bereit",
-        1 => "verbunden",
+        0 => crate::t!("nicht bereit", "not ready"),
+        1 => crate::t!("verbunden", "connected"),
         2 => "Ad-hoc",
-        3 => "trennt",
-        4 => "getrennt",
-        5 => "assoziiert",
-        6 => "sucht",
-        7 => "authentifiziert",
+        3 => crate::t!("trennt", "disconnecting"),
+        4 => crate::t!("getrennt", "disconnected"),
+        5 => crate::t!("assoziiert", "associating"),
+        6 => crate::t!("sucht", "discovering"),
+        7 => crate::t!("authentifiziert", "authenticating"),
         _ => "?",
     }
 }
@@ -140,13 +142,13 @@ fn phy_name(p: i32) -> &'static str {
         9 => "802.11ad",
         10 => "802.11ax",
         11 => "802.11be",
-        _ => "unbekannt",
+        _ => crate::t!("unbekannt", "unknown"),
     }
 }
 
 fn auth_name(a: i32) -> &'static str {
     match a {
-        1 => "Offen",
+        1 => crate::t!("Offen", "Open"),
         2 => "Shared Key",
         3 => "WPA-Enterprise",
         4 => "WPA-PSK",
@@ -162,7 +164,7 @@ fn auth_name(a: i32) -> &'static str {
 
 fn cipher_name(c: i32) -> &'static str {
     match c {
-        0 => "keine",
+        0 => crate::t!("keine", "none"),
         1 => "WEP-40",
         2 => "TKIP",
         4 => "CCMP (AES)",
@@ -177,11 +179,12 @@ fn cipher_name(c: i32) -> &'static str {
 
 pub fn error_text(code: u32) -> String {
     match code {
-        ERROR_ACCESS_DENIED => "Zugriff verweigert – unter Windows 11 müssen die Standortdienste für Desktop-Apps aktiviert sein, damit WLAN-Netze gescannt werden dürfen.".into(),
-        ERROR_SERVICE_NOT_ACTIVE => "Der Dienst \"WLAN-AutoKonfig\" (WlanSvc) läuft nicht.".into(),
-        1168 => "WLAN-Adapter nicht gefunden.".into(),
-        5023 => "WLAN-Adapter ist in einem ungültigen Zustand (ausgeschaltet?).".into(),
-        c => format!("WLAN-API Fehler {c}"),
+        ERROR_ACCESS_DENIED => crate::t!("Zugriff verweigert – Windows erlaubt den WLAN-Scan nur mit Standortzugriff für Desktop-Apps.", "Access denied – Windows only allows Wi-Fi scanning when desktop apps may access the location.").into(),
+        ERROR_SERVICE_NOT_ACTIVE => crate::t!("Der Dienst \"WLAN-AutoKonfig\" (WlanSvc) läuft nicht.", "The \"WLAN AutoConfig\" service (WlanSvc) is not running.").into(),
+        1168 => crate::t!("WLAN-Adapter nicht gefunden.", "Wi-Fi adapter not found.").into(),
+        ERROR_RADIO_OFF => crate::t!("WLAN ist ausgeschaltet (Flugmodus oder WLAN-Schalter).", "Wi-Fi is turned off (airplane mode or Wi-Fi switch).").into(),
+        5023 => crate::t!("WLAN-Adapter ist in einem ungültigen Zustand (ausgeschaltet?).", "Wi-Fi adapter is in an invalid state (switched off?).").into(),
+        c => crate::tf!("WLAN-API Fehler {c}", "Wi-Fi API error {c}"),
     }
 }
 
@@ -438,7 +441,7 @@ pub fn spawn(ctx: egui::Context) -> ScannerHandle {
                     error_code: 0,
                 };
                 match iface {
-                    None => ev.error = Some("Kein WLAN-Adapter gefunden.".into()),
+                    None => ev.error = Some(crate::t!("Kein WLAN-Adapter gefunden.", "No Wi-Fi adapter found.").into()),
                     Some(g) => {
                         let guid = u128_to_guid(g);
                         wlan.trigger_scan_and_wait(&guid, || {

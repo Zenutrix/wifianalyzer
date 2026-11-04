@@ -207,7 +207,7 @@ pub fn download() -> Result<usize, String> {
         "https://www.wireshark.org/download/automated/data/manuf",
         "https://standards-oui.ieee.org/oui/oui.csv",
     ];
-    let mut last_err = String::from("Download fehlgeschlagen");
+    let mut last_err = String::from(crate::t!("Download fehlgeschlagen", "Download failed"));
     for url in urls {
         let ps = format!(
             "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol='Tls12,Tls13'; \
@@ -228,9 +228,9 @@ pub fn download() -> Result<usize, String> {
                     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
                     return Ok(n);
                 }
-                last_err = format!("Ungültige Daten von {url}");
+                last_err = crate::tf!("Ungültige Daten von {url}", "Invalid data from {url}");
             }
-            Ok(o) => last_err = String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("Fehler").to_string(),
+            Ok(o) => last_err = String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or(crate::t!("Fehler", "Error")).to_string(),
             Err(e) => last_err = e.to_string(),
         }
     }

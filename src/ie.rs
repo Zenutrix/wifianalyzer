@@ -47,6 +47,82 @@ pub enum SecLevel {
     Strong,
 }
 
+/// Verschlüsselungsverfahren (sprachneutral; Text über `label()`)
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SecKind {
+    Open,
+    OpenOweTransition,
+    Owe,
+    Wep,
+    Wpa,
+    WpaEnt,
+    WpaWpa2,
+    Wpa2,
+    Wpa2Other,
+    Wpa2Ent,
+    Wpa2Wpa3,
+    Wpa3,
+    Wpa3Ent,
+    Wpa3Ent192,
+}
+
+impl SecKind {
+    pub fn label(self) -> String {
+        match self {
+            SecKind::Open => crate::t!("Offen", "Open").into(),
+            SecKind::OpenOweTransition => crate::t!("Offen (OWE-Transition)", "Open (OWE transition)").into(),
+            SecKind::Owe => "OWE (Enhanced Open)".into(),
+            SecKind::Wep => "WEP".into(),
+            SecKind::Wpa => "WPA-Personal".into(),
+            SecKind::WpaEnt => "WPA-Enterprise".into(),
+            SecKind::WpaWpa2 => "WPA/WPA2-Personal".into(),
+            SecKind::Wpa2 => "WPA2-Personal".into(),
+            SecKind::Wpa2Other => "WPA2".into(),
+            SecKind::Wpa2Ent => "WPA2-Enterprise".into(),
+            SecKind::Wpa2Wpa3 => "WPA2/WPA3-Personal".into(),
+            SecKind::Wpa3 => "WPA3-Personal".into(),
+            SecKind::Wpa3Ent => "WPA3-Enterprise".into(),
+            SecKind::Wpa3Ent192 => "WPA3-Enterprise 192".into(),
+        }
+    }
+
+    pub fn level(self) -> SecLevel {
+        match self {
+            SecKind::Open | SecKind::OpenOweTransition => SecLevel::Open,
+            SecKind::Wep | SecKind::Wpa | SecKind::WpaEnt | SecKind::WpaWpa2 => SecLevel::Weak,
+            SecKind::Wpa2 | SecKind::Wpa2Other | SecKind::Wpa2Ent | SecKind::Wpa2Wpa3 => SecLevel::Ok,
+            SecKind::Owe | SecKind::Wpa3 | SecKind::Wpa3Ent | SecKind::Wpa3Ent192 => SecLevel::Strong,
+        }
+    }
+
+    pub fn is_open(self) -> bool {
+        matches!(self, SecKind::Open | SecKind::OpenOweTransition)
+    }
+
+    /// WPA2 ohne WPA3-Anteil (für den PMF-Hinweis)
+    pub fn is_wpa2_only(self) -> bool {
+        matches!(self, SecKind::Wpa2 | SecKind::Wpa2Other | SecKind::Wpa2Ent)
+    }
+}
+
+/// Protected Management Frames (802.11w)
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Pmf {
+    No,
+    Optional,
+    Required,
+}
+
+impl Pmf {
+    pub fn label(self) -> &'static str {
+        match self {
+            Pmf::No => crate::t!("Nein", "No"),
+            Pmf::Optional => crate::t!("Optional", "Optional"),
+            Pmf::Required => crate::t!("Erforderlich", "Required"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct WpsInfo {
     pub manufacturer: Option<String>,
@@ -82,11 +158,12 @@ pub struct BssInfo {
     pub center: f64,
     pub standard: Standard,
     pub security: String,
+    pub sec_kind: SecKind,
     pub sec_level: SecLevel,
     pub akms: Vec<String>,
     pub pairwise: Vec<String>,
     pub group_cipher: String,
-    pub pmf: String,
+    pub pmf: Pmf,
     pub beacon_ms: f64,
     pub dtim: Option<u8>,
     pub country: Option<String>,
@@ -485,8 +562,8 @@ pub fn build_bss(
             (7, _) if b.len() >= 2 => {
                 let cc = String::from_utf8_lossy(&b[..2]).to_string();
                 let env = match b.get(2) {
-                    Some(b'I') => " (Innen)",
-                    Some(b'O') => " (Außen)",
+                    Some(b'I') => crate::t!(" (Innen)", " (indoor)"),
+                    Some(b'O') => crate::t!(" (Außen)", " (outdoor)"),
                     _ => "",
                 };
                 country = Some(format!("{cc}{env}"));
@@ -721,17 +798,17 @@ pub fn build_bss(
     let mut akms = Vec::new();
     let mut pairwise = Vec::new();
     let mut group_cipher = String::from("-");
-    let mut pmf = String::from("Nein");
-    let (security, sec_level) = if let Some(r) = &rsn {
+    let mut pmf = Pmf::No;
+    let (sec_kind, sec_level) = if let Some(r) = &rsn {
         akms = r.akms.iter().map(|a| akm_name(*a)).collect();
         pairwise = r.pairwise.iter().map(|c| cipher_name(*c)).collect();
         group_cipher = r.group.map(cipher_name).unwrap_or_else(|| "-".into());
         pmf = if r.mfpr {
-            "Erforderlich".into()
+            Pmf::Required
         } else if r.mfpc {
-            "Optional".into()
+            Pmf::Optional
         } else {
-            "Nein".into()
+            Pmf::No
         };
         let has = |l: &[u8]| r.akms.iter().any(|a| l.contains(a));
         let sae = has(&[8, 9, 24, 25]);
@@ -740,37 +817,27 @@ pub fn build_bss(
         let suiteb = has(&[11, 12, 13]);
         let owe = has(&[18]);
         let tkip_only = !r.pairwise.is_empty() && r.pairwise.iter().all(|c| *c == 2);
-        let mut lvl = SecLevel::Ok;
-        let label = if owe {
-            lvl = SecLevel::Strong;
-            "OWE (Enhanced Open)".to_string()
+        let kind = if owe {
+            SecKind::Owe
         } else if suiteb {
-            lvl = SecLevel::Strong;
-            "WPA3-Enterprise 192".into()
+            SecKind::Wpa3Ent192
         } else if sae && psk {
-            "WPA2/WPA3-Personal".into()
+            SecKind::Wpa2Wpa3
         } else if sae {
-            lvl = SecLevel::Strong;
-            "WPA3-Personal".into()
+            SecKind::Wpa3
         } else if ent && r.mfpr {
-            lvl = SecLevel::Strong;
-            "WPA3-Enterprise".into()
+            SecKind::Wpa3Ent
         } else if ent {
-            "WPA2-Enterprise".into()
+            SecKind::Wpa2Ent
+        } else if psk && wpa.is_some() {
+            SecKind::WpaWpa2
         } else if psk {
-            if wpa.is_some() {
-                lvl = SecLevel::Weak;
-                "WPA/WPA2-Personal".into()
-            } else {
-                "WPA2-Personal".into()
-            }
+            SecKind::Wpa2
         } else {
-            "WPA2".into()
+            SecKind::Wpa2Other
         };
-        if tkip_only {
-            lvl = SecLevel::Weak;
-        }
-        (label, lvl)
+        let lvl = if tkip_only { SecLevel::Weak } else { kind.level() };
+        (kind, lvl)
     } else if let Some(w) = &wpa {
         akms = w.akms.iter().map(|a| match a {
             1 => "802.1X".to_string(),
@@ -779,15 +846,16 @@ pub fn build_bss(
         }).collect();
         pairwise = w.pairwise.iter().map(|c| cipher_name(*c)).collect();
         group_cipher = w.group.map(cipher_name).unwrap_or_else(|| "-".into());
-        let ent = w.akms.contains(&1);
-        (if ent { "WPA-Enterprise" } else { "WPA-Personal" }.to_string(), SecLevel::Weak)
+        let kind = if w.akms.contains(&1) { SecKind::WpaEnt } else { SecKind::Wpa };
+        (kind, SecLevel::Weak)
     } else if privacy {
-        ("WEP".to_string(), SecLevel::Weak)
+        (SecKind::Wep, SecLevel::Weak)
     } else if owe_tr {
-        ("Offen (OWE-Transition)".to_string(), SecLevel::Open)
+        (SecKind::OpenOweTransition, SecLevel::Open)
     } else {
-        ("Offen".to_string(), SecLevel::Open)
+        (SecKind::Open, SecLevel::Open)
     };
+    let security = sec_kind.label();
 
     BssInfo {
         ssid,
@@ -803,6 +871,7 @@ pub fn build_bss(
         center,
         standard,
         security,
+        sec_kind,
         sec_level,
         akms,
         pairwise,

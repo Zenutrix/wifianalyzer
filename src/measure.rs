@@ -55,28 +55,30 @@ impl Event {
     pub fn title(&self) -> &'static str {
         match self.kind {
             EventKind::Start => "Start",
-            EventKind::Stop => "Stopp",
+            EventKind::Stop => crate::t!("Stopp", "Stop"),
             EventKind::Roam { .. } => "Roam",
-            EventKind::Disconnect { .. } => "Abbruch",
-            EventKind::Connect { .. } => "Verbunden",
+            EventKind::Disconnect { .. } => crate::t!("Abbruch", "Disconnect"),
+            EventKind::Connect { .. } => crate::t!("Verbunden", "Connected"),
             EventKind::Sticky { .. } => "Sticky Client",
-            EventKind::Marker(_) => "Markierung",
+            EventKind::Marker(_) => crate::t!("Markierung", "Marker"),
         }
     }
 
     pub fn details(&self) -> String {
         match &self.kind {
-            EventKind::Start => "Messung gestartet".into(),
-            EventKind::Stop => "Messung beendet".into(),
-            EventKind::Roam { from, to, rssi_from, rssi_to, ch_from, ch_to } => format!(
+            EventKind::Start => crate::t!("Messung gestartet", "Measurement started").into(),
+            EventKind::Stop => crate::t!("Messung beendet", "Measurement stopped").into(),
+            EventKind::Roam { from, to, rssi_from, rssi_to, ch_from, ch_to } => crate::tf!(
                 "{} (Kanal {ch_from}, {rssi_from} dBm) > {} (Kanal {ch_to}, {rssi_to} dBm)",
+                "{} (channel {ch_from}, {rssi_from} dBm) > {} (channel {ch_to}, {rssi_to} dBm)",
                 fmt_mac(from),
                 fmt_mac(to)
             ),
-            EventKind::Disconnect { bssid } => format!("Verbindung zu {} verloren", fmt_mac(bssid)),
-            EventKind::Connect { bssid, rssi } => format!("Verbunden mit {} ({rssi} dBm)", fmt_mac(bssid)),
-            EventKind::Sticky { conn, conn_rssi, best, best_rssi } => format!(
+            EventKind::Disconnect { bssid } => crate::tf!("Verbindung zu {} verloren", "Lost connection to {}", fmt_mac(bssid)),
+            EventKind::Connect { bssid, rssi } => crate::tf!("Verbunden mit {} ({rssi} dBm)", "Connected to {} ({rssi} dBm)", fmt_mac(bssid)),
+            EventKind::Sticky { conn, conn_rssi, best, best_rssi } => crate::tf!(
                 "bleibt an {} ({conn_rssi} dBm), obwohl {} mit {best_rssi} dBm verfügbar ist",
+                "stays on {} ({conn_rssi} dBm) although {} is available at {best_rssi} dBm",
                 fmt_mac(conn),
                 fmt_mac(best)
             ),
@@ -157,7 +159,7 @@ impl Measurement {
 
     pub fn add_marker(&mut self, now_t: f64, text: &str) {
         let text = text.trim();
-        let text = if text.is_empty() { format!("Markierung {}", self.marker_count() + 1) } else { text.to_string() };
+        let text = if text.is_empty() { crate::tf!("Markierung {}", "Marker {}", self.marker_count() + 1) } else { text.to_string() };
         self.events.push(Event { t: self.rel(now_t), kind: EventKind::Marker(text) });
     }
 
@@ -298,8 +300,9 @@ impl Measurement {
             rows.push((
                 c.t,
                 format!(
-                    "{:.1};{};Verbindung;{};{};{};{:.0};{:.0};",
+                    "{:.1};{};{};{};{};{};{:.0};{:.0};",
                     c.t,
+                    crate::t!("Verbindung", "Connection"),
                     wall(c.t),
                     c.rssi,
                     fmt_mac(&c.bssid),
@@ -310,17 +313,20 @@ impl Measurement {
             ));
         }
         for b in &self.best {
-            rows.push((b.t, format!("{:.1};{};Bester AP;{};{};{};;;", b.t, wall(b.t), b.rssi, fmt_mac(&b.bssid), b.channel)));
+            let kind = crate::t!("Bester AP", "Best AP");
+            rows.push((b.t, format!("{:.1};{};{kind};{};{};{};;;", b.t, wall(b.t), b.rssi, fmt_mac(&b.bssid), b.channel)));
         }
         for e in &self.events {
             let details = e.details().replace(';', ",");
             rows.push((e.t, format!("{:.1};{};{};;;;;;{}", e.t, wall(e.t), e.title(), details)));
         }
         rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        let mut s = format!(
-            "\u{feff}# WLAN-Messung SSID \"{}\" gestartet {}\nZeit (s);Uhrzeit;Typ;RSSI (dBm);BSSID;Kanal;Tx (Mbit/s);Rx (Mbit/s);Details\n",
+        let mut s = crate::tf!(
+            "\u{feff}# WLAN-Messung SSID \"{}\" gestartet {} (WiFi Analyzer {})\nZeit (s);Uhrzeit;Typ;RSSI (dBm);BSSID;Kanal;Tx (Mbit/s);Rx (Mbit/s);Details\n",
+            "\u{feff}# Wi-Fi measurement SSID \"{}\" started {} (WiFi Analyzer {})\nTime (s);Clock;Type;RSSI (dBm);BSSID;Channel;Tx (Mbit/s);Rx (Mbit/s);Details\n",
             self.ssid,
-            self.started_wall.format("%Y-%m-%d %H:%M:%S")
+            self.started_wall.format("%Y-%m-%d %H:%M:%S"),
+            env!("CARGO_PKG_VERSION")
         );
         for (_, r) in rows {
             s.push_str(&r);

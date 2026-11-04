@@ -45,16 +45,16 @@ impl PermStatus {
     /// Liste der Punkte für den Berechtigungs-Dialog: (erfüllt, Text)
     pub fn checklist(&self) -> Vec<(Option<bool>, &'static str)> {
         vec![
-            (self.location_device, "Standortdienste sind eingeschaltet (Gerät)"),
-            (self.location_apps, "Apps dürfen auf den Standort zugreifen"),
-            (self.location_desktop, "Desktop-Apps dürfen auf den Standort zugreifen"),
+            (self.location_device, crate::t!("Standortdienste sind eingeschaltet (Gerät)", "Location services are on (device)")),
+            (self.location_apps, crate::t!("Apps dürfen auf den Standort zugreifen", "Apps may access the location")),
+            (self.location_desktop, crate::t!("Desktop-Apps dürfen auf den Standort zugreifen", "Desktop apps may access the location")),
             (
                 match self.access {
                     Access::Allowed => Some(true),
                     Access::DeniedByUser | Access::DeniedBySystem => Some(false),
                     Access::Unknown => None,
                 },
-                "WiFi Analyzer hat WLAN-/Standortzugriff",
+                crate::t!("WiFi Analyzer hat WLAN-/Standortzugriff", "WiFi Analyzer has Wi-Fi/location access"),
             ),
         ]
     }

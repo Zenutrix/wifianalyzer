@@ -16,7 +16,7 @@ pub enum Band {
 impl Band {
     pub fn label(&self) -> &'static str {
         match self {
-            Band::B24 => "2,4 GHz",
+            Band::B24 => crate::t!("2,4 GHz", "2.4 GHz"),
             Band::B5 => "5 GHz",
             Band::B6 => "6 GHz",
             Band::Other => "?",
@@ -47,21 +47,21 @@ pub fn is_psc(ch: u32) -> bool {
 
 pub fn signal_color(rssi: i32) -> Color32 {
     match rssi {
-        r if r >= -55 => Color32::from_rgb(46, 204, 113),
-        r if r >= -67 => Color32::from_rgb(163, 217, 0),
-        r if r >= -75 => Color32::from_rgb(241, 196, 15),
-        r if r >= -82 => Color32::from_rgb(230, 126, 34),
-        _ => Color32::from_rgb(231, 76, 60),
+        r if r >= -55 => Color32::from_rgb(63, 185, 80),
+        r if r >= -67 => Color32::from_rgb(140, 200, 60),
+        r if r >= -75 => Color32::from_rgb(220, 170, 30),
+        r if r >= -82 => Color32::from_rgb(219, 109, 40),
+        _ => Color32::from_rgb(248, 81, 73),
     }
 }
 
 pub fn signal_text(rssi: i32) -> &'static str {
     match rssi {
-        r if r >= -55 => "Exzellent",
-        r if r >= -67 => "Gut",
-        r if r >= -75 => "Mittel",
-        r if r >= -82 => "Schwach",
-        _ => "Sehr schwach",
+        r if r >= -55 => crate::t!("Exzellent", "Excellent"),
+        r if r >= -67 => crate::t!("Gut", "Good"),
+        r if r >= -75 => crate::t!("Mittel", "Fair"),
+        r if r >= -82 => crate::t!("Schwach", "Weak"),
+        _ => crate::t!("Sehr schwach", "Very weak"),
     }
 }
 
@@ -104,11 +104,11 @@ pub fn fmt_duration(secs: u64) -> String {
 
 pub fn fmt_ago(secs: f32) -> String {
     if secs < 1.5 {
-        "jetzt".into()
+        crate::t!("jetzt", "now").into()
     } else if secs < 90.0 {
-        format!("vor {:.0} s", secs)
+        crate::tf!("vor {:.0} s", "{:.0} s ago", secs)
     } else {
-        format!("vor {:.0} min", secs / 60.0)
+        crate::tf!("vor {:.0} min", "{:.0} min ago", secs / 60.0)
     }
 }
 
