@@ -1,9 +1,9 @@
 //! Messung (Walk-Survey): Live-Anzeige, Kennzahlen, Verlauf mit Roams/Markierungen, Ereignisliste.
 
 use eframe::egui::{self, Align2, Color32, RichText, Ui};
-use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text, VLine};
+use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Points, Text, VLine};
 
-use crate::app::{Sev, WifiApp};
+use crate::app::WifiApp;
 use crate::measure::EventKind;
 use crate::model::*;
 use crate::theme::pal;
@@ -82,6 +82,18 @@ impl WifiApp {
             }
             ui.separator();
             ui.checkbox(&mut follow, t!("Nur letzte 5 min", "Last 5 min only"));
+            if running {
+                ui.separator();
+                let connected = self.conn.as_ref().is_some_and(|c| c.ssid == ssid);
+                let rate = if connected {
+                    t!("Verbindung jede Sekunde · Scan alle 2 s", "Connection every second · scan every 2 s")
+                } else {
+                    t!("Nur Scan-Werte (ca. alle 2–4 s) – für sekundengenaue Werte mit der SSID verbinden", "Scan values only (about every 2–4 s) – connect to the SSID for per-second values")
+                };
+                let col = if connected { p.success } else { p.warning };
+                crate::widgets::dot(ui, col, 4.0);
+                ui.label(RichText::new(rate).size(12.5).color(col));
+            }
         });
         self.meas_follow = follow;
 
@@ -89,13 +101,11 @@ impl WifiApp {
             self.start_measurement(ssid.clone());
         }
         if stop {
-            if let Some(m) = &mut self.meas {
-                m.stop(t_now);
-            }
-            self.add_log(Sev::Info, tf!("Messung beendet: {ssid}", "Survey stopped: {ssid}"));
+            self.stop_measurement();
         }
         if discard {
             self.meas = None;
+            self.apply_scan_interval();
         }
         if export {
             self.export_measurement();
@@ -212,9 +222,21 @@ impl WifiApp {
         ui.add_space(8.0);
 
         // ---------- Verlauf ----------
-        let end = m.elapsed(t_now).max(10.0);
-        let x0 = if self.meas_follow { (end - 300.0).max(0.0) } else { 0.0 };
-        let in_view = |t: f64| t >= x0 - 1.0;
+        let elapsed = m.elapsed(t_now);
+        let live = m.running;
+        if live {
+            // flüssiger Zeitverlauf, solange gemessen wird (sonst nur 1×/s)
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        // Zeitfenster: gleitend die letzten 5 min oder bis zur nächsten "runden" Länge,
+        // damit die Achse nicht jede Sekunde neu skaliert
+        let (x0, x1) = if self.meas_follow {
+            ((elapsed - 300.0).max(0.0), elapsed.max(300.0))
+        } else {
+            (0.0, nice_span(elapsed))
+        };
+        let in_view = |t: f64| t >= x0 - 5.0;
+
         // Verbindungslinie je AP zerlegen (Farbwechsel = Roam), Lücken > 5 s = Abbruch
         let mut segments: Vec<([u8; 6], u32, Vec<[f64; 2]>)> = Vec::new();
         let mut last_t = f64::NEG_INFINITY;
@@ -234,8 +256,27 @@ impl WifiApp {
             }
             last_t = c.t;
         }
-        let best_pts: Vec<[f64; 2]> = m.best.iter().filter(|b| in_view(b.t)).map(|b| [b.t, b.rssi as f64]).collect();
+        // Live-Kopf: letzten Verbindungswert bis "jetzt" fortführen, solange die Verbindung besteht
+        let conn_head = m.conn.last().filter(|c| live && elapsed - c.t < 3.0).map(|c| [elapsed, c.rssi as f64]);
+        if let (Some(head), Some(s)) = (conn_head, segments.last_mut()) {
+            s.2.push(head);
+        }
+
+        // Scan-Werte als Stufenlinie: ein Wert gilt bis zum nächsten Scan
+        let mut best_pts: Vec<[f64; 2]> = Vec::new();
+        for b in m.best.iter().filter(|b| in_view(b.t)) {
+            if let Some(prev) = best_pts.last().copied() {
+                best_pts.push([b.t, prev[1]]);
+            }
+            best_pts.push([b.t, b.rssi as f64]);
+        }
+        let best_head = m.best.last().filter(|b| live && elapsed - b.t < 15.0).map(|b| [elapsed, b.rssi as f64]);
+        if let Some(h) = best_head {
+            best_pts.push(h);
+        }
         let no_conn = m.conn.is_empty();
+        let waiting = m.conn.is_empty() && m.best.is_empty();
+
         let events: Vec<(f64, String, Color32)> = m
             .events
             .iter()
@@ -253,6 +294,11 @@ impl WifiApp {
             })
             .collect();
         let vendor_of = |b: &[u8; 6]| self.aps.get(b).map(Self::vendor_label).unwrap_or_default();
+        let head = conn_head.or(if no_conn { best_head } else { None });
+        let head_col = match (conn_head, m.conn.last()) {
+            (Some(_), Some(c)) => ap_color(&c.bssid),
+            _ => p.accent,
+        };
         let plot_h = (ui.available_height() * 0.62).max(180.0);
         Plot::new(("meas_plot", self.meas_follow))
             .height(plot_h)
@@ -260,16 +306,21 @@ impl WifiApp {
             .include_y(-100.0)
             .include_y(-20.0)
             .include_x(x0)
-            .include_x(end)
+            .include_x(x1)
             .allow_zoom(false)
             .allow_drag(false)
             .allow_scroll(false)
+            .allow_double_click_reset(false)
             .y_axis_formatter(dbm_axis)
             .x_axis_formatter(|m, _| if m.value >= 0.0 { fmt_mmss(m.value) } else { String::new() })
             .label_formatter(|name, v| format!("{name}\n{} · {:.0} dBm", fmt_mmss(v.x.max(0.0)), v.y))
             .show(ui, |pui| {
                 pui.hline(HLine::new(-67.0).color(p.success.gamma_multiply(0.5)).style(LineStyle::dashed_dense()));
                 pui.hline(HLine::new(-75.0).color(p.danger.gamma_multiply(0.5)).style(LineStyle::dashed_dense()));
+                if live {
+                    // "Jetzt"-Linie
+                    pui.vline(VLine::new(elapsed).color(p.weak.gamma_multiply(0.35)).width(1.0f32));
+                }
                 if !best_pts.is_empty() {
                     // ohne Verbindung ist der Scan-Wert die Hauptlinie, sonst nur Vergleich
                     let line = Line::new(PlotPoints::from(best_pts)).name(t!("Bester AP der SSID (Scan)", "Best AP of the SSID (scan)"));
@@ -289,9 +340,21 @@ impl WifiApp {
                             .name(if v.is_empty() { name } else { format!("{name} · {v}") }),
                     );
                 }
+                if let Some(h) = head {
+                    pui.points(Points::new(vec![h]).radius(5.0f32).color(head_col).filled(true));
+                }
                 for (t, label, col) in &events {
                     pui.vline(VLine::new(*t).color(col.gamma_multiply(0.8)).width(1.5f32));
                     pui.text(Text::new(PlotPoint::new(*t, -21.0), RichText::new(label).small().color(*col)).anchor(Align2::LEFT_TOP));
+                }
+                if waiting {
+                    pui.text(
+                        Text::new(
+                            PlotPoint::new((x0 + x1) / 2.0, -60.0),
+                            RichText::new(t!("Warte auf den ersten Messwert …", "Waiting for the first sample …")).size(16.0).color(p.weak),
+                        )
+                        .anchor(Align2::CENTER_CENTER),
+                    );
                 }
             });
 
@@ -319,4 +382,13 @@ impl WifiApp {
             });
         });
     }
+}
+
+/// Länge der Zeitachse: nächste "runde" Dauer, damit das Diagramm nicht jede Sekunde neu skaliert
+fn nice_span(elapsed: f64) -> f64 {
+    let need = elapsed * 1.03 + 5.0;
+    [60.0, 120.0, 300.0, 600.0, 900.0, 1200.0, 1800.0, 2700.0, 3600.0]
+        .into_iter()
+        .find(|s| *s >= need)
+        .unwrap_or_else(|| (need / 1800.0).ceil() * 1800.0)
 }

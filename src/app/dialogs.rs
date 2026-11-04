@@ -397,7 +397,7 @@ impl WifiApp {
                     egui::Grid::new("set_scan").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
                         ui.label(t!("Scan-Intervall", "Scan interval"));
                         if ui.add(egui::Slider::new(&mut self.settings.interval, 2.0..=60.0).suffix(" s").step_by(1.0).fixed_decimals(0)).changed() {
-                            let _ = self.scanner.tx.send(ScanCmd::SetInterval(self.settings.interval));
+                            self.apply_scan_interval();
                         }
                         ui.end_row();
                         ui.label(t!("Als veraltet markieren nach", "Mark as stale after"));

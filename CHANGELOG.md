@@ -30,6 +30,13 @@ Erste öffentliche Version.
 - Interne Logik ist sprachneutral (Sicherheitsverfahren und PMF als Typen statt Textvergleichen).
 - Code in übersichtliche Module aufgeteilt (`app/shell`, `app/pages/*`, `app/dialogs`, `app/inspector`).
 
+### Messung (Walk-Survey) überarbeitet
+- Der Verlauf läuft flüssig mit: Die Linie reicht bis „jetzt“, ein Live-Punkt markiert den aktuellen Wert, Neuzeichnen 10× pro Sekunde während der Messung.
+- Die Zeitachse wächst in festen Stufen (1 / 2 / 5 / 10 min …) statt jede Sekunde neu zu skalieren.
+- Scan-Werte werden als Stufenlinie gezeigt (ein Wert gilt bis zum nächsten Scan).
+- Während einer Messung wird alle 2 s gescannt, der erste Wert kommt sofort.
+- Hinweis, ob mit Verbindung (jede Sekunde) oder nur per Scan gemessen wird; „Warte auf den ersten Messwert …“.
+
 ### Behoben
 - Einstellungsdateien mit UTF-8-BOM wurden nicht korrekt gelesen.
 - Unverständlicher Fehlercode bei ausgeschaltetem WLAN.

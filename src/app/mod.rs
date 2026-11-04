@@ -28,6 +28,9 @@ pub const WEBSITE: &str = "https://wifianalyzer.schoepf-tirol.at";
 pub const REPO: &str = "https://github.com/zenutrix/wifianalyzer";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Scan-Intervall (s) während einer laufenden Messung
+pub const MEASURE_SCAN_INTERVAL: f32 = 2.0;
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub(crate) enum Page {
     Overview,
@@ -680,6 +683,26 @@ impl WifiApp {
         self.meas = Some(Measurement::new(ssid.clone(), self.now_t()));
         self.add_log(Sev::Info, tf!("Messung gestartet: {ssid}", "Measurement started: {ssid}"));
         self.page = Page::Measure;
+        self.apply_scan_interval();
+        self.scan_now(); // ersten Wert nicht erst nach dem nächsten Intervall holen
+    }
+
+    fn stop_measurement(&mut self) {
+        let t = self.now_t();
+        if let Some(m) = &mut self.meas {
+            m.stop(t);
+            let ssid = m.ssid.clone();
+            self.add_log(Sev::Info, tf!("Messung beendet: {ssid}", "Survey stopped: {ssid}"));
+        }
+        self.apply_scan_interval();
+    }
+
+    /// Scan-Intervall an den Scanner geben – während einer Messung höchstens 2 s,
+    /// damit auch ohne Verbindung (nur Scan-Werte) genug Messpunkte entstehen
+    fn apply_scan_interval(&self) {
+        let running = self.meas.as_ref().is_some_and(|m| m.running);
+        let s = if running { self.settings.interval.min(MEASURE_SCAN_INTERVAL) } else { self.settings.interval };
+        let _ = self.scanner.tx.send(ScanCmd::SetInterval(s));
     }
 
     // ------------------------------------------------------------------ Export

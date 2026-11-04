@@ -155,7 +155,7 @@ impl WifiApp {
                         .on_hover_text(t!("Scan-Intervall", "Scan interval"));
                     if interval != self.settings.interval {
                         self.settings.interval = interval;
-                        let _ = self.scanner.tx.send(crate::wlan::ScanCmd::SetInterval(interval));
+                        self.apply_scan_interval();
                     }
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
