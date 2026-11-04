@@ -1,0 +1,11 @@
+# Build-Ausgaben
+/target/
+/dist/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
