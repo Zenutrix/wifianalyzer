@@ -31,11 +31,22 @@ jobs:
         shell: pwsh
         run: ./tools/package.ps1
 
+      # Release-Text = Abschnitt dieser Version aus CHANGELOG.md (erscheint auch im Update-Dialog der App)
+      - name: Release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          $c = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($c, "(?ms)^## \[$([regex]::Escape($v))\][^\n]*\n(.*?)(?=^## \[|\z)")
+          if (-not $m.Success) { throw "Kein CHANGELOG-Abschnitt für $v" }
+          $m.Groups[1].Value.Trim() | Set-Content -Encoding utf8 release-notes.md
+          Get-Content release-notes.md
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: WiFi Analyzer ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             dist/WiFiAnalyzer-*-win64.zip
             dist/WiFiAnalyzer.exe

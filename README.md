@@ -37,7 +37,7 @@ Roaming. Eine einzelne EXE ohne Installation.
 | **Kanalbewertung** | Störpegel je Kanal mit Empfehlung: 1/6/11, 5 GHz mit/ohne DFS, bester 80-MHz-Block, 6-GHz-PSC |
 | **Befunde** | Offene Netze, WEP/WPA1/TKIP, WPS, 40 MHz im 2,4-GHz-Band, Überlappung, Co-Channel, Auslastung, fehlendes PMF oder 802.11k/v, Evil Twin. Jeweils mit **Empfehlung** |
 | **Messung** | Walk-Survey: Verbindung jede Sekunde, Verlauf je AP eingefärbt. Erkennt **Roams**, Abbrüche und **Sticky Clients**. Markierungen setzen, Statistik, CSV-Export |
-| **Signal-Finder** | Einen AP über die Signalstärke orten, optional mit „Geigerzähler“-Ton |
+| **AP-Finder** | Einen AP über die Signalstärke orten, optional mit „Geigerzähler“-Ton |
 | **Signalverlauf / Ereignisse** | Verlauf markierter APs und Protokoll (neue Netze, Roaming, Fehler) |
 
 Weitere Merkmale:
@@ -128,7 +128,7 @@ no installation.
   - connection sampled every second
   - roam, disconnect and **sticky client** detection
   - markers, statistics and CSV export
-- **Signal finder** with an optional Geiger counter beep
+- **AP finder** with an optional Geiger counter beep
 - **General**:
   - German and English UI
   - light and dark theme

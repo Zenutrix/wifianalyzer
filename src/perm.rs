@@ -125,3 +125,28 @@ pub fn check(request: bool) -> PermStatus {
 pub fn open_location_settings() {
     let _ = std::process::Command::new("explorer").arg("ms-settings:privacy-location").spawn();
 }
+
+/// Hält eine Standort-Sitzung dauerhaft offen.
+///
+/// Windows 11 zeigt das Standort-Symbol in der Taskleiste bei jedem einzelnen WLAN-Scan kurz an,
+/// was bei Scans alle paar Sekunden zu einem ständig springenden Infobereich führt. Mit einem
+/// aktiven Geolocator-Abo gilt die App durchgehend als „Standort in Verwendung“ – das Symbol
+/// bleibt ruhig stehen, statt zu blinken. Ohne Standortfreigabe passiert einfach nichts.
+pub fn hold_location_session() {
+    let _ = std::thread::Builder::new().name("location-hold".into()).spawn(|| {
+        unsafe {
+            let _ = RoInitialize(RO_INIT_MULTITHREADED);
+        }
+        let Ok(geo) = Geolocator::new() else { return };
+        let _ = geo.SetReportInterval(60_000);
+        let _ = geo.SetMovementThreshold(1_000.0);
+        let handler = windows::Foundation::TypedEventHandler::<Geolocator, windows::Devices::Geolocation::PositionChangedEventArgs>::new(|_, _| Ok(()));
+        if geo.PositionChanged(&handler).is_err() {
+            return;
+        }
+        // Geolocator für die Laufzeit der App am Leben halten
+        loop {
+            std::thread::park();
+        }
+    });
+}

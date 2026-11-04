@@ -28,7 +28,7 @@ enum RowAction {
     Measure(String),
 }
 
-fn headers() -> [(SortCol, &'static str, &'static str); 13] {
+fn headers() -> [(SortCol, &'static str, &'static str); 12] {
     [
         (SortCol::Pin, "★", t!("Markierte APs (☆ anklicken zum Markieren)", "Pinned APs (click ☆ to pin)")),
         (SortCol::Ssid, "SSID", t!("Netzwerkname", "Network name")),
@@ -42,7 +42,6 @@ fn headers() -> [(SortCol, &'static str, &'static str); 13] {
         (SortCol::Rate, "Mbit/s", t!("Theoretische maximale PHY-Rate", "Theoretical maximum PHY rate")),
         (SortCol::Clients, "Clients", t!("Verbundene Clients laut BSS-Load-Element", "Associated clients from the BSS load element")),
         (SortCol::Util, t!("Last", "Load"), t!("Kanalauslastung laut BSS-Load-Element", "Channel utilization from the BSS load element")),
-        (SortCol::Seen, t!("Gesehen", "Seen"), t!("Zuletzt im Scan gesehen", "Last seen in a scan")),
     ]
 }
 
@@ -178,8 +177,7 @@ impl WifiApp {
                         .column(Column::initial(120.0).at_least(80.0).clip(true))
                         .column(Column::initial(56.0))
                         .column(Column::initial(50.0))
-                        .column(Column::initial(56.0))
-                        .column(Column::remainder().at_least(60.0))
+                        .column(Column::remainder().at_least(56.0))
                         .min_scrolled_height(0.0)
                         .header(28.0, |mut h| {
                             for (col, label, hint) in headers() {
@@ -316,10 +314,6 @@ impl WifiApp {
                                         None => ui.label(RichText::new("–").color(tc)),
                                     };
                                 });
-                                row.col(|ui| {
-                                    shade(ui);
-                                    ui.label(RichText::new(fmt_ago(r.age(now))).color(tc));
-                                });
 
                                 let resp = row.response();
                                 if resp.double_clicked() {
@@ -340,7 +334,7 @@ impl WifiApp {
                                         action = Some(RowAction::Pin(k));
                                         ui.close_menu();
                                     }
-                                    if ui.button(t!("Im Signal-Finder orten", "Locate in signal finder")).clicked() {
+                                    if ui.button(t!("Im AP-Finder orten", "Locate in AP finder")).clicked() {
                                         action = Some(RowAction::Finder(k));
                                         ui.close_menu();
                                     }

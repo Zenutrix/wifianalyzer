@@ -1,4 +1,4 @@
-//! Akustischer Signal-Finder ("Geigerzähler"): je stärker das Signal, desto höher und schneller der Ton.
+//! Akustischer AP-Finder ("Geigerzähler"): je stärker das Signal, desto höher und schneller der Ton.
 
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;

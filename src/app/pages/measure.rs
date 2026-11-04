@@ -82,18 +82,6 @@ impl WifiApp {
             }
             ui.separator();
             ui.checkbox(&mut follow, t!("Nur letzte 5 min", "Last 5 min only"));
-            if running {
-                ui.separator();
-                let connected = self.conn.as_ref().is_some_and(|c| c.ssid == ssid);
-                let rate = if connected {
-                    t!("Verbindung jede Sekunde · Scan alle 2 s", "Connection every second · scan every 2 s")
-                } else {
-                    t!("Nur Scan-Werte (ca. alle 2–4 s) – für sekundengenaue Werte mit der SSID verbinden", "Scan values only (about every 2–4 s) – connect to the SSID for per-second values")
-                };
-                let col = if connected { p.success } else { p.warning };
-                crate::widgets::dot(ui, col, 4.0);
-                ui.label(RichText::new(rate).size(12.5).color(col));
-            }
         });
         self.meas_follow = follow;
 

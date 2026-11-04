@@ -28,6 +28,17 @@ pub fn card<R>(ui: &mut Ui, title: Option<&str>, add: impl FnOnce(&mut Ui) -> R)
         .inner
 }
 
+/// Karte, die die volle verfügbare Breite füllt (Raster in der Übersicht)
+pub fn card_full<R>(ui: &mut Ui, title: Option<&str>, min_height: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    // Rahmen (1 px) + Innenabstand (14 px) auf beiden Seiten abziehen
+    let w = (ui.available_width() - 30.0).max(0.0);
+    card(ui, title, |ui| {
+        ui.set_width(w);
+        ui.set_min_height(min_height);
+        add(ui)
+    })
+}
+
 /// Seitenkopf: Titel, Untertitel und rechtsbündige Aktionen
 pub fn page_header(ui: &mut Ui, title: &str, subtitle: &str, actions: impl FnOnce(&mut Ui)) {
     let p = pal(ui);
@@ -62,6 +73,81 @@ pub fn kpi(ui: &mut Ui, title: &str, value: &str, sub: &str, color: Color32, wid
             });
         })
         .response
+}
+
+/// Kennzahl-Kachel mit farbigem Symbol (Übersicht); klickbar mit Hover-Rahmen
+pub fn kpi_tile(ui: &mut Ui, icon: &str, title: &str, value: &str, sub: &str, color: Color32, width: f32) -> Response {
+    let p = pal(ui);
+    let id = ui.next_auto_id();
+    let hovered = ui.ctx().read_response(id).is_some_and(|r| r.hovered());
+    let resp = egui::Frame::none()
+        .fill(p.surface)
+        .stroke(Stroke::new(1.0f32, if hovered { color.gamma_multiply(0.7) } else { p.border }))
+        .rounding(12.0)
+        .inner_margin(Margin::symmetric(14.0, 12.0))
+        .show(ui, |ui| {
+            ui.set_width(width);
+            ui.set_height(62.0);
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
+                ui.painter().circle_filled(r.center(), 20.0, color.gamma_multiply(0.16));
+                ui.painter().text(r.center(), Align2::CENTER_CENTER, icon, FontId::proportional(18.0), color);
+                ui.add_space(4.0);
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(title).size(12.0).color(p.weak));
+                    ui.label(RichText::new(value).size(23.0).strong().color(p.text));
+                    ui.add(egui::Label::new(RichText::new(sub).size(11.5).color(p.weak)).truncate());
+                });
+            });
+        })
+        .response;
+    ui.interact(resp.rect, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Ringdiagramm mit Wert in der Mitte und Legende rechts
+pub fn donut(ui: &mut Ui, segments: &[(String, usize, Color32)], center: &str, center_sub: &str) {
+    let p = pal(ui);
+    let total: usize = segments.iter().map(|s| s.1).sum();
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(150.0), Sense::hover());
+        let painter = ui.painter();
+        let c = rect.center();
+        let (r, w) = (58.0f32, 16.0f32);
+        if total == 0 {
+            painter.circle_stroke(c, r, Stroke::new(w, p.surface2));
+        } else {
+            let mut a = -std::f32::consts::FRAC_PI_2;
+            let gap = if segments.iter().filter(|s| s.1 > 0).count() > 1 { 0.035 } else { 0.0 };
+            for (_, n, col) in segments.iter().filter(|s| s.1 > 0) {
+                let sweep = std::f32::consts::TAU * *n as f32 / total as f32;
+                let (a0, a1) = (a + gap / 2.0, a + sweep - gap / 2.0);
+                let steps = ((a1 - a0).abs() * 40.0).ceil().max(2.0) as usize;
+                let pts: Vec<egui::Pos2> = (0..=steps)
+                    .map(|i| {
+                        let t = a0 + (a1 - a0) * i as f32 / steps as f32;
+                        egui::pos2(c.x + r * t.cos(), c.y + r * t.sin())
+                    })
+                    .collect();
+                painter.add(egui::Shape::line(pts, Stroke::new(w, *col)));
+                a += sweep;
+            }
+        }
+        painter.text(c - Vec2::new(0.0, 7.0), Align2::CENTER_CENTER, center, FontId::proportional(24.0), p.text);
+        painter.text(c + Vec2::new(0.0, 15.0), Align2::CENTER_CENTER, center_sub, FontId::proportional(11.5), p.weak);
+
+        ui.add_space(8.0);
+        ui.vertical(|ui| {
+            ui.add_space(20.0);
+            for (label, n, col) in segments {
+                ui.horizontal(|ui| {
+                    dot(ui, *col, 5.0);
+                    ui.label(RichText::new(label).color(p.text));
+                    let pct = if total > 0 { *n as f32 * 100.0 / total as f32 } else { 0.0 };
+                    ui.label(RichText::new(format!("{n} · {pct:.0} %")).color(p.weak));
+                });
+            }
+        });
+    });
 }
 
 /// Kleines farbiges Etikett (z. B. Zähler in der Navigation)

@@ -15,7 +15,8 @@ Erste öffentliche Version.
 - **Deutsch und Englisch**, beim ersten Start automatisch nach Windows-Sprache, umschaltbar in den Einstellungen.
 - **Einstellungen** werden gespeichert (`%APPDATA%\WifiAnalyzer\settings.ini`). Dazu gehören Sprache, Design, Intervall, Zeitgrenzen, Gruppierung und Markierungen.
 - **Über-Dialog** mit Ersteller, Website, GitHub, Lizenz und Tastenkürzeln.
-- **Update-Prüfung** über GitHub-Releases, beim Start oder manuell.
+- **Update-Button** in der Kopfzeile: erkennt neue Versionen auf GitHub, zeigt den Release-Text und installiert das Update auf Wunsch selbst (Download mit SHA-256-Prüfung, Neustart).
+- Nach einem Update zeigt ein Dialog einmalig, was neu ist.
 - **Befunde** mit konkreter Empfehlung, pro SSID zusammengefasst. Neuer Check auf fehlendes 802.11k/v.
 - Netzwerkliste:
   - Rechtsklick-Menü: Details, Markieren, Orten, Messung starten, kopieren
@@ -28,7 +29,11 @@ Erste öffentliche Version.
 
 ### Geändert
 - Interne Logik ist sprachneutral (Sicherheitsverfahren und PMF als Typen statt Textvergleichen).
-- Code in übersichtliche Module aufgeteilt (`app/shell`, `app/pages/*`, `app/dialogs`, `app/inspector`).
+- Code in übersichtliche Module aufgeteilt (`app/shell`, `app/pages/*`, `app/dialogs`, `app/inspector`, `app/settings_ui`, `app/update`).
+- **Einstellungen** aufgeräumt (Allgemein / Scan / Daten), das Scan-Intervall ist jetzt nur noch dort einstellbar.
+- **Übersicht** neu gestaltet: gleich große Kennzahl-Kacheln, Ringdiagramme für Frequenzbänder und Sicherheit, einheitliches Raster.
+- Signal-Finder heißt jetzt **AP-Finder**.
+- Unruhige Zeitanzeigen entfernt (Intervall-Auswahl in der Kopfzeile, Spalte „Gesehen“, Scan-Hinweis in der Messung).
 
 ### Messung (Walk-Survey) überarbeitet
 - Der Verlauf läuft flüssig mit: Die Linie reicht bis „jetzt“, ein Live-Punkt markiert den aktuellen Wert, Neuzeichnen 10× pro Sekunde während der Messung.
@@ -40,6 +45,7 @@ Erste öffentliche Version.
 ### Behoben
 - Einstellungsdateien mit UTF-8-BOM wurden nicht korrekt gelesen.
 - Unverständlicher Fehlercode bei ausgeschaltetem WLAN.
+- Das Standort-Symbol in der Taskleiste blinkte bei jedem Scan auf, wodurch die Taskleiste ständig sprang. Es bleibt jetzt ruhig stehen, solange die App läuft.
 
 ## [1.3.0] – 2026-10-30
 - Walk-Survey-Messung mit Roaming-, Abbruch- und Sticky-Client-Erkennung, Verbindung jede Sekunde.

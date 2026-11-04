@@ -1,4 +1,4 @@
-//! Signal-Finder: einen Access Point über die Signalstärke orten (optional mit Piepton).
+//! AP-Finder: einen Access Point über die Signalstärke orten (optional mit Piepton).
 
 use std::time::Instant;
 
@@ -26,7 +26,7 @@ impl WifiApp {
             .unwrap_or_else(|| t!("Access Point wählen …", "Choose an access point …").into());
         page_header(
             ui,
-            t!("Signal-Finder", "Signal finder"),
+            t!("AP-Finder", "AP finder"),
             t!("Mit dem Laptop herumgehen: je stärker das Signal, desto näher der Access Point", "Walk around with the laptop: the stronger the signal, the closer the access point"),
             |ui| {
                 ui.checkbox(&mut beep, t!("🔊 Piepton", "🔊 Beep")).on_hover_text(t!(

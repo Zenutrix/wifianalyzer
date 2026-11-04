@@ -5,7 +5,7 @@ use std::time::Instant;
 use eframe::egui::{self, Align, Align2, Color32, FontId, Layout, Margin, Response, RichText, Sense, Stroke, Ui, Vec2};
 
 use super::{Page, Sev, WifiApp, AUTHOR, VERSION, WEBSITE};
-use crate::model::{fmt_ago, fmt_mac, signal_color};
+use crate::model::{fmt_mac, signal_color};
 use crate::theme::{pal, pal_ctx};
 use crate::widgets::dot;
 use crate::{t, tf};
@@ -33,7 +33,7 @@ impl Page {
             Page::History => t!("Signalverlauf", "Signal history"),
             Page::Findings => t!("Befunde", "Findings"),
             Page::Measure => t!("Messung", "Survey"),
-            Page::Finder => t!("Signal-Finder", "Signal finder"),
+            Page::Finder => t!("AP-Finder", "AP finder"),
             Page::Events => t!("Ereignisse", "Events"),
         }
     }
@@ -142,28 +142,31 @@ impl WifiApp {
                     if ui.button(t!("⟳ Scannen", "⟳ Scan")).on_hover_text(t!("Sofort scannen (F5)", "Scan now (F5)")).clicked() {
                         self.scan_now();
                     }
-                    let mut interval = self.settings.interval;
-                    egui::ComboBox::from_id_salt("interval")
-                        .width(110.0)
-                        .selected_text(tf!("Alle {} s", "Every {} s", interval as u32))
-                        .show_ui(ui, |ui| {
-                            for s in [2.0f32, 3.0, 4.0, 5.0, 10.0, 15.0, 30.0, 60.0] {
-                                ui.selectable_value(&mut interval, s, tf!("Alle {} s", "Every {} s", s as u32));
-                            }
-                        })
-                        .response
-                        .on_hover_text(t!("Scan-Intervall", "Scan interval"));
-                    if interval != self.settings.interval {
-                        self.settings.interval = interval;
-                        self.apply_scan_interval();
-                    }
-
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("ℹ").on_hover_text(t!("Über WiFi Analyzer", "About WiFi Analyzer")).clicked() {
                             self.show_about = true;
                         }
-                        if ui.button("⚙").on_hover_text(t!("Einstellungen", "Settings")).clicked() {
+                        if ui.button(t!("⚙ Einstellungen", "⚙ Settings")).clicked() {
                             self.show_settings = true;
+                        }
+                        // Update-Button: zeigt den Stand der GitHub-Prüfung
+                        if let Some(v) = self.update.available().map(|r| r.version.clone()) {
+                            let b = egui::Button::new(RichText::new(tf!("⬆ Update auf {v}", "⬆ Update to {v}")).color(Color32::WHITE).strong()).fill(p.accent);
+                            if ui.add(b).on_hover_text(t!("Neue Version verfügbar – Details und Installation", "New version available – details and installation")).clicked() {
+                                self.show_update = true;
+                            }
+                        } else if self.update.rx.is_some() {
+                            ui.add_enabled(false, egui::Button::new(t!("⟳ Prüfe …", "⟳ Checking …")));
+                        } else {
+                            let hint = match (&self.update.latest, &self.update.error) {
+                                (Some(_), _) => tf!("v{VERSION} ist aktuell – klicken zum erneuten Prüfen", "v{VERSION} is up to date – click to check again"),
+                                (None, Some(e)) => tf!("Letzte Prüfung fehlgeschlagen: {e}", "Last check failed: {e}"),
+                                (None, None) => t!("Bei GitHub nach einer neuen Version suchen", "Check GitHub for a new version").into(),
+                            };
+                            let label = if self.update.latest.is_some() { t!("✔ Aktuell", "✔ Up to date") } else { t!("⟳ Updates", "⟳ Updates") };
+                            if ui.button(label).on_hover_text(hint).clicked() {
+                                self.start_update_check(ctx, true);
+                            }
                         }
                         let theme_icon = if self.settings.dark { "☀" } else { "🌙" };
                         if ui.button(theme_icon).on_hover_text(t!("Hell / Dunkel", "Light / dark")).clicked() {
@@ -400,23 +403,16 @@ impl WifiApp {
                     };
                     dot(ui, col, 4.0);
                     ui.label(RichText::new(txt).size(12.5).strong().color(col));
-                    let scan = match self.last_scan {
-                        Some(t) => tf!(
-                            "Scan #{} · {} · {} Access Points",
-                            "Scan #{} · {} · {} access points",
-                            self.scan_count,
-                            fmt_ago(t.elapsed().as_secs_f32()),
-                            self.aps.len()
-                        ),
-                        None => t!("Warte auf ersten Scan …", "Waiting for first scan …").into(),
+                    let status = if self.last_scan.is_some() {
+                        tf!("{} Access Points in Reichweite", "{} access points in range", self.aps.len())
+                    } else {
+                        t!("Suche WLAN-Netze …", "Searching for Wi-Fi networks …").into()
                     };
-                    ui.label(RichText::new(scan).size(12.5).color(p.weak));
-                    if let Some(v) = self.update.latest.clone().filter(|v| super::dialogs::is_newer(v, VERSION)) {
+                    ui.label(RichText::new(status).size(12.5).color(p.weak));
+                    if self.meas.as_ref().is_some_and(|m| m.running) {
                         ui.separator();
-                        ui.hyperlink_to(
-                            RichText::new(tf!("⬆ Version {v} verfügbar", "⬆ Version {v} available")).size(12.5).color(p.accent),
-                            format!("{}/releases/latest", super::REPO),
-                        );
+                        dot(ui, p.danger, 4.0);
+                        ui.label(RichText::new(t!("Messung läuft", "Survey running")).size(12.5).color(p.danger));
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.hyperlink_to(RichText::new("wifianalyzer.schoepf-tirol.at").size(12.0).color(p.weak), WEBSITE);

@@ -3,7 +3,9 @@
 mod dialogs;
 mod inspector;
 mod pages;
+mod settings_ui;
 mod shell;
+mod update;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::Receiver;
@@ -58,7 +60,6 @@ pub(crate) enum SortCol {
     Rate,
     Clients,
     Util,
-    Seen,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
@@ -133,15 +134,38 @@ pub(crate) struct Toast {
     pub until: Instant,
 }
 
+/// Informationen zum neuesten Release auf GitHub
+#[derive(Clone, Default)]
+pub(crate) struct ReleaseInfo {
+    /// Version ohne "v"
+    pub version: String,
+    pub notes: String,
+    pub url: String,
+    pub date: String,
+    pub exe_url: Option<String>,
+    pub sums_url: Option<String>,
+}
+
 #[derive(Default)]
 pub(crate) struct UpdateState {
-    pub rx: Option<Receiver<Result<Option<String>, String>>>,
-    /// neueste veröffentlichte Version (ohne "v"), falls bekannt
-    pub latest: Option<String>,
+    pub rx: Option<Receiver<Result<Option<ReleaseInfo>, String>>>,
+    /// neuestes veröffentlichtes Release, falls bekannt
+    pub latest: Option<ReleaseInfo>,
     pub error: Option<String>,
     pub checked: bool,
+    pub last_check: Option<Instant>,
     /// Ergebnis soll als Meldung erscheinen (manuelle Prüfung)
     pub manual: bool,
+    /// Download der neuen Version läuft (Ergebnis: Pfad der geprüften EXE)
+    pub install_rx: Option<Receiver<Result<std::path::PathBuf, String>>>,
+    pub install_error: Option<String>,
+}
+
+impl UpdateState {
+    /// Version eines verfügbaren Updates (neuer als die laufende)
+    pub fn available(&self) -> Option<&ReleaseInfo> {
+        self.latest.as_ref().filter(|r| update::is_newer(&r.version, VERSION))
+    }
 }
 
 pub struct WifiApp {
@@ -196,11 +220,16 @@ pub struct WifiApp {
 
     perm: Option<PermStatus>,
     perm_rx: Option<Receiver<PermStatus>>,
+    location_held: bool,
     perm_dismissed: bool,
     perm_last_check: Instant,
 
     show_settings: bool,
     show_about: bool,
+    show_update: bool,
+    show_whats_new: bool,
+    /// Dialog wurde automatisch nach einem Versionswechsel geöffnet
+    whats_new_upgraded: bool,
     update: UpdateState,
 
     beeper: Beeper,
@@ -266,10 +295,14 @@ impl WifiApp {
             }),
             perm: None,
             perm_rx: None,
+            location_held: false,
             perm_dismissed: false,
             perm_last_check: Instant::now(),
             show_settings: false,
             show_about: false,
+            show_update: false,
+            show_whats_new: false,
+            whats_new_upgraded: false,
             update: UpdateState::default(),
             beeper: Beeper::new(),
             beep_on: false,
@@ -280,6 +313,13 @@ impl WifiApp {
         }
         // Windows-Berechtigungsabfrage (Standort/WLAN) auslösen
         app.start_perm_check(ctx, true);
+        update::cleanup_old_exe();
+        // Nach einem Update einmalig zeigen, was neu ist (nicht beim allerersten Start)
+        if !app.settings.last_version.is_empty() && app.settings.last_version != VERSION {
+            app.show_whats_new = true;
+            app.whats_new_upgraded = true;
+        }
+        app.settings.last_version = VERSION.to_string();
         app
     }
 
@@ -410,6 +450,11 @@ impl WifiApp {
         if st.ok() && was_ok != Some(true) && self.error_code == wlan::ERROR_ACCESS_DENIED {
             self.add_log(Sev::Info, t!("Standortzugriff erlaubt – starte Scan", "Location access granted – scanning").into());
             let _ = self.scanner.tx.send(ScanCmd::ScanNow);
+        }
+        if st.ok() && !self.location_held {
+            // Standort-Symbol in der Taskleiste ruhig halten statt bei jedem Scan blinken zu lassen
+            perm::hold_location_session();
+            self.location_held = true;
         }
         self.perm = Some(st);
     }
@@ -592,7 +637,6 @@ impl WifiApp {
                 SortCol::Rate => ia.max_rate.partial_cmp(&ib.max_rate).unwrap_or(Ordering::Equal),
                 SortCol::Clients => ia.stations.cmp(&ib.stations),
                 SortCol::Util => ia.ch_util.partial_cmp(&ib.ch_util).unwrap_or(Ordering::Equal),
-                SortCol::Seen => b.last_seen.cmp(&a.last_seen),
             };
             let o = if self.sort_asc { o } else { o.reverse() };
             // eindeutiger Abschluss, sonst tauschen gleich starke APs bei jedem Scan die Plätze
@@ -856,9 +900,11 @@ impl WifiApp {
             }
         }
         if esc {
-            if self.show_settings || self.show_about {
+            if self.show_settings || self.show_about || self.show_update || self.show_whats_new {
                 self.show_settings = false;
                 self.show_about = false;
+                self.show_update = false;
+                self.show_whats_new = false;
             } else {
                 self.selected = None;
             }
@@ -905,6 +951,9 @@ impl eframe::App for WifiApp {
         self.perm_dialog(ctx);
         self.settings_window(ctx);
         self.about_window(ctx);
+        self.update_window(ctx);
+        self.whats_new_window(ctx);
+        self.poll_install(ctx);
         self.toasts(ctx);
         self.sync_settings();
         ctx.request_repaint_after(Duration::from_millis(1000));

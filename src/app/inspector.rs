@@ -51,7 +51,7 @@ impl WifiApp {
                     if ui.button(if pinned { t!("★ Markiert", "★ Pinned") } else { t!("☆ Markieren", "☆ Pin") }).clicked() {
                         pin = true;
                     }
-                    if ui.button(t!("🎯 Orten", "🎯 Locate")).on_hover_text(t!("Im Signal-Finder öffnen", "Open in signal finder")).clicked() {
+                    if ui.button(t!("🎯 Orten", "🎯 Locate")).on_hover_text(t!("Im AP-Finder öffnen", "Open in AP finder")).clicked() {
                         finder = true;
                     }
                     if !i.hidden && ui.button(t!("📏 Messen", "📏 Survey")).on_hover_text(t!("Messung für diese SSID starten", "Start a survey for this SSID")).clicked() {
@@ -94,7 +94,9 @@ impl WifiApp {
                         }
                         kv(ui, t!("Laufzeit (TSF)", "Uptime (TSF)"), fmt_duration(i.uptime_s));
                         kv(ui, t!("Erstmals gesehen", "First seen"), r.first_seen_wall.format("%H:%M:%S").to_string());
-                        kv(ui, t!("Zuletzt gesehen", "Last seen"), fmt_ago(r.age(now)));
+                        if stale {
+                            kv(ui, t!("Zuletzt gesehen", "Last seen"), fmt_ago(r.age(now)));
+                        }
                         kv(ui, t!("Messwerte", "Samples"), r.samples.to_string());
                         if let Some(c) = &i.country {
                             kv(ui, t!("Land", "Country"), c.clone());

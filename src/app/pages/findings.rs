@@ -223,8 +223,8 @@ impl WifiApp {
                 title: tf!("{s}: unterschiedliche Sicherheit", "{s}: inconsistent security"),
                 detail: secs.into_iter().collect::<Vec<_>>().join(" / "),
                 advice: t!(
-                    "Konfiguration aller APs vereinheitlichen; unbekannte APs mit dem Signal-Finder orten (möglicher Evil Twin).",
-                    "Align the configuration of all APs; locate unknown APs with the signal finder (possible evil twin)."
+                    "Konfiguration aller APs vereinheitlichen; unbekannte APs mit dem AP-Finder orten (möglicher Evil Twin).",
+                    "Align the configuration of all APs; locate unknown APs with the AP finder (possible evil twin)."
                 ),
                 bssid: None,
             });

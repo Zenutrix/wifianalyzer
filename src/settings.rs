@@ -16,6 +16,8 @@ pub struct Settings {
     pub show_hidden: bool,
     pub check_updates: bool,
     pub pinned: Vec<[u8; 6]>,
+    /// zuletzt gestartete Version (für den Dialog "Was ist neu")
+    pub last_version: String,
 }
 
 impl Default for Settings {
@@ -30,6 +32,7 @@ impl Default for Settings {
             show_hidden: true,
             check_updates: true,
             pinned: Vec::new(),
+            last_version: String::new(),
         }
     }
 }
@@ -65,6 +68,7 @@ impl Settings {
                 "group_ssid" => s.group_ssid = b,
                 "show_hidden" => s.show_hidden = b,
                 "check_updates" => s.check_updates = b,
+                "last_version" => s.last_version = v.to_string(),
                 "pinned" => s.pinned = v.split(',').filter_map(|m| parse_mac(m.trim())).collect(),
                 _ => {}
             }
@@ -75,7 +79,7 @@ impl Settings {
     pub fn save(&self) {
         let pinned: Vec<String> = self.pinned.iter().map(fmt_mac).collect();
         let text = format!(
-            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\n",
+            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\n",
             self.lang.code(),
             self.dark as u8,
             self.interval,
@@ -84,7 +88,8 @@ impl Settings {
             self.group_ssid as u8,
             self.show_hidden as u8,
             self.check_updates as u8,
-            pinned.join(",")
+            pinned.join(","),
+            self.last_version
         );
         let _ = std::fs::create_dir_all(app_dir());
         let _ = std::fs::write(path(), text);
