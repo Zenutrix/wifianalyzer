@@ -27,6 +27,11 @@ jobs:
       - name: Test
         run: cargo test --release --locked
 
+      # Inno Setup 6.7+ (dunkles Setup-Design) für den Installer
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
       - name: Build & package
         shell: pwsh
         run: ./tools/package.ps1
@@ -49,5 +54,6 @@ jobs:
           body_path: release-notes.md
           files: |
             dist/WiFiAnalyzer-*-win64.zip
+            dist/WiFiAnalyzer-Setup.exe
             dist/WiFiAnalyzer.exe
             dist/SHA256SUMS.txt

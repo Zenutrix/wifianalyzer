@@ -1,11 +1,12 @@
-<#
+﻿<#
 .SYNOPSIS
   Baut den WiFi Analyzer (Release) und erzeugt das Download-Paket in dist\.
 
 .DESCRIPTION
   Ergebnis:
     dist\WiFiAnalyzer-<version>-win64.zip   (EXE + README + LICENSE)
-    dist\WiFiAnalyzer.exe                   (einzelne EXE)
+    dist\WiFiAnalyzer-Setup.exe             (Installer, benötigt Inno Setup 6.7+)
+    dist\WiFiAnalyzer.exe                   (einzelne EXE, portable)
     dist\SHA256SUMS.txt                     (Prüfsummen)
 
 .PARAMETER NoBuild
@@ -43,7 +44,23 @@ if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
 Copy-Item $exe (Join-Path $dist "WiFiAnalyzer.exe") -Force
 
-$sums = foreach ($f in @($zip, (Join-Path $dist "WiFiAnalyzer.exe"))) {
+# Installer (Inno Setup) – optional, falls ISCC nicht gefunden wird
+$iscc = @(
+    (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source,
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$setup = Join-Path $dist "WiFiAnalyzer-Setup.exe"
+Get-ChildItem $dist -Filter "WiFiAnalyzer-Setup*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force
+if ($iscc) {
+    & $iscc /Q "/DAppVersion=$version" "/DSourceExe=$exe" "/DOutputDir=$dist" (Join-Path $root "installer\WiFiAnalyzer.iss")
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup fehlgeschlagen" }
+} else {
+    Write-Warning "Inno Setup (ISCC.exe) nicht gefunden – Installer wird übersprungen. winget install JRSoftware.InnoSetup"
+}
+
+$sums = foreach ($f in @($zip, (Join-Path $dist "WiFiAnalyzer.exe"), $setup) | Where-Object { Test-Path $_ }) {
     "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), (Split-Path $f -Leaf)
 }
 $sums | Set-Content -Encoding ascii (Join-Path $dist "SHA256SUMS.txt")

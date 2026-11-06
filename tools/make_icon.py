@@ -2,7 +2,8 @@
 
 Aufruf:  python tools/make_icon.py
 Gezeichnet wird in 1024 px und dann für jede Icon-Größe sauber herunterskaliert.
-Kleine Größen (<= 32 px) bekommen eine vereinfachte Variante ohne feine Details.
+Kleine Größen (<= 32 px) zeigen dasselbe Motiv (3 Bögen, grüner Punkt) mit kräftigeren Linien,
+nur ohne Radar-Ringe, damit das Symbol überall gleich aussieht.
 """
 import math
 from pathlib import Path
@@ -67,7 +68,7 @@ def render(detailed=True):
     cx, cy = S * 0.5, S * 0.70
 
     if detailed:
-        # Radar-Ringe
+        # Radar-Ringe (nur große Größen – klein wären sie nur Rauschen)
         rings = Image.new("RGBA", (S, S), (0, 0, 0, 0))
         d = ImageDraw.Draw(rings)
         for k, r in enumerate([0.50, 0.64, 0.78]):
@@ -85,15 +86,16 @@ def render(detailed=True):
         rings = Image.alpha_composite(rings, sweep)
         icon = Image.alpha_composite(icon, Image.composite(rings, Image.new("RGBA", (S, S)), mask))
 
+    if True:
         # weicher Glanz oben
         gloss = Image.new("RGBA", (S, S), (255, 255, 255, 0))
         ga = Image.linear_gradient("L").resize((S, S)).point(lambda v: int(max(0, 255 - v * 2.2) * 0.22))
         gloss.putalpha(ga)
         icon = Image.alpha_composite(icon, Image.composite(gloss, Image.new("RGBA", (S, S)), mask))
 
-    radii = [S * 0.155, S * 0.285, S * 0.415] if detailed else [S * 0.17, S * 0.33]
-    width = int(S * (0.078 if detailed else 0.115))
-    dot_r = S * (0.065 if detailed else 0.085)
+    radii = [S * 0.155, S * 0.285, S * 0.415] if detailed else [S * 0.15, S * 0.29, S * 0.43]
+    width = int(S * (0.078 if detailed else 0.098))
+    dot_r = S * (0.065 if detailed else 0.08)
 
     # Glow unter den Bögen
     glow = wifi_layer(S, (120, 230, 255, 255), cx, cy, radii, width, dot_r).filter(ImageFilter.GaussianBlur(S * 0.03))
@@ -105,9 +107,9 @@ def render(detailed=True):
     icon = Image.alpha_composite(icon, shadow)
     icon = Image.alpha_composite(icon, wifi_layer(S, (255, 255, 255, 255), cx, cy, radii, width, dot_r))
 
-    if detailed:
-        # grüner "Live"-Punkt oben rechts
-        bx, by, br = S * 0.79, S * 0.21, S * 0.055
+    if True:
+        # grüner "Live"-Punkt oben rechts (klein etwas größer, damit er sichtbar bleibt)
+        bx, by, br = (S * 0.79, S * 0.21, S * 0.055) if detailed else (S * 0.78, S * 0.22, S * 0.085)
         halo = Image.new("RGBA", (S, S), (0, 0, 0, 0))
         ImageDraw.Draw(halo).ellipse([bx - br * 2.2, by - br * 2.2, bx + br * 2.2, by + br * 2.2], fill=(70, 255, 150, 120))
         icon = Image.alpha_composite(icon, halo.filter(ImageFilter.GaussianBlur(S * 0.03)))

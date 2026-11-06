@@ -143,6 +143,8 @@ pub(crate) struct ReleaseInfo {
     pub url: String,
     pub date: String,
     pub exe_url: Option<String>,
+    /// Installer (WiFiAnalyzer-Setup.exe) – wird verwendet, wenn die App installiert ist
+    pub setup_url: Option<(String, String)>,
     pub sums_url: Option<String>,
 }
 
@@ -157,7 +159,7 @@ pub(crate) struct UpdateState {
     /// Ergebnis soll als Meldung erscheinen (manuelle Prüfung)
     pub manual: bool,
     /// Download der neuen Version läuft (Ergebnis: Pfad der geprüften EXE)
-    pub install_rx: Option<Receiver<Result<std::path::PathBuf, String>>>,
+    pub install_rx: Option<Receiver<Result<update::Download, String>>>,
     pub install_error: Option<String>,
 }
 

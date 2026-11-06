@@ -78,6 +78,7 @@ fn fetch_latest_release() -> Result<Option<ReleaseInfo>, String> {
             match name.trim() {
                 "WiFiAnalyzer.exe" => rel.exe_url = Some(url.trim().to_string()),
                 "SHA256SUMS.txt" => rel.sums_url = Some(url.trim().to_string()),
+                n if n.starts_with("WiFiAnalyzer-Setup") && n.ends_with(".exe") => rel.setup_url = Some((n.to_string(), url.trim().to_string())),
                 _ => {}
             }
         }
@@ -89,21 +90,43 @@ fn fetch_latest_release() -> Result<Option<ReleaseInfo>, String> {
     Ok(Some(rel))
 }
 
-/// Neue EXE herunterladen und gegen SHA256SUMS.txt prüfen (blockierend). Liefert den Pfad der geprüften Datei.
-fn download_release(rel: &ReleaseInfo) -> Result<PathBuf, String> {
-    let exe_url = rel.exe_url.clone().ok_or_else(|| t!("Das Release enthält keine WiFiAnalyzer.exe", "The release contains no WiFiAnalyzer.exe").to_string())?;
+/// Wurde die App mit dem Installer eingerichtet? (Deinstallationsprogramm liegt daneben)
+pub fn is_installed() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("unins000.exe").exists()))
+        .unwrap_or(false)
+}
+
+/// Heruntergeladenes Update: entweder eine neue EXE (portable) oder der Installer
+pub(super) enum Download {
+    Exe(PathBuf),
+    Setup(PathBuf),
+}
+
+/// Update herunterladen und gegen SHA256SUMS.txt prüfen (blockierend).
+/// Installierte App -> Installer, portable App -> einzelne EXE.
+fn download_release(rel: &ReleaseInfo) -> Result<Download, String> {
+    let (name, url, setup) = match (&rel.setup_url, is_installed()) {
+        (Some((n, u)), true) => (n.clone(), u.clone(), true),
+        _ => {
+            let u = rel.exe_url.clone().ok_or_else(|| t!("Das Release enthält keine WiFiAnalyzer.exe", "The release contains no WiFiAnalyzer.exe").to_string())?;
+            ("WiFiAnalyzer.exe".to_string(), u, false)
+        }
+    };
     let dir = std::env::temp_dir().join("WifiAnalyzer-update");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let target = dir.join("WiFiAnalyzer.exe");
+    let target = dir.join(&name);
     let _ = std::fs::remove_file(&target);
     let tp = target.display().to_string().replace('\'', "''");
-    let mut script = format!("Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri '{exe_url}' -OutFile '{tp}'; ");
+    let pat = regex_escape(&name);
+    let mut script = format!("Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -Uri '{url}' -OutFile '{tp}'; ");
     if let Some(sums) = &rel.sums_url {
         script.push_str(&format!(
             "$c = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri '{sums}').Content; \
              if ($c -is [byte[]]) {{ $c = [Text.Encoding]::UTF8.GetString($c) }}; \
-             $line = $c -split '\\r?\\n' | Where-Object {{ $_ -match 'WiFiAnalyzer\\.exe\\s*$' }} | Select-Object -First 1; \
-             if (-not $line) {{ throw 'SHA256SUMS: WiFiAnalyzer.exe fehlt / missing' }}; \
+             $line = $c -split '\\r?\\n' | Where-Object {{ $_ -match '\\s{pat}\\s*$' }} | Select-Object -First 1; \
+             if (-not $line) {{ throw 'SHA256SUMS: {name} fehlt / missing' }}; \
              $want = ($line.Trim() -split '\\s+')[0].ToLower(); \
              $have = (Get-FileHash -Algorithm SHA256 -LiteralPath '{tp}').Hash.ToLower(); \
              if ($want -ne $have) {{ throw 'SHA256 stimmt nicht / checksum mismatch' }}; "
@@ -115,10 +138,27 @@ fn download_release(rel: &ReleaseInfo) -> Result<PathBuf, String> {
     if size < 1_000_000 {
         return Err(t!("Download unvollständig", "Download incomplete").into());
     }
-    Ok(target)
+    Ok(if setup { Download::Setup(target) } else { Download::Exe(target) })
 }
 
-/// Laufende EXE gegen die neue tauschen und neu starten.
+fn regex_escape(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c.to_string() } else { format!("\\{c}") }).collect()
+}
+
+/// Installer still ausführen; er schließt die App, aktualisiert sie und startet sie neu (/RELAUNCH).
+/// Eine Installation unter „Programme“ fragt dabei nach Administratorrechten.
+fn run_setup(setup: &PathBuf) -> Result<(), String> {
+    let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+    let per_user = std::env::var_os("LOCALAPPDATA").map_or(true, |l| cur.starts_with(PathBuf::from(l)));
+    let mode = if per_user { "/CURRENTUSER" } else { "/ALLUSERS" };
+    std::process::Command::new(setup)
+        .args(["/SILENT", "/SP-", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH", mode])
+        .spawn()
+        .map_err(|e| tf!("Installer konnte nicht gestartet werden ({e})", "Could not start the installer ({e})"))?;
+    Ok(())
+}
+
+/// Laufende EXE gegen die neue tauschen und neu starten (portable Version).
 /// Windows erlaubt das Umbenennen einer laufenden EXE; die alte wird beim nächsten Start gelöscht.
 fn replace_and_restart(new_exe: &PathBuf) -> Result<(), String> {
     let cur = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -261,7 +301,10 @@ impl WifiApp {
         let Some(rx) = &self.update.install_rx else { return };
         let Ok(res) = rx.try_recv() else { return };
         self.update.install_rx = None;
-        match res.and_then(|path| replace_and_restart(&path)) {
+        match res.and_then(|d| match d {
+            Download::Exe(p) => replace_and_restart(&p),
+            Download::Setup(p) => run_setup(&p),
+        }) {
             Ok(()) => {
                 // Einstellungen sichern, dann beenden – die neue Version startet bereits
                 self.sync_settings();

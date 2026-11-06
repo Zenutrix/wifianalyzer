@@ -49,8 +49,12 @@ Weitere Merkmale:
 
 ### Download & Start
 
-1. Unter [Releases](https://github.com/zenutrix/wifianalyzer/releases/latest) die ZIP-Datei oder `WiFiAnalyzer.exe` laden.
-2. Starten, fertig. Eine Installation ist nicht nötig, Administratorrechte auch nicht.
+1. Unter [Releases](https://github.com/zenutrix/wifianalyzer/releases/latest) **`WiFiAnalyzer-Setup.exe`** laden und starten.
+   Das Setup legt den Programmordner (`%LOCALAPPDATA%\Programs\WiFi Analyzer`), Startmenü- und Desktop-Verknüpfung
+   sowie einen Eintrag unter „Apps“ zum Deinstallieren an – ohne Administratorrechte. Optional „für alle Benutzer“.
+2. Alternativ portable: `WiFiAnalyzer.exe` (oder die ZIP-Datei) laden und direkt starten.
+
+Updates installiert die App auf Wunsch selbst (Installer- oder portable Variante).
 
 **Voraussetzungen:** Windows 10 oder 11 (64 Bit) mit WLAN-Adapter.
 
@@ -139,9 +143,9 @@ no installation.
 **Requirements:** Windows 10/11 (64-bit) with a Wi-Fi adapter. Windows only allows Wi-Fi scans for
 apps with **location access**. The app asks for it on first start and explains which setting is missing.
 
-**Download:** [latest release](https://github.com/zenutrix/wifianalyzer/releases/latest). Just run `WiFiAnalyzer.exe`.
+**Download:** [latest release](https://github.com/zenutrix/wifianalyzer/releases/latest). Run `WiFiAnalyzer-Setup.exe` (no admin rights needed, creates Start menu/desktop shortcuts and an uninstaller) or use the portable `WiFiAnalyzer.exe`.
 
-**Build:** `cargo build --release` (Rust stable, MSVC or GNU toolchain). Package with `tools/package.ps1`.
+**Build:** `cargo build --release` (Rust stable, MSVC or GNU toolchain). Package with `tools/package.ps1` (installer needs [Inno Setup](https://jrsoftware.org/isinfo.php) 6.7+).
 
 **Privacy:** all measurements stay on your PC. The only network access is the vendor database download
 (Wireshark/IEEE) and the optional GitHub update check.
