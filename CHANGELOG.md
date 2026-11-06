@@ -35,6 +35,18 @@ Erste öffentliche Version.
 - Signal-Finder heißt jetzt **AP-Finder**.
 - Unruhige Zeitanzeigen entfernt (Intervall-Auswahl in der Kopfzeile, Spalte „Gesehen“, Scan-Hinweis in der Messung).
 
+### Installation
+- **Installer** (`WiFiAnalyzer-Setup.exe`) im dunklen App-Design. Er legt Programmordner, Startmenü- und Desktop-Verknüpfung sowie einen Eintrag unter „Apps“ an.
+- Installation ohne Adminrechte für den aktuellen Benutzer, optional für alle Benutzer.
+- Updates laufen bei installierter App über den Installer (still, mit Neustart).
+- Die portable `WiFiAnalyzer.exe` gibt es weiterhin.
+
+### Messpunkte pro Raum
+- Während einer Messung **Enter** drücken, Raum/Ort (und optional eine Notiz) eingeben, Enter. Der Wert dieser Stelle wird gemittelt, solange das Fenster offen ist, und als Messpunkt mit Bewertung (Sehr gut / Gut / Ausreichend / Schwach) gespeichert.
+- Liste der Messpunkte unter dem Verlauf: Signal, Bewertung, AP, Kanal, Datenrate, Notiz. Name und Notiz lassen sich nachträglich ändern.
+- Messungen werden automatisch in `Dokumente\WiFi Analyzer` gespeichert und lassen sich wieder öffnen (Liste „Gespeicherte Messungen“).
+- Export als **Bericht für Kunden** (HTML, im Browser als PDF druckbar) mit Zusammenfassung, Verlauf, Tabelle und Hinweisen, als **Liste der Messpunkte** (CSV/Excel) oder mit allen Messwerten.
+
 ### Messung (Walk-Survey) überarbeitet
 - Der Verlauf läuft flüssig mit: Die Linie reicht bis „jetzt“, ein Live-Punkt markiert den aktuellen Wert, Neuzeichnen 10× pro Sekunde während der Messung.
 - Die Zeitachse wächst in festen Stufen (1 / 2 / 5 / 10 min …) statt jede Sekunde neu zu skalieren.

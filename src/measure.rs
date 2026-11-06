@@ -1,10 +1,12 @@
 //! WLAN-Messung ("Walk-Survey"): zeichnet für eine SSID das Signal der Verbindung (1×/s),
 //! den jeweils stärksten AP der SSID (pro Scan) sowie Roams, Abbrüche, Sticky-Client-Phasen
-//! und frei gesetzte Markierungen auf.
+//! und frei gesetzte Markierungen auf. Dazu kommen benannte Messpunkte (Raum/Ort) mit gemitteltem
+//! Wert pro Stelle – für Bericht und Kunde. Messungen lassen sich als Datei speichern und wieder öffnen.
 
 use std::collections::HashSet;
 
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
 
 use crate::ie::BssInfo;
 use crate::model::fmt_mac;
@@ -15,7 +17,7 @@ const STICKY_DB: i32 = 10;
 /// ... wenn der Zustand mindestens so lange (s) anhält
 const STICKY_SECS: f64 = 15.0;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ConnSample {
     pub t: f64,
     pub rssi: i32,
@@ -25,7 +27,7 @@ pub struct ConnSample {
     pub rx_mbps: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BestSample {
     pub t: f64,
     pub rssi: i32,
@@ -33,7 +35,7 @@ pub struct BestSample {
     pub channel: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum EventKind {
     Start,
     Stop,
@@ -44,7 +46,7 @@ pub enum EventKind {
     Marker(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Event {
     /// Sekunden seit Messbeginn
     pub t: f64,
@@ -60,7 +62,7 @@ impl Event {
             EventKind::Disconnect { .. } => crate::t!("Abbruch", "Disconnect"),
             EventKind::Connect { .. } => crate::t!("Verbunden", "Connected"),
             EventKind::Sticky { .. } => "Sticky Client",
-            EventKind::Marker(_) => crate::t!("Markierung", "Marker"),
+            EventKind::Marker(_) => crate::t!("Messpunkt", "Point"),
         }
     }
 
@@ -85,6 +87,113 @@ impl Event {
             EventKind::Marker(text) => text.clone(),
         }
     }
+}
+
+/// Bewertung eines Signalwerts – verständlich für Kunden
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Quality {
+    Excellent,
+    Good,
+    Fair,
+    Weak,
+}
+
+impl Quality {
+    pub fn of(rssi: f64) -> Self {
+        if rssi >= -60.0 {
+            Quality::Excellent
+        } else if rssi >= -67.0 {
+            Quality::Good
+        } else if rssi >= -75.0 {
+            Quality::Fair
+        } else {
+            Quality::Weak
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Quality::Excellent => crate::t!("Sehr gut", "Excellent"),
+            Quality::Good => crate::t!("Gut", "Good"),
+            Quality::Fair => crate::t!("Ausreichend", "Fair"),
+            Quality::Weak => crate::t!("Schwach", "Weak"),
+        }
+    }
+
+    /// Was der Wert praktisch bedeutet
+    pub fn hint(self) -> &'static str {
+        match self {
+            Quality::Excellent => crate::t!("Ideal, auch für Videotelefonie und große Datenmengen", "Ideal, also for video calls and large transfers"),
+            Quality::Good => crate::t!("Stabil für Sprache, Video und normale Nutzung", "Stable for voice, video and normal use"),
+            Quality::Fair => crate::t!("Surfen und E-Mail ok, Telefonie/Video evtl. instabil", "Browsing and e-mail ok, voice/video may be unstable"),
+            Quality::Weak => crate::t!("Abbrüche und langsame Verbindung zu erwarten", "Drop-outs and slow connection to be expected"),
+        }
+    }
+
+    /// RGB für Bericht und Oberfläche
+    pub fn rgb(self) -> (u8, u8, u8) {
+        match self {
+            Quality::Excellent => (26, 127, 55),
+            Quality::Good => (45, 164, 78),
+            Quality::Fair => (191, 135, 0),
+            Quality::Weak => (207, 34, 46),
+        }
+    }
+}
+
+/// Benannter Messpunkt (Raum, Ort) mit dem an dieser Stelle gemittelten Wert
+#[derive(Clone, Serialize, Deserialize)]
+pub struct MeasPoint {
+    pub name: String,
+    #[serde(default)]
+    pub note: String,
+    /// Sekunden seit Messbeginn (Zeitpunkt des Speicherns)
+    pub t: f64,
+    /// Ø Signal in dBm über die Zeit am Punkt
+    pub rssi: Option<f64>,
+    pub min: Option<i32>,
+    pub max: Option<i32>,
+    pub samples: usize,
+    /// Wert stammt aus dem Scan (stärkster AP der SSID), weil nicht verbunden
+    pub from_scan: bool,
+    /// verbundener (bzw. stärkster) AP
+    pub bssid: Option<[u8; 6]>,
+    pub channel: u32,
+    pub tx_mbps: f64,
+    /// stärkster AP der SSID laut letztem Scan
+    pub best_bssid: Option<[u8; 6]>,
+    pub best_rssi: Option<i32>,
+    /// Anzahl APs der SSID, die an dieser Stelle zu sehen sind
+    pub aps_visible: usize,
+}
+
+impl MeasPoint {
+    pub fn quality(&self) -> Option<Quality> {
+        self.rssi.map(Quality::of)
+    }
+}
+
+/// Was die App beim Erfassen eines Punktes aus dem aktuellen Scan beisteuert
+pub struct ScanContext {
+    /// stärkster AP der SSID: BSSID, RSSI, Kanal
+    pub best: Option<([u8; 6], i32, u32)>,
+    pub aps_visible: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SurveyFile {
+    app: String,
+    format: u32,
+    app_version: String,
+    ssid: String,
+    /// RFC 3339
+    started: String,
+    duration: f64,
+    conn: Vec<ConnSample>,
+    best: Vec<BestSample>,
+    events: Vec<Event>,
+    #[serde(default)]
+    points: Vec<MeasPoint>,
 }
 
 #[derive(Default)]
@@ -116,6 +225,7 @@ pub struct Measurement {
     pub conn: Vec<ConnSample>,
     pub best: Vec<BestSample>,
     pub events: Vec<Event>,
+    pub points: Vec<MeasPoint>,
     connected: bool,
     last: Option<ConnSample>,
     sticky_since: Option<f64>,
@@ -133,6 +243,7 @@ impl Measurement {
             conn: Vec::new(),
             best: Vec::new(),
             events: vec![Event { t: 0.0, kind: EventKind::Start }],
+            points: Vec::new(),
             connected: false,
             last: None,
             sticky_since: None,
@@ -157,12 +268,132 @@ impl Measurement {
         }
     }
 
+    #[cfg(test)]
     pub fn add_marker(&mut self, now_t: f64, text: &str) {
         let text = text.trim();
         let text = if text.is_empty() { crate::tf!("Markierung {}", "Marker {}", self.marker_count() + 1) } else { text.to_string() };
         self.events.push(Event { t: self.rel(now_t), kind: EventKind::Marker(text) });
     }
 
+    /// Messpunkt speichern. `since_t` = Programmzeit, seit der der Benutzer an der Stelle steht
+    /// (Dialog geöffnet). Gemittelt werden die Werte ab kurz davor; waren es zu wenige,
+    /// die letzten paar Werte.
+    pub fn add_point(&mut self, now_t: f64, since_t: f64, name: &str, note: &str, scan: &ScanContext) -> &MeasPoint {
+        let t = self.rel(now_t);
+        let since = self.rel(since_t) - 1.0;
+        let name = name.trim();
+        let name = if name.is_empty() { crate::tf!("Messpunkt {}", "Point {}", self.points.len() + 1) } else { name.to_string() };
+        let mut p = MeasPoint {
+            name: name.clone(),
+            note: note.trim().to_string(),
+            t,
+            rssi: None,
+            min: None,
+            max: None,
+            samples: 0,
+            from_scan: false,
+            bssid: None,
+            channel: 0,
+            tx_mbps: 0.0,
+            best_bssid: scan.best.map(|b| b.0),
+            best_rssi: scan.best.map(|b| b.1),
+            aps_visible: scan.aps_visible,
+        };
+
+        let recent_conn: Vec<&ConnSample> = self.conn.iter().filter(|c| t - c.t < 30.0).collect();
+        let mut conn: Vec<&ConnSample> = recent_conn.iter().copied().filter(|c| c.t >= since).collect();
+        if conn.len() < 3 {
+            conn = recent_conn.iter().rev().take(3).rev().copied().collect();
+        }
+        let vals: Vec<i32> = if self.connected && !conn.is_empty() {
+            let last = conn[conn.len() - 1];
+            p.bssid = Some(last.bssid);
+            p.channel = last.channel;
+            p.tx_mbps = conn.iter().map(|c| c.tx_mbps).sum::<f64>() / conn.len() as f64;
+            conn.iter().map(|c| c.rssi).collect()
+        } else {
+            // ohne Verbindung: Scan-Werte des stärksten APs (mindestens der letzte Scan)
+            p.from_scan = true;
+            let recent: Vec<&BestSample> = self.best.iter().filter(|b| t - b.t < 30.0).collect();
+            let mut best: Vec<&BestSample> = recent.iter().copied().filter(|b| b.t >= since).collect();
+            if best.is_empty() {
+                best = recent.last().copied().into_iter().collect();
+            }
+            if let Some(last) = best.last() {
+                p.bssid = Some(last.bssid);
+                p.channel = last.channel;
+                best.iter().map(|b| b.rssi).collect()
+            } else if let Some((b, r, ch)) = scan.best {
+                p.bssid = Some(b);
+                p.channel = ch;
+                vec![r]
+            } else {
+                Vec::new()
+            }
+        };
+        if !vals.is_empty() {
+            p.rssi = Some(vals.iter().map(|v| *v as f64).sum::<f64>() / vals.len() as f64);
+            p.min = vals.iter().copied().min();
+            p.max = vals.iter().copied().max();
+            p.samples = vals.len();
+        }
+        self.events.push(Event { t, kind: EventKind::Marker(name) });
+        self.points.push(p);
+        self.points.last().expect("eben eingefügt")
+    }
+
+    pub fn remove_point(&mut self, idx: usize) {
+        if idx < self.points.len() {
+            let p = self.points.remove(idx);
+            // zugehörige Markierung im Verlauf ebenfalls entfernen
+            if let Some(i) = self.events.iter().position(|e| e.t == p.t && matches!(&e.kind, EventKind::Marker(n) if *n == p.name)) {
+                self.events.remove(i);
+            }
+        }
+    }
+
+    /// Messung als JSON (Dateiendung .wifisurvey)
+    pub fn to_file(&self, now_t: f64) -> String {
+        let f = SurveyFile {
+            app: "WiFi Analyzer".into(),
+            format: 1,
+            app_version: env!("CARGO_PKG_VERSION").into(),
+            ssid: self.ssid.clone(),
+            started: self.started_wall.to_rfc3339(),
+            duration: self.elapsed(now_t),
+            conn: self.conn.clone(),
+            best: self.best.clone(),
+            events: self.events.clone(),
+            points: self.points.clone(),
+        };
+        serde_json::to_string_pretty(&f).unwrap_or_default()
+    }
+
+    /// Gespeicherte Messung öffnen (immer beendet – zum Ansehen, Ergänzen der Notizen und Exportieren)
+    pub fn from_file(text: &str) -> Result<Self, String> {
+        let f: SurveyFile = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
+        if f.app != "WiFi Analyzer" {
+            return Err(crate::t!("Keine WiFi-Analyzer-Messung", "Not a WiFi Analyzer survey").into());
+        }
+        let started = DateTime::parse_from_rfc3339(&f.started).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now());
+        Ok(Self {
+            ssid: f.ssid,
+            running: false,
+            started_wall: started,
+            t0: 0.0,
+            t_end: Some(f.duration),
+            conn: f.conn,
+            best: f.best,
+            events: f.events,
+            points: f.points,
+            connected: false,
+            last: None,
+            sticky_since: None,
+            sticky_reported: false,
+        })
+    }
+
+    #[cfg(test)]
     pub fn marker_count(&self) -> usize {
         self.events.iter().filter(|e| matches!(e.kind, EventKind::Marker(_))).count()
     }
@@ -421,6 +652,54 @@ mod tests {
         assert_eq!((s.samples, s.min, s.max), (2, Some(-80), Some(-60)));
         assert_eq!(s.duration, 6.0);
         assert!(m.events.iter().any(|e| matches!(&e.kind, EventKind::Marker(t) if t == "Raum 1.03")));
-        assert!(m.to_csv().contains("Markierung"));
+        assert!(m.to_csv().contains("Messpunkt"));
+    }
+
+    #[test]
+    fn point_averages_samples_at_the_spot_and_roundtrips() {
+        let mut m = Measurement::new("Net".into(), 0.0);
+        let ctx = ScanContext { best: Some((B, -50, 36)), aps_visible: 3 };
+        // unterwegs schwach, am Punkt (Dialog ab t=10) stark
+        for t in 1..=9 {
+            m.on_conn(t as f64, Some(&conn("Net", A, -80)));
+        }
+        for t in 10..=14 {
+            m.on_conn(t as f64, Some(&conn("Net", A, -60)));
+        }
+        let p = m.add_point(14.0, 10.0, " Büro 1.03 ", "", &ctx).clone();
+        assert_eq!(p.name, "Büro 1.03");
+        assert!(!p.from_scan);
+        // Werte ab 9 s (1 s Vorlauf): einmal -80, dann 5× -60
+        assert_eq!(p.samples, 6);
+        assert!((p.rssi.unwrap() - (-63.333)).abs() < 0.01);
+        assert_eq!((p.min, p.max, p.aps_visible, p.best_rssi), (Some(-80), Some(-60), 3, Some(-50)));
+        assert_eq!(p.quality(), Some(Quality::Good));
+        assert_eq!(m.marker_count(), 1);
+
+        m.stop(20.0);
+        let back = Measurement::from_file(&m.to_file(20.0)).unwrap();
+        assert_eq!(back.points.len(), 1);
+        assert_eq!(back.points[0].name, "Büro 1.03");
+        assert_eq!(back.conn.len(), m.conn.len());
+        assert!(!back.running);
+        assert_eq!(back.elapsed(999.0), 20.0);
+
+        m.remove_point(0);
+        assert!(m.points.is_empty());
+        assert_eq!(m.marker_count(), 0);
+    }
+
+    #[test]
+    fn point_without_connection_uses_scan() {
+        crate::i18n::set(crate::i18n::Lang::De);
+        let mut m = Measurement::new("Net".into(), 0.0);
+        m.on_scan(2.0, &[bss("Net", A, -70)]);
+        m.on_scan(4.0, &[bss("Net", A, -72)]);
+        let ctx = ScanContext { best: Some((A, -72, 36)), aps_visible: 1 };
+        let p = m.add_point(5.0, 4.5, "", "", &ctx).clone();
+        assert!(p.from_scan);
+        assert_eq!(p.name, "Messpunkt 1");
+        assert_eq!(p.rssi, Some(-72.0));
+        assert_eq!(p.quality(), Some(Quality::Fair));
     }
 }

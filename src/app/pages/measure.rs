@@ -23,22 +23,52 @@ impl WifiApp {
         let ssid = self.meas.as_ref().map(|m| m.ssid.clone()).or_else(|| self.meas_ssid.clone()).unwrap_or_default();
         let connected_ssid = self.conn.as_ref().map(|c| c.ssid.clone());
 
-        let (mut start, mut stop, mut discard, mut export, mut add_marker) = (false, false, false, false, false);
+        // Enter = Messpunkt erfassen (solange nicht gerade in ein Feld getippt wird)
+        if running && self.meas_point.is_none() && !ui.ctx().wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            self.open_point_dialog();
+        }
+
+        let (mut start, mut stop, mut discard, mut add_point) = (false, false, false, false);
+        let (mut export_all, mut export_points, mut export_report, mut save_as, mut open) = (false, false, false, false, false);
         let mut new_ssid = None;
         let mut follow = self.meas_follow;
+        let has_meas = self.meas.is_some();
+        let confirm = self.meas_discard_confirm;
         page_header(
             ui,
             t!("Messung", "Survey"),
             t!(
-                "Walk-Survey: Signal der Verbindung jede Sekunde, Roams, Abbrüche und Markierungen",
-                "Walk survey: connection signal every second, roams, disconnects and markers"
+                "Walk-Survey mit Messpunkten pro Raum: Signal, Roams, Abbrüche – Bericht für Kunden",
+                "Walk survey with points per room: signal, roams, disconnects – report for customers"
             ),
             |ui| {
-                if self.meas.is_some() && ui.button(t!("💾 CSV", "💾 CSV")).on_hover_text(t!("Messwerte und Ereignisse exportieren", "Export samples and events")).clicked() {
-                    export = true;
+                if has_meas {
+                    ui.menu_button(t!("⬇ Export", "⬇ Export"), |ui| {
+                        if ui.button(t!("📄 Bericht für Kunden (HTML / PDF)", "📄 Customer report (HTML / PDF)")).clicked() {
+                            export_report = true;
+                            ui.close_menu();
+                        }
+                        if ui.button(t!("📋 Messpunkte als Liste (CSV / Excel)", "📋 Points as list (CSV / Excel)")).clicked() {
+                            export_points = true;
+                            ui.close_menu();
+                        }
+                        if ui.button(t!("📈 Alle Messwerte (CSV / Excel)", "📈 All samples (CSV / Excel)")).clicked() {
+                            export_all = true;
+                            ui.close_menu();
+                        }
+                    });
+                    if ui.button(t!("💾 Speichern unter …", "💾 Save as …")).on_hover_text(t!("Wird ohnehin automatisch gespeichert", "Saved automatically anyway")).clicked() {
+                        save_as = true;
+                    }
                 }
-                if !running && self.meas.is_some() && ui.button(t!("🗑 Verwerfen", "🗑 Discard")).clicked() {
-                    discard = true;
+                if !running && ui.button(t!("📂 Öffnen", "📂 Open")).on_hover_text(t!("Gespeicherte Messung öffnen", "Open a saved survey")).clicked() {
+                    open = true;
+                }
+                if !running && has_meas {
+                    let label = if confirm { t!("🗑 Wirklich schließen?", "🗑 Really close?") } else { t!("✖ Schließen", "✖ Close") };
+                    if ui.button(label).on_hover_text(t!("Die Messung bleibt gespeichert", "The survey stays saved")).clicked() {
+                        discard = true;
+                    }
                 }
                 if running {
                     if primary_button(ui, t!("⏹ Messung stoppen", "⏹ Stop survey"), p.danger).clicked() {
@@ -70,20 +100,44 @@ impl WifiApp {
             self.meas_ssid = Some(s);
         }
 
-        // Markierungen
+        // Messpunkte
         ui.horizontal(|ui| {
-            let te = ui.add_enabled(
-                running,
-                egui::TextEdit::singleline(&mut self.meas_marker).hint_text(t!("Ort / Notiz, z. B. Raum 1.03 – Enter setzt die Markierung", "Location / note, e.g. room 1.03 – Enter sets the marker")).desired_width(360.0),
-            );
-            let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.add_enabled(running, egui::Button::new(t!("📍 Markierung setzen", "📍 Set marker"))).clicked() || (running && enter) {
-                add_marker = true;
+            let btn = egui::Button::new(RichText::new(t!("📍 Messpunkt erfassen", "📍 Add measurement point")).strong().color(if running { Color32::WHITE } else { p.weak }))
+                .fill(if running { p.purple } else { p.surface2 })
+                .min_size(egui::Vec2::new(0.0, 28.0));
+            if ui.add_enabled(running, btn).clicked() {
+                add_point = true;
             }
+            ui.label(
+                RichText::new(if running {
+                    t!("oder Enter drücken – Raum eingeben – Enter", "or press Enter – type the room – Enter")
+                } else {
+                    t!("Messpunkte lassen sich während einer laufenden Messung erfassen", "Points can be added while a survey is running")
+                })
+                .color(p.weak),
+            );
             ui.separator();
             ui.checkbox(&mut follow, t!("Nur letzte 5 min", "Last 5 min only"));
+            if let Some(f) = &self.meas_file {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let name = f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                    let (txt, col) = match (&self.meas_save_error, self.meas_dirty_since.is_some()) {
+                        (Some(_), _) => (tf!("⚠ {name} – nicht gespeichert", "⚠ {name} – not saved"), p.danger),
+                        (None, true) => (tf!("💾 {name} …", "💾 {name} …"), p.weak),
+                        (None, false) => (tf!("✔ {name}", "✔ {name}"), p.weak),
+                    };
+                    if ui.link(RichText::new(txt).small().color(col)).on_hover_text(f.display().to_string()).clicked() {
+                        if let Some(dir) = f.parent() {
+                            crate::app::survey::open_path(dir);
+                        }
+                    }
+                });
+            }
         });
         self.meas_follow = follow;
+        if !discard {
+            self.meas_discard_confirm = false;
+        }
 
         if start {
             self.start_measurement(ssid.clone());
@@ -92,17 +146,35 @@ impl WifiApp {
             self.stop_measurement();
         }
         if discard {
-            self.meas = None;
-            self.apply_scan_interval();
+            // ohne Messpunkte direkt schließen, sonst erst nach Bestätigung (gespeichert ist sie ohnehin)
+            let has_points = self.meas.as_ref().is_some_and(|m| !m.points.is_empty());
+            if confirm || !has_points {
+                self.autosave_survey(true);
+                self.meas = None;
+                self.meas_file = None;
+                self.meas_discard_confirm = false;
+                self.apply_scan_interval();
+            } else {
+                self.meas_discard_confirm = true;
+            }
         }
-        if export {
+        if add_point {
+            self.open_point_dialog();
+        }
+        if export_all {
             self.export_measurement();
         }
-        if add_marker {
-            if let Some(m) = &mut self.meas {
-                m.add_marker(t_now, &self.meas_marker);
-            }
-            self.meas_marker.clear();
+        if export_points {
+            self.export_points_csv();
+        }
+        if export_report {
+            self.export_report();
+        }
+        if save_as {
+            self.save_survey_as();
+        }
+        if open {
+            self.open_survey_dialog();
         }
         ui.add_space(8.0);
 
@@ -181,7 +253,7 @@ impl WifiApp {
                             kpi(ui, t!("Sticky-Phasen", "Sticky phases"), &s.sticky.to_string(), "", if s.sticky > 0 { p.warning } else { p.text }, w);
                             kpi(ui, t!("APs genutzt", "APs used"), &s.aps_used.to_string(), "", p.text, w);
                             kpi(ui, t!("Messwerte", "Samples"), &s.samples.to_string(), "", p.text, w);
-                            kpi(ui, t!("Markierungen", "Markers"), &m.marker_count().to_string(), "", p.text, w);
+                            kpi(ui, t!("Messpunkte", "Points"), &m.points.len().to_string(), "", p.purple, w);
                         });
                     });
                 }
@@ -189,9 +261,9 @@ impl WifiApp {
                     card(ui, Some(t!("So funktioniert die Messung", "How the survey works")), |ui| {
                         ui.set_max_width(640.0);
                         ui.label(t!("1.  SSID wählen – am besten die, mit der der Laptop verbunden ist (🔗)", "1.  Choose the SSID – ideally the one the laptop is connected to (🔗)"));
-                        ui.label(t!("2.  „Messung starten“ und mit dem Laptop die Fläche ablaufen", "2.  Click \"Start survey\" and walk the area with the laptop"));
-                        ui.label(t!("3.  An wichtigen Stellen eine Markierung setzen (Raum, Stockwerk …)", "3.  Set markers at important spots (room, floor …)"));
-                        ui.label(t!("4.  Stoppen – Verlauf, Roams und Statistik bleiben erhalten, Export als CSV", "4.  Stop – history, roams and statistics are kept, export as CSV"));
+                        ui.label(t!("2.  „Messung starten“ und mit dem Laptop die Räume ablaufen", "2.  Click \"Start survey\" and walk through the rooms with the laptop"));
+                        ui.label(t!("3.  In jedem Raum Enter drücken, Raum eingeben, Enter – das ist ein Messpunkt", "3.  In each room press Enter, type the room, Enter – that's a measurement point"));
+                        ui.label(t!("4.  Stoppen – alles wird automatisch gespeichert; Export als Bericht (PDF) oder Liste (Excel)", "4.  Stop – everything is saved automatically; export as report (PDF) or list (Excel)"));
                         ui.add_space(6.0);
                         ui.label(
                             RichText::new(t!(
@@ -206,6 +278,14 @@ impl WifiApp {
             }
         });
 
+        if self.meas.is_none() {
+            ui.add_space(10.0);
+            card(ui, None, |ui| {
+                ui.set_max_width(640.0);
+                self.recent_surveys_ui(ui);
+            });
+            return;
+        }
         let Some(m) = &self.meas else { return };
         ui.add_space(8.0);
 
@@ -287,7 +367,7 @@ impl WifiApp {
             (Some(_), Some(c)) => ap_color(&c.bssid),
             _ => p.accent,
         };
-        let plot_h = (ui.available_height() * 0.62).max(180.0);
+        let plot_h = (ui.available_height() * 0.5).max(180.0);
         Plot::new(("meas_plot", self.meas_follow))
             .height(plot_h)
             .legend(Legend::default().position(Corner::LeftBottom))
@@ -346,8 +426,27 @@ impl WifiApp {
                 }
             });
 
-        // ---------- Ereignisliste ----------
+        // ---------- Messpunkte | Ereignisse ----------
         ui.add_space(6.0);
+        let h = ui.available_height();
+        let w = ui.available_width();
+        let left_w = (w * 0.62).max(420.0).min(w - 260.0);
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(egui::Vec2::new(left_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_min_size(egui::Vec2::new(left_w, h));
+                self.points_table(ui);
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.set_min_height(h);
+                self.survey_events(ui);
+            });
+        });
+    }
+
+    fn survey_events(&self, ui: &mut Ui) {
+        let p = pal(ui);
+        let Some(m) = &self.meas else { return };
         ui.label(RichText::new(t!("Ereignisse der Messung", "Survey events")).strong().color(p.text));
         let wall = |t: f64| (m.started_wall + chrono::Duration::milliseconds((t * 1000.0) as i64)).format("%H:%M:%S").to_string();
         egui::ScrollArea::vertical().id_salt("meas_events").auto_shrink(false).show(ui, |ui| {

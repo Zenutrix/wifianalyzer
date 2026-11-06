@@ -19,6 +19,8 @@ egui_plot = "0.29.0"
 egui_extras = "0.29.1"
 chrono = "0.4"
 rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dependencies.windows]
 version = "0.58"
@@ -37,6 +39,8 @@ features = [
     "Win32_System_Diagnostics_Debug",
     "Win32_System_Registry",
     "Win32_Globalization",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
 ]
 
 [build-dependencies]

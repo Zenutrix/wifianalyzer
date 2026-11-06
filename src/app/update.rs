@@ -99,7 +99,7 @@ pub fn is_installed() -> bool {
 }
 
 /// Heruntergeladenes Update: entweder eine neue EXE (portable) oder der Installer
-pub(super) enum Download {
+pub(crate) enum Download {
     Exe(PathBuf),
     Setup(PathBuf),
 }

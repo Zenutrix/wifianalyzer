@@ -5,6 +5,7 @@ mod inspector;
 mod pages;
 mod settings_ui;
 mod shell;
+mod survey;
 mod update;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -211,7 +212,15 @@ pub struct WifiApp {
 
     meas: Option<Measurement>,
     meas_ssid: Option<String>,
-    meas_marker: String,
+    /// offener Dialog „Messpunkt erfassen“
+    meas_point: Option<survey::PointDraft>,
+    /// Datei der aktuellen Messung (automatisch gespeichert)
+    meas_file: Option<std::path::PathBuf>,
+    meas_dirty_since: Option<Instant>,
+    meas_last_save: Option<Instant>,
+    meas_save_error: Option<String>,
+    meas_discard_confirm: bool,
+    survey_recent: Option<(Instant, Vec<survey::RecentSurvey>)>,
     meas_follow: bool,
 
     splash_done: bool,
@@ -282,7 +291,13 @@ impl WifiApp {
             findings_filter: [true, true, true],
             meas: None,
             meas_ssid: None,
-            meas_marker: String::new(),
+            meas_point: None,
+            meas_file: None,
+            meas_dirty_since: None,
+            meas_last_save: None,
+            meas_save_error: None,
+            meas_discard_confirm: false,
+            survey_recent: None,
             meas_follow: false,
             splash_done: false,
             splash_progress: 0.0,
@@ -725,6 +740,12 @@ impl WifiApp {
     }
 
     fn start_measurement(&mut self, ssid: String) {
+        // vorherige Messung sichern, dann neu beginnen (eigene Datei)
+        self.autosave_survey(true);
+        self.meas_file = None;
+        self.meas_dirty_since = None;
+        self.meas_last_save = None;
+        self.meas_point = None;
         self.meas_ssid = Some(ssid.clone());
         self.meas = Some(Measurement::new(ssid.clone(), self.now_t()));
         self.add_log(Sev::Info, tf!("Messung gestartet: {ssid}", "Measurement started: {ssid}"));
@@ -740,6 +761,8 @@ impl WifiApp {
             let ssid = m.ssid.clone();
             self.add_log(Sev::Info, tf!("Messung beendet: {ssid}", "Survey stopped: {ssid}"));
         }
+        self.meas_point = None;
+        self.autosave_survey(true);
         self.apply_scan_interval();
     }
 
@@ -902,7 +925,8 @@ impl WifiApp {
             }
         }
         if esc {
-            if self.show_settings || self.show_about || self.show_update || self.show_whats_new {
+            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.meas_point.is_some() {
+                self.meas_point = None;
                 self.show_settings = false;
                 self.show_about = false;
                 self.show_update = false;
@@ -955,6 +979,8 @@ impl eframe::App for WifiApp {
         self.about_window(ctx);
         self.update_window(ctx);
         self.whats_new_window(ctx);
+        self.point_dialog(ctx);
+        self.autosave_survey(false);
         self.poll_install(ctx);
         self.toasts(ctx);
         self.sync_settings();
@@ -962,6 +988,7 @@ impl eframe::App for WifiApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.autosave_survey(true);
         self.sync_settings();
         self.save_settings();
     }
