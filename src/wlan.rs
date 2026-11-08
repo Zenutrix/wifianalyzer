@@ -365,18 +365,26 @@ pub fn spawn(ctx: egui::Context) -> ScannerHandle {
     std::thread::Builder::new()
         .name("wlan-scanner".into())
         .spawn(move || {
-            let wlan = match Wlan::open() {
-                Ok(w) => w,
-                Err(code) => {
-                    let _ = ev_tx.send(ScanMsg::Scan(ScanEvent {
-                        interfaces: vec![],
-                        iface: None,
-                        bss: None,
-                        error: Some(error_text(code)),
-                        error_code: code,
-                    }));
-                    ctx.request_repaint();
-                    return;
+            // WLAN-Dienst evtl. (noch) nicht gestartet: Fehler melden und alle 3 s erneut versuchen
+            let wlan = loop {
+                match Wlan::open() {
+                    Ok(w) => break w,
+                    Err(code) => {
+                        let sent = ev_tx.send(ScanMsg::Scan(ScanEvent {
+                            interfaces: vec![],
+                            iface: None,
+                            bss: None,
+                            error: Some(error_text(code)),
+                            error_code: code,
+                        }));
+                        ctx.request_repaint();
+                        if sent.is_err() {
+                            return;
+                        }
+                        if let Err(RecvTimeoutError::Disconnected) = cmd_rx.recv_timeout(Duration::from_secs(3)) {
+                            return;
+                        }
+                    }
                 }
             };
             let mut iface: Option<u128> = wlan.interfaces().first().map(|i| i.guid);

@@ -118,10 +118,17 @@ fn download_release(rel: &ReleaseInfo) -> Result<Download, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let target = dir.join(&name);
     let _ = std::fs::remove_file(&target);
-    let tp = target.display().to_string().replace('\'', "''");
-    let pat = regex_escape(&name);
+    // alle Werte von GitHub landen in PowerShell-Strings in einfachen Anführungszeichen -> maskieren
+    let q = |s: &str| s.replace('\'', "''");
+    let tp = q(&target.display().to_string());
+    let pat = q(&regex_escape(&name));
+    let url = q(&url);
+    let sums = q(rel.sums_url.as_deref().ok_or_else(|| {
+        t!("Das Release enthält keine Prüfsummen (SHA256SUMS.txt) – Update abgebrochen", "The release has no checksums (SHA256SUMS.txt) – update cancelled").to_string()
+    })?);
+    let name = q(&name);
     let mut script = format!("Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -Uri '{url}' -OutFile '{tp}'; ");
-    if let Some(sums) = &rel.sums_url {
+    {
         script.push_str(&format!(
             "$c = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri '{sums}').Content; \
              if ($c -is [byte[]]) {{ $c = [Text.Encoding]::UTF8.GetString($c) }}; \
@@ -151,8 +158,21 @@ fn run_setup(setup: &PathBuf) -> Result<(), String> {
     let cur = std::env::current_exe().map_err(|e| e.to_string())?;
     let per_user = std::env::var_os("LOCALAPPDATA").map_or(true, |l| cur.starts_with(PathBuf::from(l)));
     let mode = if per_user { "/CURRENTUSER" } else { "/ALLUSERS" };
-    std::process::Command::new(setup)
-        .args(["/SILENT", "/SP-", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH", mode])
+    let q = |p: &PathBuf| p.display().to_string().replace('\'', "''");
+    // Unsichtbarer Wächter: wartet auf den Installer; endet er mit Fehler (oder wurde die
+    // Administrator-Abfrage abgebrochen), wird die bisherige Version wieder gestartet.
+    // Bewusst WaitForExit statt „Start-Process -Wait“: Letzteres wartet auf den ganzen
+    // Prozessbaum – also auch auf die vom Installer neu gestartete App.
+    let script = format!(
+        "$p = Start-Process -FilePath '{}' -ArgumentList '/SILENT','/SP-','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/RELAUNCH','{mode}' -PassThru -ErrorAction SilentlyContinue; \
+         $ok = $false; if ($p) {{ $null = $p.Handle; $p.WaitForExit(); $ok = ($p.ExitCode -eq 0) }}; \
+         if (-not $ok) {{ Start-Sleep -Milliseconds 500; Start-Process -FilePath '{}' }}",
+        q(setup),
+        q(&cur)
+    );
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", &script])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
         .spawn()
         .map_err(|e| tf!("Installer konnte nicht gestartet werden ({e})", "Could not start the installer ({e})"))?;
     Ok(())
@@ -246,7 +266,8 @@ impl WifiApp {
             None => self.start.elapsed() > Duration::from_secs(5),
             Some(t) => t.elapsed() > Duration::from_secs(6 * 3600),
         };
-        if self.settings.check_updates && due {
+        // im Demo-Modus nicht automatisch nach Updates suchen
+        if self.settings.check_updates && due && !crate::demo::enabled() {
             self.start_update_check(ctx, false);
         }
     }
@@ -301,14 +322,15 @@ impl WifiApp {
         let Some(rx) = &self.update.install_rx else { return };
         let Ok(res) = rx.try_recv() else { return };
         self.update.install_rx = None;
+        // vor dem Start der neuen Version sichern, damit sie die aktuellen Einstellungen liest
+        self.sync_settings();
+        self.save_settings();
         match res.and_then(|d| match d {
             Download::Exe(p) => replace_and_restart(&p),
             Download::Setup(p) => run_setup(&p),
         }) {
             Ok(()) => {
-                // Einstellungen sichern, dann beenden – die neue Version startet bereits
-                self.sync_settings();
-                self.save_settings();
+                // beenden – die neue Version bzw. der Installer läuft bereits
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             Err(e) => self.update.install_error = Some(e),
@@ -372,7 +394,7 @@ impl WifiApp {
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    let can = rel.exe_url.is_some() && !installing;
+                    let can = (rel.exe_url.is_some() || (rel.setup_url.is_some() && is_installed())) && !installing;
                     ui.add_enabled_ui(can, |ui| {
                         if primary_button(ui, t!("⬆ Jetzt aktualisieren", "⬆ Update now"), p.accent).clicked() {
                             install = true;

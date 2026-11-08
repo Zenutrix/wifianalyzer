@@ -92,6 +92,10 @@ impl Settings {
             self.last_version
         );
         let _ = std::fs::create_dir_all(app_dir());
-        let _ = std::fs::write(path(), text);
+        // erst in eine temporäre Datei, dann umbenennen – nie eine halb geschriebene settings.ini
+        let tmp = path().with_extension("ini.tmp");
+        if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, path()).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
 }

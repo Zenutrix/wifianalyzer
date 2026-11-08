@@ -54,7 +54,7 @@ Erste öffentliche Version.
 - **Demo-Modus** (`--demo`) mit erfundener WLAN-Umgebung für Präsentationen und Screenshots.
 
 ### Website
-- Neue Website mit Screenshots, Funktionsübersicht, Download (Installer und portable) und FAQ – ohne externe Schriften oder Skripte.
+- Neue Website mit Screenshots, Funktionsübersicht, Detail-Abschnitten, Hell/Dunkel-Vergleich, Bildergalerie mit Großansicht, Technik-Übersicht, Download (Installer und portable) und FAQ – ohne externe Schriften, Skripte oder Abfragen.
 
 ### Messung (Walk-Survey) überarbeitet
 - Der Verlauf läuft flüssig mit: Die Linie reicht bis „jetzt“, ein Live-Punkt markiert den aktuellen Wert, Neuzeichnen 10× pro Sekunde während der Messung.
@@ -66,6 +66,14 @@ Erste öffentliche Version.
 ### Behoben
 - Einstellungsdateien mit UTF-8-BOM wurden nicht korrekt gelesen.
 - Unverständlicher Fehlercode bei ausgeschaltetem WLAN.
+- Messungen mit gleicher SSID innerhalb derselben Minute überschrieben sich gegenseitig – jetzt „(2)“, „(3)“ …
+- CSV „Alle Messwerte“: Spalten Uhrzeit/Typ waren vertauscht; Zeiten mit Dezimalkomma für Excel.
+- CSV-Export entschärft Formeln in SSIDs (Schutz vor manipulierten Netzwerknamen).
+- Umbenannte Messpunkte werden auch im Verlauf umbenannt.
+- Der gespeicherte Wert eines Messpunkts entspricht dem im Dialog angezeigten.
+- Updates: Prüfsumme ist Pflicht; schlägt der Installer fehl oder wird die Administrator-Abfrage abgebrochen, startet die bisherige Version wieder; Neustart nach dem Update als normaler Benutzer.
+- Scanner versucht es erneut, wenn der WLAN-Dienst beim Start noch nicht lief.
+- Einstellungen werden sicher (atomar) gespeichert; der Demo-Modus verändert keine Einstellungen.
 - Das Standort-Symbol in der Taskleiste blinkte bei jedem Scan auf, wodurch die Taskleiste ständig sprang. Es bleibt jetzt ruhig stehen, solange die App läuft.
 
 ## [1.3.0] – 2026-10-30

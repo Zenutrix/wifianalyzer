@@ -302,8 +302,8 @@ impl Measurement {
 
         let recent_conn: Vec<&ConnSample> = self.conn.iter().filter(|c| t - c.t < 30.0).collect();
         let mut conn: Vec<&ConnSample> = recent_conn.iter().copied().filter(|c| c.t >= since).collect();
-        if conn.len() < 3 {
-            conn = recent_conn.iter().rev().take(3).rev().copied().collect();
+        if conn.is_empty() {
+            conn = recent_conn.last().copied().into_iter().collect();
         }
         let vals: Vec<i32> = if self.connected && !conn.is_empty() {
             let last = conn[conn.len() - 1];
@@ -346,9 +346,23 @@ impl Measurement {
         if idx < self.points.len() {
             let p = self.points.remove(idx);
             // zugehörige Markierung im Verlauf ebenfalls entfernen
-            if let Some(i) = self.events.iter().position(|e| e.t == p.t && matches!(&e.kind, EventKind::Marker(n) if *n == p.name)) {
+            if let Some(i) = self.marker_index(p.t) {
                 self.events.remove(i);
             }
+        }
+    }
+
+    /// Markierung eines Messpunkts im Verlauf (gleicher Zeitpunkt)
+    fn marker_index(&self, t: f64) -> Option<usize> {
+        self.events.iter().position(|e| e.t == t && matches!(e.kind, EventKind::Marker(_)))
+    }
+
+    /// Nach dem Umbenennen eines Messpunkts die Beschriftung im Verlauf anpassen
+    pub fn sync_point_marker(&mut self, idx: usize) {
+        let Some(p) = self.points.get(idx) else { return };
+        let (t, name) = (p.t, p.name.clone());
+        if let Some(i) = self.marker_index(t) {
+            self.events[i].kind = EventKind::Marker(name);
         }
     }
 
@@ -526,15 +540,17 @@ impl Measurement {
     /// CSV (Semikolon, Excel-tauglich): alle Messwerte und Ereignisse zeitlich sortiert
     pub fn to_csv(&self) -> String {
         let wall = |t: f64| (self.started_wall + chrono::Duration::milliseconds((t * 1000.0) as i64)).format("%H:%M:%S").to_string();
+        // Dezimalkomma, damit Excel (deutsch) Zeiten nicht als Datum liest
+        let dec = |t: f64| format!("{t:.1}").replace('.', ",");
         let mut rows: Vec<(f64, String)> = Vec::new();
         for c in &self.conn {
             rows.push((
                 c.t,
                 format!(
-                    "{:.1};{};{};{};{};{};{:.0};{:.0};",
-                    c.t,
-                    crate::t!("Verbindung", "Connection"),
+                    "{};{};{};{};{};{};{:.0};{:.0};",
+                    dec(c.t),
                     wall(c.t),
+                    crate::t!("Verbindung", "Connection"),
                     c.rssi,
                     fmt_mac(&c.bssid),
                     c.channel,
@@ -545,11 +561,11 @@ impl Measurement {
         }
         for b in &self.best {
             let kind = crate::t!("Bester AP", "Best AP");
-            rows.push((b.t, format!("{:.1};{};{kind};{};{};{};;;", b.t, wall(b.t), b.rssi, fmt_mac(&b.bssid), b.channel)));
+            rows.push((b.t, format!("{};{};{kind};{};{};{};;;", dec(b.t), wall(b.t), b.rssi, fmt_mac(&b.bssid), b.channel)));
         }
         for e in &self.events {
             let details = e.details().replace(';', ",");
-            rows.push((e.t, format!("{:.1};{};{};;;;;;{}", e.t, wall(e.t), e.title(), details)));
+            rows.push((e.t, format!("{};{};{};;;;;;{}", dec(e.t), wall(e.t), e.title(), details)));
         }
         rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         let mut s = crate::tf!(
@@ -686,6 +702,29 @@ mod tests {
 
         m.remove_point(0);
         assert!(m.points.is_empty());
+        assert_eq!(m.marker_count(), 0);
+    }
+
+    #[test]
+    fn csv_columns_in_header_order_and_rename_keeps_marker() {
+        crate::i18n::set(crate::i18n::Lang::De);
+        let mut m = Measurement::new("Net".into(), 0.0);
+        m.on_conn(1.5, Some(&conn("Net", A, -60)));
+        let ctx = ScanContext { best: None, aps_visible: 1 };
+        m.add_point(2.0, 1.0, "Raum A", "", &ctx);
+        let csv = m.to_csv();
+        // Zeit (s);Uhrzeit;Typ;... – Dezimalkomma, Typ in Spalte 3
+        let row = csv.lines().find(|l| l.contains("Verbindung")).unwrap();
+        let cols: Vec<&str> = row.split(';').collect();
+        assert_eq!(cols[0], "1,5");
+        assert_eq!(cols[1].len(), 8); // hh:mm:ss
+        assert_eq!(cols[2], "Verbindung");
+        assert_eq!(cols[3], "-60");
+
+        m.points[0].name = "Büro".into();
+        m.sync_point_marker(0);
+        assert!(m.events.iter().any(|e| matches!(&e.kind, EventKind::Marker(n) if n == "Büro")));
+        m.remove_point(0);
         assert_eq!(m.marker_count(), 0);
     }
 

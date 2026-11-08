@@ -25,6 +25,8 @@ pub(crate) struct PointDraft {
     /// Programmzeit beim Öffnen – ab dann wird gemittelt
     since_t: f64,
     focus: bool,
+    /// erster Frame: das Enter, das den Dialog geöffnet hat, noch ignorieren
+    fresh: bool,
 }
 
 /// Eintrag der Liste „Gespeicherte Messungen“
@@ -85,6 +87,15 @@ fn base_name(m: &Measurement) -> String {
     format!("{} {}", m.started_wall.format("%Y-%m-%d %H-%M"), safe_name(&m.ssid))
 }
 
+/// Freier Dateiname: „name.ext“, sonst „name (2).ext“, „name (3).ext“ …
+fn unique_path(dir: &Path, base: &str, ext: &str) -> PathBuf {
+    let first = dir.join(format!("{base}.{ext}"));
+    if !first.exists() {
+        return first;
+    }
+    (2..).map(|n| dir.join(format!("{base} ({n}).{ext}"))).find(|p| !p.exists()).unwrap_or(first)
+}
+
 fn recent_surveys() -> Vec<RecentSurvey> {
     let Ok(rd) = std::fs::read_dir(survey_dir()) else { return Vec::new() };
     let mut v: Vec<RecentSurvey> = rd
@@ -102,11 +113,14 @@ pub(super) fn open_path(path: &Path) {
     let _ = std::process::Command::new("explorer").arg(path).spawn();
 }
 
-fn esc_csv(s: &str) -> String {
-    if s.contains(';') || s.contains('"') || s.contains('\n') {
+/// CSV-Feld für Excel: Trennzeichen/Anführungszeichen maskieren und Formeln entschärfen
+/// (SSIDs kann jeder in der Nähe frei wählen, z. B. „=HYPERLINK(…)“)
+pub(super) fn esc_csv(s: &str) -> String {
+    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) && s.replace(',', ".").parse::<f64>().is_err() { format!("'{s}") } else { s.to_string() };
+    if s.contains([';', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_string()
+        s
     }
 }
 
@@ -127,7 +141,7 @@ impl WifiApp {
 
     pub(super) fn open_point_dialog(&mut self) {
         if self.meas.as_ref().is_some_and(|m| m.running) && self.meas_point.is_none() {
-            self.meas_point = Some(PointDraft { name: String::new(), note: String::new(), since_t: self.now_t(), focus: true });
+            self.meas_point = Some(PointDraft { name: String::new(), note: String::new(), since_t: self.now_t(), focus: true, fresh: true });
         }
     }
 
@@ -202,9 +216,11 @@ impl WifiApp {
                         .desired_width(f32::INFINITY),
                 );
                 let (enter, escape) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
-                if enter && (r1.lost_focus() || r2.lost_focus()) {
+                let typing = r1.has_focus() || r2.has_focus();
+                if enter && (r1.lost_focus() || r2.lost_focus() || (!typing && !d.fresh)) {
                     save = true;
                 }
+                d.fresh = false;
                 if escape {
                     cancel = true;
                 }
@@ -278,6 +294,7 @@ impl WifiApp {
         let started = m.started_wall;
         let mut remove = None;
         let mut changed = false;
+        let mut renamed: Vec<usize> = Vec::new();
         let Some(m) = self.meas.as_mut() else { return };
         egui::ScrollArea::vertical().id_salt("meas_points").auto_shrink(false).show(ui, |ui| {
             egui::Grid::new("meas_points_grid").num_columns(9).striped(true).spacing([12.0, 5.0]).show(ui, |ui| {
@@ -288,7 +305,10 @@ impl WifiApp {
                 for (i, pt) in m.points.iter_mut().enumerate() {
                     let wall = (started + chrono::Duration::milliseconds((pt.t * 1000.0) as i64)).format("%H:%M").to_string();
                     ui.label(RichText::new(format!("{}", i + 1)).monospace().color(p.weak)).on_hover_text(wall);
-                    changed |= ui.add_sized([170.0, 20.0], egui::TextEdit::singleline(&mut pt.name).frame(false)).changed();
+                    if ui.add_sized([170.0, 20.0], egui::TextEdit::singleline(&mut pt.name).frame(false)).changed() {
+                        changed = true;
+                        renamed.push(i);
+                    }
                     match (pt.rssi, pt.quality()) {
                         (Some(v), Some(q)) => {
                             let col = quality_color(&p, q);
@@ -334,6 +354,9 @@ impl WifiApp {
                 }
             });
         });
+        for i in renamed {
+            m.sync_point_marker(i);
+        }
         if let Some(i) = remove {
             m.remove_point(i);
             changed = true;
@@ -371,7 +394,7 @@ impl WifiApp {
         if !due {
             return;
         }
-        let path = self.meas_file.clone().unwrap_or_else(|| survey_dir().join(format!("{}.{EXT}", base_name(m))));
+        let path = self.meas_file.clone().unwrap_or_else(|| unique_path(&survey_dir(), &base_name(m), EXT));
         let text = m.to_file(self.now_t());
         let res = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&path, text));
         self.meas_last_save = Some(Instant::now());
@@ -813,5 +836,32 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
         }
         s.push_str("</svg>");
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_escaping_defuses_formulas_but_keeps_numbers() {
+        assert_eq!(esc_csv("Büro"), "Büro");
+        assert_eq!(esc_csv("-58"), "-58");
+        assert_eq!(esc_csv("-63,5"), "-63,5");
+        assert_eq!(esc_csv("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(esc_csv("+49 123"), "'+49 123");
+        assert_eq!(esc_csv("a;b"), "\"a;b\"");
+    }
+
+    #[test]
+    fn unique_path_does_not_overwrite() {
+        let dir = std::env::temp_dir().join(format!("wa-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = unique_path(&dir, "2026-11-08 10-00 Net", EXT);
+        assert!(a.ends_with("2026-11-08 10-00 Net.wifisurvey"));
+        std::fs::write(&a, "x").unwrap();
+        let b = unique_path(&dir, "2026-11-08 10-00 Net", EXT);
+        assert!(b.ends_with("2026-11-08 10-00 Net (2).wifisurvey"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

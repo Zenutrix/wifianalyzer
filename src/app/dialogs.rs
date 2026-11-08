@@ -201,8 +201,8 @@ impl WifiApp {
                 });
                 ui.add_space(10.0);
                 ui.label(t!(
-                    "Windows gibt BSSIDs, Signalstärken und Kanäle nur an Apps heraus, die auf den Standort zugreifen dürfen (WLAN-Netze verraten den Aufenthaltsort). Der WiFi Analyzer nutzt keine Standortdaten und sendet nichts ins Internet.",
-                    "Windows only hands out BSSIDs, signal strengths and channels to apps that may access the location (Wi-Fi networks reveal where you are). WiFi Analyzer does not use location data and sends nothing to the internet."
+                    "Windows gibt BSSIDs, Signalstärken und Kanäle nur an Apps heraus, die auf den Standort zugreifen dürfen (WLAN-Netze verraten den Aufenthaltsort). Der WiFi Analyzer ermittelt selbst keine Position und überträgt keine Messdaten.",
+                    "Windows only hands out BSSIDs, signal strengths and channels to apps that may access the location (Wi-Fi networks reveal where you are). WiFi Analyzer does not determine your position and transmits no measurement data."
                 ));
                 ui.add_space(12.0);
                 egui::Frame::group(ui.style()).rounding(8.0).inner_margin(Margin::same(12.0)).show(ui, |ui| {

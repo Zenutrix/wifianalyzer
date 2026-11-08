@@ -8,22 +8,24 @@
   <meta name="author" content="Thomas Schöpf">
   <meta name="theme-color" content="#07090d">
   <link rel="icon" type="image/png" href="icon.png">
+  <link rel="canonical" href="https://wifianalyzer.schoepf-tirol.at/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://wifianalyzer.schoepf-tirol.at/">
   <meta property="og:title" content="WiFi Analyzer – WLAN-Analyse für Windows">
   <meta property="og:description" content="Netzwerke, Kanäle, Befunde, Walk-Survey mit Messpunkten und Kundenbericht. Kostenlos und Open Source.">
   <meta property="og:image" content="https://wifianalyzer.schoepf-tirol.at/img/og.png">
   <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" as="image" href="img/overview.webp" imagesrcset="img/overview.webp 1600w, img/overview-2400.webp 2400w" imagesizes="(max-width: 1180px) 100vw, 1130px">
   <style>
     :root {
-      --bg: #07090d; --bg2: #0b0f16; --surface: rgba(22, 27, 34, .72); --surface-solid: #141a22;
-      --border: rgba(240, 246, 252, .09); --border-strong: rgba(240, 246, 252, .16);
-      --text: #e9eef4; --weak: #96a1ad; --faint: #6b7683;
-      --accent: #3b8cff; --accent2: #8b5cf6; --cyan: #22d3ee; --ok: #3fb950; --warn: #e3a52b; --bad: #f85149;
+      --bg: #07090d; --bg2: #0b0f16; --surface: rgba(20, 25, 33, .78);
+      --border: rgba(240, 246, 252, .09); --border-strong: rgba(240, 246, 252, .17);
+      --text: #e9eef4; --weak: #98a3af; --faint: #6b7683;
+      --accent: #3b8cff; --ok: #3fb950;
       --radius: 18px; --shadow: 0 30px 80px rgba(0, 0, 0, .55);
     }
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+    html { scroll-behavior: smooth; scroll-padding-top: 80px; }
     body {
       margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden;
       font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -36,18 +38,18 @@
 
     /* ---------- Hintergrund ---------- */
     .aurora { position: fixed; inset: 0; z-index: -2; pointer-events: none; overflow: hidden; }
-    .aurora i { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .55; }
-    .aurora i:nth-child(1) { width: 720px; height: 720px; left: -180px; top: -260px; background: radial-gradient(circle, #1d4ed8 0%, transparent 65%); animation: drift 22s ease-in-out infinite alternate; }
-    .aurora i:nth-child(2) { width: 640px; height: 640px; right: -200px; top: 120px; background: radial-gradient(circle, #6d28d9 0%, transparent 65%); animation: drift 26s ease-in-out infinite alternate-reverse; }
-    .aurora i:nth-child(3) { width: 520px; height: 520px; left: 30%; top: 900px; background: radial-gradient(circle, #0e7490 0%, transparent 65%); opacity: .35; animation: drift 30s ease-in-out infinite alternate; }
+    .aurora i { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .5; }
+    .aurora i:nth-child(1) { width: 720px; height: 720px; left: -200px; top: -280px; background: radial-gradient(circle, #1d4ed8 0%, transparent 65%); animation: drift 22s ease-in-out infinite alternate; }
+    .aurora i:nth-child(2) { width: 640px; height: 640px; right: -220px; top: 140px; background: radial-gradient(circle, #6d28d9 0%, transparent 65%); animation: drift 26s ease-in-out infinite alternate-reverse; }
+    .aurora i:nth-child(3) { width: 520px; height: 520px; left: 32%; top: 980px; background: radial-gradient(circle, #0e7490 0%, transparent 65%); opacity: .3; animation: drift 30s ease-in-out infinite alternate; }
     @keyframes drift { to { transform: translate(60px, 40px) scale(1.08); } }
     .grid-bg { position: absolute; inset: 0; z-index: -1; pointer-events: none;
       background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
-      background-size: 56px 56px; mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%); opacity: .55; }
+      background-size: 56px 56px; mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%); -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%); opacity: .5; }
 
     /* ---------- Navigation ---------- */
     header.nav { position: sticky; top: 0; z-index: 50; transition: background .25s, border-color .25s; border-bottom: 1px solid transparent; }
-    header.nav.scrolled { background: rgba(7, 9, 13, .72); backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); border-color: var(--border); }
+    header.nav.scrolled { background: rgba(7, 9, 13, .74); backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); border-color: var(--border); }
     .nav .wrap { display: flex; align-items: center; gap: 22px; height: 68px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; text-decoration: none; font-size: 17px; }
     .brand img { width: 32px; height: 32px; }
@@ -58,7 +60,7 @@
     .chip { border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .03); color: var(--text); border-radius: 999px; padding: 6px 12px; font: 600 13px/1 inherit; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
     .chip:hover { border-color: rgba(255, 255, 255, .3); }
 
-    .btn { display: inline-flex; align-items: center; gap: 10px; border-radius: 12px; padding: 13px 20px; font-weight: 650; font-size: 15.5px; text-decoration: none; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .04); color: var(--text); transition: transform .15s, box-shadow .2s, background .2s; }
+    .btn { display: inline-flex; align-items: center; gap: 10px; border-radius: 12px; padding: 13px 20px; font-weight: 650; font-size: 15.5px; text-decoration: none; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .04); color: var(--text); transition: transform .15s, box-shadow .2s, background .2s; cursor: pointer; }
     .btn:hover { transform: translateY(-1px); background: rgba(255, 255, 255, .07); }
     .btn.primary { border: 0; color: #fff; background: linear-gradient(135deg, #2f81f7, #6d5cf6); box-shadow: 0 10px 30px rgba(59, 130, 246, .35), inset 0 1px 0 rgba(255, 255, 255, .25); }
     .btn.primary:hover { box-shadow: 0 14px 40px rgba(99, 102, 241, .5), inset 0 1px 0 rgba(255, 255, 255, .25); }
@@ -66,7 +68,7 @@
     .btn svg { flex: none; }
 
     /* ---------- Hero ---------- */
-    .hero { position: relative; padding: 70px 0 40px; text-align: center; }
+    .hero { position: relative; padding: 70px 0 30px; text-align: center; }
     .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .04); border-radius: 999px; padding: 6px 14px 6px 8px; font-size: 13.5px; color: var(--weak); text-decoration: none; }
     .pill b { background: linear-gradient(135deg, #2f81f7, #8b5cf6); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
     .hero h1 { font-size: clamp(40px, 6.4vw, 78px); line-height: 1.02; letter-spacing: -.035em; margin: 22px auto 18px; max-width: 900px; font-weight: 800; }
@@ -77,18 +79,29 @@
     .meta span::before { content: "✓"; color: var(--ok); margin-right: 6px; }
 
     .rings { position: absolute; left: 50%; top: 40px; width: 0; height: 0; z-index: -1; }
-    .rings i { position: absolute; border: 1px solid rgba(96, 165, 250, .35); border-radius: 50%; left: 0; top: 0; transform: translate(-50%, -50%); animation: ring 6s linear infinite; opacity: 0; }
+    .rings i { position: absolute; border: 1px solid rgba(96, 165, 250, .32); border-radius: 50%; left: 0; top: 0; transform: translate(-50%, -50%); animation: ring 6s linear infinite; opacity: 0; }
     .rings i:nth-child(2) { animation-delay: 2s; } .rings i:nth-child(3) { animation-delay: 4s; }
     @keyframes ring { 0% { width: 120px; height: 120px; opacity: .7; } 100% { width: 1300px; height: 1300px; opacity: 0; } }
 
-    .shot-stage { perspective: 2000px; margin: 64px auto 0; max-width: 1120px; }
-    .window { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--border-strong); background: #0d1117; box-shadow: var(--shadow), 0 0 0 1px rgba(0, 0, 0, .4); }
-    .window .bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 14px; background: #10151d; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--faint); }
+    .stage { position: relative; margin: 64px auto 0; max-width: 1130px; }
+    .window { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--border-strong); background: #0d1117; box-shadow: var(--shadow), 0 0 0 1px rgba(0, 0, 0, .4); }
+    .window .bar { height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 14px; background: #10151d; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--faint); }
     .window .bar i { width: 11px; height: 11px; border-radius: 50%; background: #2b323c; }
     .window .bar span { margin-left: 10px; }
-    .hero .window { transform: rotateX(18deg) scale(.96); transform-origin: 50% 0; transition: transform .1s linear; }
-    .glow { position: absolute; inset: -2px; z-index: -1; border-radius: 18px; background: linear-gradient(135deg, rgba(59, 130, 246, .6), rgba(139, 92, 246, .5), rgba(34, 211, 238, .4)); filter: blur(40px); opacity: .55; }
+    .window img { width: 100%; cursor: zoom-in; }
+    .glow { position: absolute; inset: -2px; z-index: -1; border-radius: 18px; background: linear-gradient(135deg, rgba(59, 130, 246, .6), rgba(139, 92, 246, .5), rgba(34, 211, 238, .4)); filter: blur(42px); opacity: .5; }
     .shot-wrap { position: relative; }
+    .hero .stage .window { animation: rise 1.1s cubic-bezier(.2, .8, .2, 1) both .15s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(40px); } }
+
+    /* schwebende Karten um den Hero-Screenshot */
+    .float { position: absolute; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: rgba(16, 21, 29, .85); border: 1px solid var(--border-strong); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 18px 40px rgba(0, 0, 0, .45); text-align: left; font-size: 13px; color: var(--weak); animation: bob 6s ease-in-out infinite; }
+    .float b { display: block; color: var(--text); font-size: 15px; }
+    .float .dot { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; font-size: 16px; }
+    .float.f1 { left: -60px; top: 22%; }
+    .float.f2 { right: -54px; top: 46%; animation-delay: -2s; }
+    .float.f3 { left: 8%; bottom: -26px; animation-delay: -4s; }
+    @keyframes bob { 50% { transform: translateY(-8px); } }
 
     /* ---------- Abschnitte ---------- */
     section { padding: 100px 0; position: relative; }
@@ -97,31 +110,52 @@
     .sub { color: var(--weak); font-size: 18px; max-width: 680px; margin: 0; }
     .center { text-align: center; } .center .sub { margin: 0 auto; }
 
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 70px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 80px; }
     .stats div { background: var(--bg2); padding: 22px 20px; text-align: center; }
     .stats b { display: block; font-size: 26px; letter-spacing: -.02em; }
     .stats span { color: var(--weak); font-size: 14px; }
 
     /* Bento */
     .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 50px; }
-    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; overflow: hidden; backdrop-filter: blur(6px); transition: border-color .2s, transform .2s; }
+    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; overflow: hidden; transition: border-color .2s, transform .2s; }
     .card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
     .card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 0%), rgba(99, 102, 241, .12), transparent 40%); opacity: 0; transition: opacity .3s; pointer-events: none; }
     .card:hover::before { opacity: 1; }
     .card h3 { margin: 14px 0 6px; font-size: 19px; letter-spacing: -.01em; }
     .card p { margin: 0; color: var(--weak); font-size: 15px; }
-    .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: rgba(59, 130, 246, .14); color: #7cb4ff; border: 1px solid rgba(59, 130, 246, .25); }
+    .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: rgba(59, 130, 246, .14); color: #7cb4ff; border: 1px solid rgba(59, 130, 246, .25); flex: none; }
     .ico.v { background: rgba(139, 92, 246, .14); color: #b9a1ff; border-color: rgba(139, 92, 246, .28); }
     .ico.g { background: rgba(63, 185, 80, .13); color: #6fdc80; border-color: rgba(63, 185, 80, .26); }
     .ico.o { background: rgba(227, 165, 43, .13); color: #f2c35b; border-color: rgba(227, 165, 43, .26); }
     .ico.c { background: rgba(34, 211, 238, .12); color: #67e3f5; border-color: rgba(34, 211, 238, .25); }
     .ico.r { background: rgba(248, 81, 73, .12); color: #ff8a83; border-color: rgba(248, 81, 73, .25); }
     .span2 { grid-column: span 2; } .span3 { grid-column: span 3; } .span4 { grid-column: span 4; }
-    .card .mini { margin-top: 18px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden; height: 220px; }
-    .card .mini img { width: 100%; height: 100%; object-fit: cover; object-position: 16% 0; }
-    .card .mini.ch img { object-position: 60% 45%; transform: scale(1.35); transform-origin: 55% 40%; }
+    /* Ausschnitt eines Screenshots: zugeschnitten, nie verzerrt */
+    .crop { margin-top: 18px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden; aspect-ratio: 16 / 6.2; background: #0d1117; }
+    .crop img { width: 100%; height: 100%; object-fit: cover; object-position: 40% 4%; cursor: zoom-in; }
     .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
     .tags span { font-size: 12px; color: var(--weak); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
+
+    /* Detail-Abschnitte */
+    .feature { display: grid; grid-template-columns: 1fr 1.35fr; gap: 60px; align-items: center; padding: 50px 0; }
+    .feature.rev { grid-template-columns: 1.35fr 1fr; }
+    .feature.rev .text { order: 2; }
+    .feature h3 { font-size: clamp(24px, 3vw, 34px); line-height: 1.15; letter-spacing: -.02em; margin: 14px 0 12px; }
+    .feature p { color: var(--weak); font-size: 17px; margin: 0 0 18px; }
+    .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+    .checks li { display: flex; gap: 12px; color: var(--weak); }
+    .checks li::before { content: ""; flex: none; width: 20px; height: 20px; margin-top: 3px; border-radius: 6px; background: rgba(63, 185, 80, .15) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236fdc80' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5 9-10'/%3E%3C/svg%3E") center / 13px no-repeat; border: 1px solid rgba(63, 185, 80, .3); }
+    .checks b { color: var(--text); font-weight: 600; }
+
+    /* Hell/Dunkel-Vergleich */
+    .compare { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--border-strong); box-shadow: var(--shadow); user-select: none; margin-top: 44px; }
+    .compare img { width: 100%; pointer-events: none; }
+    .compare .top { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--pos, 50%)); }
+    .compare .handle { position: absolute; top: 0; bottom: 0; left: var(--pos, 50%); width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 20px rgba(0, 0, 0, .6); pointer-events: none; }
+    .compare .handle::after { content: "‹ ›"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 46px; height: 46px; border-radius: 50%; background: #fff; color: #1f2328; display: grid; place-items: center; font: 700 17px/1 inherit; letter-spacing: 2px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
+    .compare .lbl { position: absolute; top: 14px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 650; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none; }
+    .compare .lbl.l { left: 14px; } .compare .lbl.r { right: 14px; background: rgba(255, 255, 255, .85); color: #1f2328; }
+    .compare input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
 
     /* Tabs */
     .tabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 40px 0 24px; }
@@ -138,13 +172,23 @@
     .steps .n { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, #2f81f7, #8b5cf6); color: #fff; }
     .steps b { display: block; margin-bottom: 2px; }
     .steps span { color: var(--weak); font-size: 15px; }
-    kbd { font: 600 12.5px/1 ui-monospace, Consolas, monospace; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 6px; padding: 3px 7px; background: rgba(255, 255, 255, .05); color: var(--text); }
-    .stack { position: relative; }
-    .report { position: absolute; right: -18px; bottom: -48px; width: 54%; background: #fff; color: #1f2328; border-radius: 12px; box-shadow: 0 30px 70px rgba(0, 0, 0, .6); padding: 16px 16px 12px; font-size: 11px; transform: rotate(2deg); }
-    .report h4 { margin: 0; font-size: 15px; } .report .rm { color: #59636e; font-size: 10.5px; border-bottom: 2px solid #0969da; padding-bottom: 7px; margin-bottom: 8px; }
+    kbd { font: 600 12.5px/1 ui-monospace, Consolas, monospace; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 6px; padding: 3px 7px; background: rgba(255, 255, 255, .05); color: var(--text); white-space: nowrap; }
+    .stack { position: relative; padding-bottom: 60px; }
+    .report { position: absolute; right: -18px; bottom: 0; width: 56%; background: #fff; color: #1f2328; border-radius: 12px; box-shadow: 0 30px 70px rgba(0, 0, 0, .6); padding: 16px 16px 12px; font-size: 11.5px; }
+    .report h4 { margin: 0; font-size: 15px; } .report .rm { color: #59636e; font-size: 11px; border-bottom: 2px solid #0969da; padding-bottom: 7px; margin-bottom: 8px; }
     .report table { width: 100%; border-collapse: collapse; } .report td { padding: 5px 4px; border-bottom: 1px solid #e6eaef; }
     .report .p { color: #fff; border-radius: 99px; padding: 1px 7px; font-weight: 700; font-size: 10px; white-space: nowrap; }
     .report .bar2 { height: 4px; border-radius: 2px; background: #e6eaef; width: 60px; margin-top: 3px; } .report .bar2 i { display: block; height: 4px; border-radius: 2px; }
+
+    /* Zielgruppen + Technik */
+    .who { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 44px; }
+    .who .card h3 { margin-top: 16px; }
+    .specs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 44px; }
+    .specs div { background: var(--bg2); padding: 20px; }
+    .specs small { display: block; color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+    .specs b { font-weight: 600; font-size: 15.5px; }
+    .keys { display: flex; flex-wrap: wrap; gap: 10px 26px; justify-content: center; margin-top: 30px; color: var(--weak); font-size: 14.5px; }
+    .keys span { display: inline-flex; gap: 6px; align-items: center; }
 
     /* Download */
     .download { background: radial-gradient(ellipse 60% 55% at 50% 60%, rgba(59, 130, 246, .09), transparent 72%); }
@@ -155,7 +199,6 @@
     .dl ul { margin: 16px 0 24px; padding: 0; list-style: none; display: grid; gap: 8px; color: var(--weak); }
     .dl li::before { content: "✓"; color: var(--ok); font-weight: 700; margin-right: 10px; }
     .ver { color: var(--weak); font-size: 14px; margin-top: 14px; }
-    .ver b { color: var(--text); }
     .alt { display: grid; gap: 10px; margin-top: 8px; }
     .alt a { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; text-decoration: none; background: rgba(255, 255, 255, .02); transition: border-color .15s; }
     .alt a:hover { border-color: var(--border-strong); }
@@ -180,36 +223,48 @@
     footer .links { margin-left: auto; display: flex; gap: 20px; flex-wrap: wrap; }
     footer a { color: var(--weak); text-decoration: none; } footer a:hover { color: var(--text); }
 
-    /* Einblenden beim Scrollen */
-    .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
-    .reveal.in { opacity: 1; transform: none; }
+    /* Lightbox */
+    .lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(3, 5, 8, .9); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; padding: 3vw; cursor: zoom-out; }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 100%; max-height: 92vh; width: auto; height: auto; border-radius: 10px; box-shadow: var(--shadow); }
+    .lightbox button { position: absolute; top: 18px; right: 18px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .08); color: #fff; font-size: 22px; cursor: pointer; }
 
+    /* Einblenden beim Scrollen (nur mit JavaScript) */
+    .js .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+    .js .reveal.in { opacity: 1; transform: none; }
+
+    @media (max-width: 1240px) { .float.f1 { left: -10px; } .float.f2 { right: -10px; } }
     @media (max-width: 980px) {
       .nav nav { display: none; }
       .bento { grid-template-columns: repeat(2, 1fr); }
       .span2, .span3, .span4 { grid-column: span 2; }
-      .bento .half { grid-column: span 1; }
-      .split, .dl { grid-template-columns: 1fr; }
-      .report { position: relative; right: auto; bottom: auto; width: 88%; margin: -40px auto 0; }
-      .stats { grid-template-columns: repeat(2, 1fr); }
+      .split, .dl, .feature, .feature.rev { grid-template-columns: 1fr; gap: 32px; }
+      .feature.rev .text { order: 0; }
+      .report { position: relative; right: auto; width: 90%; margin: -30px auto 0; }
+      .stack { padding-bottom: 0; }
+      .stats, .specs { grid-template-columns: repeat(2, 1fr); }
+      .who { grid-template-columns: 1fr; }
+      .float { display: none; }
     }
     @media (max-width: 600px) {
       .wrap { padding: 0 16px; }
       section { padding: 70px 0; }
       .hero { padding-top: 44px; }
       .bento { grid-template-columns: 1fr; }
-      .bento .half, .span2, .span3, .span4 { grid-column: auto; }
+      .span2, .span3, .span4 { grid-column: auto; }
       .nav .gh { display: none; }
       .btn { width: 100%; justify-content: center; }
       .cta { flex-direction: column; }
       .window .bar span { display: none; }
+      .specs { grid-template-columns: 1fr; }
+      .report { width: 100%; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
-      .reveal { opacity: 1; transform: none; }
-      .hero .window { transform: none; }
+      .js .reveal { opacity: 1; transform: none; }
     }
   </style>
+  <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -221,6 +276,7 @@
         <a href="#features"><span data-de>Funktionen</span><span data-en>Features</span></a>
         <a href="#tour"><span data-de>Einblicke</span><span data-en>Tour</span></a>
         <a href="#survey"><span data-de>Messung</span><span data-en>Survey</span></a>
+        <a href="#tech"><span data-de>Technik</span><span data-en>Specs</span></a>
         <a href="#download">Download</a>
         <a href="#faq">FAQ</a>
       </nav>
@@ -265,14 +321,15 @@
           <span data-de>Deutsch &amp; Englisch</span><span data-en>German &amp; English</span>
         </div>
 
-        <div class="shot-stage">
-          <div class="shot-wrap">
-            <div class="glow" aria-hidden="true"></div>
-            <div class="window" id="heroShot">
-              <div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div>
-              <img src="img/overview.webp" width="1600" height="922" alt="WiFi Analyzer – Übersicht mit Kennzahlen, Verbindung, Frequenzbändern und Sicherheit" fetchpriority="high">
-            </div>
+        <div class="stage">
+          <div class="glow" aria-hidden="true"></div>
+          <div class="window">
+            <div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div>
+            <img src="img/overview.webp" srcset="img/overview.webp 1600w, img/overview-2400.webp 2400w" sizes="(max-width: 1180px) 100vw, 1130px" width="1600" height="923" alt="WiFi Analyzer – Übersicht mit Kennzahlen, Verbindung, Frequenzbändern und Sicherheit" fetchpriority="high" data-full="img/overview-2400.webp">
           </div>
+          <div class="float f1" aria-hidden="true"><span class="dot" style="background:rgba(63,185,80,.15);color:#6fdc80">●</span><span><b>-43 dBm · <span data-de>Sehr gut</span><span data-en>Excellent</span></b><span data-de>Besprechungsraum</span><span data-en>Meeting room</span></span></div>
+          <div class="float f2" aria-hidden="true"><span class="dot" style="background:rgba(59,130,246,.15);color:#7cb4ff">⇄</span><span><b><span data-de>Roam erkannt</span><span data-en>Roam detected</span></b>AP 10:20:02 › 10:31:02</span></div>
+          <div class="float f3" aria-hidden="true"><span class="dot" style="background:rgba(227,165,43,.14);color:#f2c35b">★</span><span><b><span data-de>Kanal 11 empfohlen</span><span data-en>Channel 11 recommended</span></b><span data-de>geringster Störpegel</span><span data-en>lowest interference</span></span></div>
         </div>
 
         <div class="stats reveal">
@@ -298,14 +355,13 @@
             <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg></div>
             <h3><span data-de>Netzwerke &amp; Access Points</span><span data-en>Networks &amp; access points</span></h3>
             <p><span data-de>Alle Netze nach SSID gruppiert, mit Signal, Kanal, Breite, Standard, Sicherheit, Clients und Auslastung. Hersteller aus der IEEE-Datenbank, versteckte SSIDs inklusive.</span><span data-en>All networks grouped by SSID with signal, channel, width, standard, security, clients and utilisation. Vendors from the IEEE database, hidden SSIDs included.</span></p>
-            <div class="mini"><img src="img/networks.webp" width="1600" height="922" alt="" loading="lazy"></div>
+            <div class="crop"><img src="img/networks.webp" width="1600" height="923" alt="Netzwerkliste" loading="lazy" data-full="img/networks-2400.webp"></div>
           </div>
           <div class="card span2 reveal">
             <div class="ico v"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 20h18M6 16V9M10 16V5M14 16v-6M18 16v-9"/></svg></div>
             <h3><span data-de>Kanäle &amp; Empfehlung</span><span data-en>Channels &amp; advice</span></h3>
             <p><span data-de>Kanalbelegung als Spektrum, Störpegel pro Kanal und eine klare Empfehlung für 2,4, 5 und 6 GHz – inklusive DFS.</span><span data-en>Channel usage as a spectrum, interference per channel and a clear recommendation for 2.4, 5 and 6 GHz – DFS included.</span></p>
             <div class="tags"><span>1 / 6 / 11</span><span>DFS</span><span>160 MHz</span><span>6 GHz</span></div>
-            <div class="mini ch" style="height:150px"><img src="img/channels.webp" width="1600" height="922" alt="" loading="lazy"></div>
           </div>
           <div class="card span2 reveal">
             <div class="ico r"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/></svg></div>
@@ -336,13 +392,79 @@
       </div>
     </section>
 
+    <!-- ================= DETAILS ================= -->
+    <section style="padding-top:40px">
+      <div class="wrap">
+        <div class="feature reveal">
+          <div class="text">
+            <div class="ico v"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 20h18M6 16V9M10 16V5M14 16v-6M18 16v-9"/></svg></div>
+            <h3><span data-de>Den besten Kanal finden – in Sekunden.</span><span data-en>Find the best channel – in seconds.</span></h3>
+            <p><span data-de>Das Spektrum zeigt, welche Netze sich gegenseitig stören. Die Kanalbewertung rechnet den Störpegel jedes Kanals aus und empfiehlt den besten.</span><span data-en>The spectrum shows which networks interfere with each other. The channel rating computes the interference of every channel and recommends the best one.</span></p>
+            <ul class="checks">
+              <li><span data-de><b>2,4, 5 und 6 GHz</b> – mit DFS-Bereich und Kanalbreiten bis 320 MHz</span><span data-en><b>2.4, 5 and 6 GHz</b> – with DFS range and widths up to 320 MHz</span></li>
+              <li><span data-de><b>Empfehlung</b> für 1/6/11 und für Europa (1/5/9/13)</span><span data-en><b>Recommendation</b> for 1/6/11 and for Europe (1/5/9/13)</span></li>
+              <li><span data-de><b>Klick auf eine Kurve</b> zeigt alle Details des Access Points</span><span data-en><b>Click a curve</b> for all details of the access point</span></li>
+            </ul>
+          </div>
+          <div class="shot-wrap"><div class="glow" aria-hidden="true" style="opacity:.28"></div><div class="window"><div class="bar"><i></i><i></i><i></i><span data-de>Kanäle</span><span data-en>Channels</span></div><img src="img/channels.webp" srcset="img/channels.webp 1600w, img/channels-2400.webp 2400w" sizes="(max-width: 980px) 100vw, 640px" width="1600" height="923" alt="Kanalbelegung im 2,4-GHz-Band als Spektrum" loading="lazy" data-full="img/channels-2400.webp"></div></div>
+        </div>
+
+        <div class="feature rev reveal">
+          <div class="text">
+            <div class="ico r"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/></svg></div>
+            <h3><span data-de>Probleme erkennen, bevor der Kunde anruft.</span><span data-en>Spot problems before the customer calls.</span></h3>
+            <p><span data-de>Die App prüft automatisch alle sichtbaren Netze und sortiert die Befunde nach Schweregrad – jeweils mit einer konkreten Empfehlung.</span><span data-en>The app automatically checks all visible networks and sorts the findings by severity – each with a concrete recommendation.</span></p>
+            <ul class="checks">
+              <li><span data-de><b>Sicherheit:</b> offene Netze, WEP, TKIP, fehlendes PMF, gemischte Konfiguration</span><span data-en><b>Security:</b> open networks, WEP, TKIP, missing PMF, mixed configuration</span></li>
+              <li><span data-de><b>Funk:</b> Co-Channel-Störungen, hohe Kanalauslastung, schwache Abdeckung</span><span data-en><b>Radio:</b> co-channel interference, high channel load, weak coverage</span></li>
+              <li><span data-de><b>Roaming:</b> fehlendes 802.11k/v, mögliche Evil Twins</span><span data-en><b>Roaming:</b> missing 802.11k/v, possible evil twins</span></li>
+            </ul>
+          </div>
+          <div class="shot-wrap"><div class="glow" aria-hidden="true" style="opacity:.28"></div><div class="window"><div class="bar"><i></i><i></i><i></i><span data-de>Befunde</span><span data-en>Findings</span></div><img src="img/findings.webp" srcset="img/findings.webp 1600w, img/findings-2400.webp 2400w" sizes="(max-width: 980px) 100vw, 640px" width="1600" height="923" alt="Befunde mit Empfehlungen" loading="lazy" data-full="img/findings-2400.webp"></div></div>
+        </div>
+
+        <div class="feature reveal">
+          <div class="text">
+            <div class="ico o"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></div>
+            <h3><span data-de>Den Access Point an der Decke finden.</span><span data-en>Find the access point in the ceiling.</span></h3>
+            <p><span data-de>Access Point wählen, mit dem Laptop losgehen – Anzeige und Piepton werden schneller, je näher du kommst.</span><span data-en>Pick an access point and start walking – the gauge and beep speed up the closer you get.</span></p>
+            <ul class="checks">
+              <li><span data-de><b>Schnellauswahl</b> der stärksten Access Points</span><span data-en><b>Quick pick</b> of the strongest access points</span></li>
+              <li><span data-de><b>Verlauf</b> der letzten Minuten, Min / Ø / Max</span><span data-en><b>Timeline</b> of the last minutes, min / avg / max</span></li>
+              <li><span data-de><b>Doppelklick</b> in der Netzwerkliste springt direkt hierher</span><span data-en><b>Double-click</b> in the network list jumps right here</span></li>
+            </ul>
+          </div>
+          <div class="shot-wrap"><div class="glow" aria-hidden="true" style="opacity:.28"></div><div class="window"><div class="bar"><i></i><i></i><i></i><span>AP-Finder</span></div><img src="img/finder.webp" srcset="img/finder.webp 1600w, img/finder-2400.webp 2400w" sizes="(max-width: 980px) 100vw, 640px" width="1600" height="923" alt="AP-Finder mit Signalanzeige und Verlauf" loading="lazy" data-full="img/finder-2400.webp"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= HELL / DUNKEL ================= -->
+    <section style="padding-top:40px">
+      <div class="wrap">
+        <div class="center reveal">
+          <div class="eyebrow">Design</div>
+          <h2><span data-de>Hell oder dunkel? Beides.</span><span data-en>Light or dark? Both.</span></h2>
+          <p class="sub"><span data-de>Ein ruhiges Business-Design, das im Büro wie im dunklen Technikraum gut lesbar bleibt. Zieh den Regler.</span><span data-en>A calm business design that stays readable in the office and in a dark server room. Drag the slider.</span></p>
+        </div>
+        <div class="compare reveal" id="compare" style="--pos:50%">
+          <img src="img/overview.webp" srcset="img/overview.webp 1600w, img/overview-2400.webp 2400w" sizes="(max-width: 1180px) 100vw, 1130px" width="1600" height="923" alt="Dunkles Design" loading="lazy">
+          <div class="top"><img src="img/overview-light.webp" srcset="img/overview-light.webp 1600w, img/overview-light-2400.webp 2400w" sizes="(max-width: 1180px) 100vw, 1130px" width="1600" height="923" alt="Helles Design" loading="lazy"></div>
+          <div class="handle" aria-hidden="true"></div>
+          <span class="lbl l"><span data-de>Dunkel</span><span data-en>Dark</span></span>
+          <span class="lbl r"><span data-de>Hell</span><span data-en>Light</span></span>
+          <input type="range" min="0" max="100" value="50" aria-label="Hell/Dunkel vergleichen">
+        </div>
+      </div>
+    </section>
+
     <!-- ================= TOUR ================= -->
     <section id="tour">
       <div class="wrap">
         <div class="center reveal">
           <div class="eyebrow"><span data-de>Einblicke</span><span data-en>Tour</span></div>
           <h2><span data-de>Klar. Schnell. Aufgeräumt.</span><span data-en>Clear. Fast. Tidy.</span></h2>
-          <p class="sub"><span data-de>Ein ruhiges Business-Design im Hell- oder Dunkelmodus – mit allen Details, wenn du sie brauchst.</span><span data-en>A calm business design in light or dark mode – with every detail when you need it.</span></p>
+          <p class="sub"><span data-de>Alle Ansichten der App – zum Vergrößern einfach ins Bild klicken.</span><span data-en>Every view of the app – click the image to enlarge.</span></p>
         </div>
         <div class="tabs" role="tablist" id="tabs">
           <button role="tab" aria-selected="true" data-img="overview"><span data-de>Übersicht</span><span data-en>Overview</span></button>
@@ -357,7 +479,7 @@
           <div class="glow" aria-hidden="true" style="opacity:.3"></div>
           <div class="window tab-shot">
             <div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div>
-            <img id="tabImg" src="img/overview.webp" width="1600" height="922" alt="Screenshot" loading="lazy">
+            <img id="tabImg" src="img/overview.webp" srcset="img/overview.webp 1600w, img/overview-2400.webp 2400w" sizes="(max-width: 1180px) 100vw, 1130px" width="1600" height="923" alt="Screenshot" loading="lazy" data-full="img/overview-2400.webp">
           </div>
         </div>
         <p class="caption" id="caption"></p>
@@ -374,24 +496,84 @@
           <ol class="steps">
             <li><div class="n">1</div><div><b><span data-de>Messung starten</span><span data-en>Start the survey</span></b><span data-de>SSID wählen – die App misst jede Sekunde und erkennt Roams.</span><span data-en>Pick the SSID – the app measures every second and detects roams.</span></div></li>
             <li><div class="n">2</div><div><b><span data-de><kbd>Enter</kbd> – Raum eingeben – <kbd>Enter</kbd></span><span data-en><kbd>Enter</kbd> – type the room – <kbd>Enter</kbd></span></b><span data-de>Der Wert an der Stelle wird gemittelt und bewertet: Sehr gut, Gut, Ausreichend, Schwach.</span><span data-en>The value at the spot is averaged and rated: excellent, good, fair, weak.</span></div></li>
-            <li><div class="n">3</div><div><b><span data-de>Bericht übergeben</span><span data-en>Hand over the report</span></b><span data-de>Als PDF mit Verlauf, Tabelle und Empfehlungen – oder als Liste für Excel.</span><span data-en>As a PDF with timeline, table and recommendations – or as a list for Excel.</span></div></li>
+            <li><div class="n">3</div><div><b><span data-de>Bericht übergeben</span><span data-en>Hand over the report</span></b><span data-de>Als PDF mit Verlauf, Tabelle und Empfehlungen – oder als Liste für Excel. Alles wird automatisch gespeichert.</span><span data-en>As a PDF with timeline, table and recommendations – or as a list for Excel. Everything is saved automatically.</span></div></li>
           </ol>
         </div>
         <div class="stack reveal">
           <div class="shot-wrap">
             <div class="glow" aria-hidden="true" style="opacity:.35"></div>
-            <div class="window"><div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div><img src="img/measure.webp" width="1600" height="922" alt="Messung mit Messpunkten pro Raum" loading="lazy"></div>
+            <div class="window"><div class="bar"><i></i><i></i><i></i><span data-de>Messung</span><span data-en>Survey</span></div><img src="img/measure.webp" srcset="img/measure.webp 1600w, img/measure-2400.webp 2400w" sizes="(max-width: 980px) 100vw, 640px" width="1600" height="923" alt="Messung mit Messpunkten pro Raum" loading="lazy" data-full="img/measure-2400.webp"></div>
           </div>
           <div class="report" aria-hidden="true">
             <h4><span data-de>WLAN-Messbericht</span><span data-en>Wi-Fi survey report</span></h4>
             <div class="rm">SSID <b>Musterfirma</b> · 4 <span data-de>Messpunkte</span><span data-en>points</span></div>
             <table>
-              <tr><td><b>Büro 1.03</b></td><td><b>-43 dBm</b><div class="bar2"><i style="width:82%;background:#1a7f37"></i></div></td><td><span class="p" style="background:#1a7f37" data-de>Sehr gut</span><span class="p" style="background:#1a7f37" data-en>Excellent</span></td></tr>
+              <tr><td><b><span data-de>Büro 1.03</span><span data-en>Office 1.03</span></b></td><td><b>-43 dBm</b><div class="bar2"><i style="width:82%;background:#1a7f37"></i></div></td><td><span class="p" style="background:#1a7f37" data-de>Sehr gut</span><span class="p" style="background:#1a7f37" data-en>Excellent</span></td></tr>
               <tr><td><b><span data-de>Besprechung</span><span data-en>Meeting room</span></b></td><td><b>-58 dBm</b><div class="bar2"><i style="width:60%;background:#1a7f37"></i></div></td><td><span class="p" style="background:#1a7f37" data-de>Sehr gut</span><span class="p" style="background:#1a7f37" data-en>Excellent</span></td></tr>
               <tr><td><b><span data-de>Teeküche</span><span data-en>Kitchen</span></b></td><td><b>-66 dBm</b><div class="bar2"><i style="width:48%;background:#2da44e"></i></div></td><td><span class="p" style="background:#2da44e" data-de>Gut</span><span class="p" style="background:#2da44e" data-en>Good</span></td></tr>
               <tr><td><b><span data-de>Lager</span><span data-en>Storage</span></b></td><td><b>-79 dBm</b><div class="bar2"><i style="width:30%;background:#cf222e"></i></div></td><td><span class="p" style="background:#cf222e" data-de>Schwach</span><span class="p" style="background:#cf222e" data-en>Weak</span></td></tr>
             </table>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FÜR WEN ================= -->
+    <section style="padding-top:60px">
+      <div class="wrap">
+        <div class="center reveal">
+          <div class="eyebrow"><span data-de>Für wen?</span><span data-en>Who is it for?</span></div>
+          <h2><span data-de>Gemacht für den Einsatz vor Ort.</span><span data-en>Made for work on site.</span></h2>
+        </div>
+        <div class="who">
+          <div class="card reveal">
+            <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+            <h3><span data-de>IT-Dienstleister &amp; Systemhäuser</span><span data-en>IT service providers</span></h3>
+            <p><span data-de>WLAN beim Kunden prüfen, Probleme belegen und das Ergebnis als Bericht übergeben.</span><span data-en>Check the customer's Wi-Fi, document problems and hand over the result as a report.</span></p>
+          </div>
+          <div class="card reveal">
+            <div class="ico o"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></div>
+            <h3><span data-de>Elektriker &amp; Installateure</span><span data-en>Electricians &amp; installers</span></h3>
+            <p><span data-de>Nach der Installation die Ausleuchtung Raum für Raum nachweisen – ohne teure Messgeräte.</span><span data-en>Prove the coverage room by room after installation – without expensive equipment.</span></p>
+          </div>
+          <div class="card reveal">
+            <div class="ico g"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></div>
+            <h3><span data-de>Admins &amp; Power-User</span><span data-en>Admins &amp; power users</span></h3>
+            <p><span data-de>Das eigene Netz im Büro oder zu Hause optimieren: besserer Kanal, bessere AP-Position, sichere Einstellungen.</span><span data-en>Optimise your own network at the office or at home: better channel, better AP position, secure settings.</span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TECHNIK ================= -->
+    <section id="tech">
+      <div class="wrap">
+        <div class="center reveal">
+          <div class="eyebrow"><span data-de>Technik im Detail</span><span data-en>Specifications</span></div>
+          <h2><span data-de>Was drinsteckt.</span><span data-en>What's inside.</span></h2>
+          <p class="sub"><span data-de>Native Windows-App in Rust, direkt auf der WLAN-Schnittstelle von Windows – schnell, klein, ohne zusätzliche Treiber.</span><span data-en>Native Windows app written in Rust, built directly on the Windows Wi-Fi API – fast, small, no extra drivers.</span></p>
+        </div>
+        <div class="specs reveal">
+          <div><small><span data-de>Standards</span><span data-en>Standards</span></small><b>Wi-Fi 4, 5, 6, 6E, 7</b></div>
+          <div><small><span data-de>Bänder</span><span data-en>Bands</span></small><b>2,4 · 5 · 6 GHz, DFS</b></div>
+          <div><small><span data-de>Kanalbreite</span><span data-en>Channel width</span></small><b>20 – 320 MHz</b></div>
+          <div><small><span data-de>Sicherheit</span><span data-en>Security</span></small><b>WPA3 · OWE · Enterprise · PMF</b></div>
+          <div><small>Roaming</small><b>802.11k · r · v</b></div>
+          <div><small><span data-de>AP-Details</span><span data-en>AP details</span></small><b><span data-de>Clients, Auslastung, WPS, AP-Name</span><span data-en>Clients, load, WPS, AP name</span></b></div>
+          <div><small><span data-de>Hersteller</span><span data-en>Vendors</span></small><b><span data-de>IEEE/Wireshark-Datenbank</span><span data-en>IEEE/Wireshark database</span></b></div>
+          <div><small>Export</small><b><span data-de>CSV · HTML-Bericht · PDF</span><span data-en>CSV · HTML report · PDF</span></b></div>
+          <div><small><span data-de>Messungen</span><span data-en>Surveys</span></small><b><span data-de>Autospeichern, wieder öffnen</span><span data-en>Autosave, reopen</span></b></div>
+          <div><small><span data-de>Sprachen</span><span data-en>Languages</span></small><b><span data-de>Deutsch, Englisch</span><span data-en>German, English</span></b></div>
+          <div><small><span data-de>System</span><span data-en>System</span></small><b><span data-de>Windows 10 / 11, 64 Bit</span><span data-en>Windows 10 / 11, 64-bit</span></b></div>
+          <div><small><span data-de>Lizenz</span><span data-en>License</span></small><b>GPL-3.0, Open Source</b></div>
+        </div>
+        <div class="keys reveal">
+          <span><kbd>F5</kbd> <span data-de>Scannen</span><span data-en>Scan</span></span>
+          <span><kbd data-de>Strg</kbd><kbd data-en>Ctrl</kbd>+<kbd>F</kbd> <span data-de>Suchen</span><span data-en>Search</span></span>
+          <span><kbd data-de>Strg</kbd><kbd data-en>Ctrl</kbd>+<kbd>E</kbd> Export</span>
+          <span><kbd data-de>Strg</kbd><kbd data-en>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> <span data-de>Seiten</span><span data-en>Pages</span></span>
+          <span><kbd>Enter</kbd> <span data-de>Messpunkt</span><span data-en>Survey point</span></span>
+          <span><kbd>Esc</kbd> <span data-de>Schließen</span><span data-en>Close</span></span>
         </div>
       </div>
     </section>
@@ -416,12 +598,12 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
               WiFiAnalyzer-Setup.exe
             </a>
-            <div class="ver" id="ver"><span data-de>Immer die neueste Version von GitHub.</span><span data-en>Always the latest version from GitHub.</span></div>
+            <div class="ver"><span data-de>Lädt immer die neueste Version direkt von GitHub.</span><span data-en>Always downloads the latest version straight from GitHub.</span></div>
           </div>
           <div class="card reveal">
             <h3 style="font-size:19px"><span data-de>Weitere Varianten</span><span data-en>Other options</span></h3>
             <div class="alt">
-              <a href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer.exe"><span><b><span data-de>Portable EXE</span><span data-en>Portable EXE</span></b><small><span data-de>Ohne Installation, z. B. vom USB-Stick</span><span data-en>No installation, e.g. from a USB stick</span></small></span><span>↓</span></a>
+              <a href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer.exe"><span><b>Portable EXE</b><small><span data-de>Ohne Installation, z. B. vom USB-Stick</span><span data-en>No installation, e.g. from a USB stick</span></small></span><span>↓</span></a>
               <a href="https://github.com/zenutrix/wifianalyzer/releases/latest"><span><b><span data-de>Alle Dateien &amp; Prüfsummen</span><span data-en>All files &amp; checksums</span></b><small>ZIP · SHA256SUMS · <span data-de>Versionshinweise</span><span data-en>release notes</span></small></span><span>›</span></a>
               <a href="https://github.com/zenutrix/wifianalyzer"><span><b><span data-de>Quellcode</span><span data-en>Source code</span></b><small>Rust · GPL-3.0</small></span><span>›</span></a>
             </div>
@@ -441,7 +623,7 @@
         <div class="faq">
           <details class="reveal">
             <summary><span data-de>Warum braucht die App den Standortzugriff?</span><span data-en>Why does the app need location access?</span></summary>
-            <p><span data-de>WLAN-Netze verraten den Aufenthaltsort. Deshalb gibt Windows BSSIDs und Signalstärken nur an Apps heraus, die auf den Standort zugreifen dürfen. Der WiFi Analyzer nutzt selbst keine Standortdaten.</span><span data-en>Wi-Fi networks reveal where you are, so Windows only hands out BSSIDs and signal strengths to apps that may access the location. WiFi Analyzer itself does not use location data.</span></p>
+            <p><span data-de>WLAN-Netze verraten den Aufenthaltsort. Deshalb gibt Windows BSSIDs und Signalstärken nur an Apps heraus, die auf den Standort zugreifen dürfen. Der WiFi Analyzer ermittelt selbst keine Position und speichert keine Standortdaten.</span><span data-en>Wi-Fi networks reveal where you are, so Windows only hands out BSSIDs and signal strengths to apps that may access the location. WiFi Analyzer itself does not determine or store your position.</span></p>
           </details>
           <details class="reveal">
             <summary><span data-de>Windows SmartScreen warnt beim Start – ist das normal?</span><span data-en>Windows SmartScreen warns on start – is that normal?</span></summary>
@@ -454,6 +636,10 @@
           <details class="reveal">
             <summary><span data-de>Wie bekomme ich einen Bericht für meinen Kunden?</span><span data-en>How do I get a report for my customer?</span></summary>
             <p><span data-de>Messung starten, in jedem Raum Enter drücken und den Raum eingeben. Danach unter „Export“ den Bericht erstellen – er öffnet sich im Browser und lässt sich mit Strg+P als PDF speichern.</span><span data-en>Start a survey, press Enter in each room and type its name. Then create the report via “Export” – it opens in the browser and can be saved as PDF with Ctrl+P.</span></p>
+          </details>
+          <details class="reveal">
+            <summary><span data-de>Wo werden meine Messungen gespeichert?</span><span data-en>Where are my surveys stored?</span></summary>
+            <p><span data-de>Automatisch im Ordner „Dokumente\WiFi Analyzer“. Auf der Seite „Messung“ lassen sie sich jederzeit wieder öffnen, ergänzen und exportieren.</span><span data-en>Automatically in the folder “Documents\WiFi Analyzer”. On the “Survey” page you can reopen, extend and export them at any time.</span></p>
           </details>
           <details class="reveal">
             <summary><span data-de>Welche Daten werden übertragen?</span><span data-en>Which data is transmitted?</span></summary>
@@ -494,6 +680,8 @@
     </div>
   </footer>
 
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Screenshot"><button type="button" aria-label="Schließen">×</button><img alt=""></div>
+
   <script>
     (function () {
       var root = document.documentElement;
@@ -527,34 +715,46 @@
           tabs.forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
           current = b.getAttribute('data-img');
           img.style.opacity = 0;
-          setTimeout(function () { img.src = 'img/' + current + '.webp'; img.onload = function () { img.style.opacity = 1; }; }, 150);
+          setTimeout(function () {
+            img.onload = function () { img.style.opacity = 1; };
+            img.srcset = 'img/' + current + '.webp 1600w, img/' + current + '-2400.webp 2400w';
+            img.src = 'img/' + current + '.webp';
+            img.setAttribute('data-full', 'img/' + current + '-2400.webp');
+          }, 150);
           caption();
         });
       });
-      // Bilder vorladen, damit der Wechsel sofort geht
-      window.addEventListener('load', function () { Object.keys(captions).forEach(function (k) { var i = new Image(); i.src = 'img/' + k + '.webp'; }); });
       applyLang(lang);
 
-      // Navigation beim Scrollen hinterlegen, Hero-Screenshot aufrichten
-      var nav = document.querySelector('header.nav'), hero = document.getElementById('heroShot');
-      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      function onScroll() {
-        var y = window.scrollY;
-        nav.classList.toggle('scrolled', y > 10);
-        if (!reduce && hero) {
-          var t = Math.min(1, y / 420);
-          hero.style.transform = 'rotateX(' + (18 * (1 - t)).toFixed(2) + 'deg) scale(' + (0.96 + 0.04 * t).toFixed(3) + ')';
-        }
+      // Hell/Dunkel-Regler
+      var cmp = document.getElementById('compare');
+      if (cmp) {
+        var range = cmp.querySelector('input');
+        range.addEventListener('input', function () { cmp.style.setProperty('--pos', range.value + '%'); });
       }
+
+      // Lightbox: Klick auf einen Screenshot zeigt ihn in voller Auflösung
+      var lb = document.getElementById('lightbox'), lbImg = lb.querySelector('img');
+      function closeLb() { lb.classList.remove('open'); lbImg.removeAttribute('src'); }
+      document.querySelectorAll('img[data-full]').forEach(function (i) {
+        i.addEventListener('click', function () { lbImg.src = i.getAttribute('data-full'); lbImg.alt = i.alt; lb.classList.add('open'); });
+      });
+      lb.addEventListener('click', closeLb);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLb(); });
+
+      // Navigation beim Scrollen hinterlegen
+      var nav = document.querySelector('header.nav');
+      function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 10); }
       window.addEventListener('scroll', onScroll, { passive: true });
       onScroll();
 
       // Einblenden beim Scrollen
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       var els = document.querySelectorAll('.reveal');
       if ('IntersectionObserver' in window && !reduce) {
         var io = new IntersectionObserver(function (entries) {
           entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
-        }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
         els.forEach(function (el) { io.observe(el); });
       } else {
         els.forEach(function (el) { el.classList.add('in'); });
@@ -568,16 +768,6 @@
           c.style.setProperty('--my', (e.clientY - r.top) + 'px');
         });
       });
-
-      // Aktuelle Version von GitHub (falls erreichbar)
-      if (window.fetch) {
-        fetch('https://api.github.com/repos/zenutrix/wifianalyzer/releases/latest').then(function (r) { return r.ok ? r.json() : null; }).then(function (rel) {
-          if (!rel || !rel.tag_name) return;
-          var d = new Date(rel.published_at), el = document.getElementById('ver');
-          var de = d.toLocaleDateString('de-AT'), en = d.toLocaleDateString('en-GB');
-          el.innerHTML = '<span data-de>Version <b>' + rel.tag_name.replace(/^v/, '') + '</b> vom ' + de + '</span><span data-en>Version <b>' + rel.tag_name.replace(/^v/, '') + '</b> from ' + en + '</span>';
-        }).catch(function () {});
-      }
 
       document.getElementById('year').textContent = new Date().getFullYear();
     })();

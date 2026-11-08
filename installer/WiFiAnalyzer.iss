@@ -115,7 +115,7 @@ Name: "{autodesktop}\{#AppName}";    Filename: "{app}\{#AppExe}"; Comment: "{cm:
 ; normale Installation: Häkchen „jetzt starten“ auf der letzten Seite
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 ; Update aus der App heraus (still): danach automatisch neu starten
-Filename: "{app}\{#AppExe}"; Flags: nowait; Check: ShouldRelaunch
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: ShouldRelaunch
 
 [UninstallDelete]
 Type: files; Name: "{app}\{#AppExe}.old"

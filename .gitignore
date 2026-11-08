@@ -1,5 +1,6 @@
 # Build-Ausgaben
 /target/
+/target-*/
 /dist/
 
 # Editor / OS

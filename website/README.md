@@ -8,7 +8,8 @@ von `wifianalyzer.schoepf-tirol.at` hochladen. Fertig.
 
 - Die Download-Buttons zeigen auf `…/releases/latest/download/WiFiAnalyzer-Setup.exe` bzw. `WiFiAnalyzer.exe`
   und liefern damit immer die neueste Version, ohne dass die Seite angepasst werden muss.
-- Die Versionsnummer im Download-Bereich wird beim Aufruf von der GitHub-API geholt (fehlt sie, bleibt der Hinweistext stehen).
+- Die Seite lädt nichts von fremden Servern (keine Schriften, keine Skripte, keine API-Abfragen). Erst der Klick auf einen Download führt zu GitHub.
+- Screenshots gibt es in 1600 und 2400 px (`srcset`), ein Klick öffnet sie groß (Lightbox).
 - Die Sprache (Deutsch/Englisch) folgt der Browsersprache und lässt sich oben rechts umschalten.
 - `img/og.png` ist das Vorschaubild für Social Media und Messenger.
 - **Impressum:** Im Footer ist ein Platzhalter-Link `#impressum`. Dort den Link zu deinem Impressum eintragen.
@@ -23,7 +24,7 @@ wifi-analyzer.exe --demo
 ```
 
 Screenshots als PNG aufnehmen, Windows-Titelleiste abschneiden, auf 1600 px Breite verkleinern und als WebP
-(Qualität ~84) unter `img/<seite>.webp` speichern.
+(Qualität ~84) unter `img/<seite>.webp` speichern, zusätzlich in 2400 px als `img/<seite>-2400.webp`.
 
 ## Lokal ansehen
 

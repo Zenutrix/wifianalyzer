@@ -470,7 +470,9 @@ impl WifiApp {
         }
         if st.ok() && !self.location_held {
             // Standort-Symbol in der Taskleiste ruhig halten statt bei jedem Scan blinken zu lassen
-            perm::hold_location_session();
+            if !crate::demo::enabled() {
+                perm::hold_location_session();
+            }
             self.location_held = true;
         }
         self.perm = Some(st);
@@ -788,13 +790,7 @@ impl WifiApp {
     }
 
     fn networks_csv(&self) -> String {
-        fn esc(s: &str) -> String {
-            if s.contains(';') || s.contains('"') || s.contains('\n') {
-                format!("\"{}\"", s.replace('"', "\"\""))
-            } else {
-                s.to_string()
-            }
-        }
+        let esc = survey::esc_csv;
         let header = t!(
             "SSID;BSSID;Hersteller;RSSI;RSSI min;RSSI max;RSSI Ø;Kanal;Band;Frequenz MHz;Breite;Mittenkanal;Standard;Sicherheit;AKM;Cipher;PMF;Max. Rate Mbit/s;Streams;Clients;Auslastung %;Land;Beacon ms;DTIM;802.11k;802.11r;802.11v;WPS;AP-Name;Chipsatz;Uptime;Erstmals gesehen;Zuletzt vor s",
             "SSID;BSSID;Vendor;RSSI;RSSI min;RSSI max;RSSI avg;Channel;Band;Frequency MHz;Width;Center channel;Standard;Security;AKM;Cipher;PMF;Max rate Mbit/s;Streams;Clients;Utilization %;Country;Beacon ms;DTIM;802.11k;802.11r;802.11v;WPS;AP name;Chipset;Uptime;First seen;Last seen s ago"
@@ -885,7 +881,10 @@ impl WifiApp {
     }
 
     fn save_settings(&mut self) {
-        self.settings.save();
+        // Demo-Modus: echte Einstellungen nicht verändern (z. B. Markierungen erfundener APs)
+        if !crate::demo::enabled() {
+            self.settings.save();
+        }
         self.settings_saved = self.settings.clone();
         self.settings_dirty_since = None;
     }
