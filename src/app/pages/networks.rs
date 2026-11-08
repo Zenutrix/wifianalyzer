@@ -239,11 +239,14 @@ impl WifiApp {
                                     };
                                     let (rect, _) = ui.allocate_exact_size(Vec2::new(4.0, 16.0), Sense::hover());
                                     ui.painter().rect_filled(rect, 2.0, col);
+                                    // Anzahl der APs vor dem Namen, damit sie bei langen SSIDs sichtbar bleibt
+                                    if let RowKind::Group { n, .. } = kind {
+                                        ui.scope(|ui| crate::widgets::badge(ui, &n.to_string(), p.accent))
+                                            .response
+                                            .on_hover_text(tf!("{n} Access Points – klicken zum Aufklappen", "{n} access points – click to expand"));
+                                    }
                                     let name = RichText::new(Self::display_ssid(r)).color(tc);
                                     ui.label(if i.hidden { name.italics() } else if is_child { name } else { name.strong() });
-                                    if let RowKind::Group { n, .. } = kind {
-                                        crate::widgets::badge(ui, &tf!("{n} APs", "{n} APs"), p.accent);
-                                    }
                                     if conn_bssid == Some(k) {
                                         ui.label(RichText::new("🔗").color(p.success)).on_hover_text(t!("Verbunden", "Connected"));
                                     }

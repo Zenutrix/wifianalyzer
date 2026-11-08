@@ -25,6 +25,8 @@ fn ranked<K: Ord + Clone>(items: impl Iterator<Item = K>) -> Vec<(K, usize)> {
 
 /// Gleich hohe Karten in einer Reihe
 const ROW_H: f32 = 236.0;
+/// erste Reihe: Platz für die Verbindungsdetails, damit alle drei Karten gleich hoch sind
+const ROW1_H: f32 = 266.0;
 
 impl WifiApp {
     pub(crate) fn page_overview(&mut self, ui: &mut Ui) {
@@ -93,7 +95,7 @@ impl WifiApp {
 
             // ---------- Verbindung · Bänder · Sicherheit ----------
             ui.columns(3, |cols| {
-                card_full(&mut cols[0], Some(t!("Aktuelle Verbindung", "Current connection")), ROW_H, |ui| {
+                card_full(&mut cols[0], Some(t!("Aktuelle Verbindung", "Current connection")), ROW1_H, |ui| {
                     match &self.conn {
                         Some(c) => {
                             ui.horizontal(|ui| {
@@ -114,7 +116,7 @@ impl WifiApp {
                                 };
                                 k(ui, t!("Kanal", "Channel"), c.channel.map(|v| v.to_string()).unwrap_or("–".into()));
                                 k(ui, "Standard", c.phy.clone());
-                                k(ui, t!("Datenrate", "Data rate"), format!("↓ {:.0} · ↑ {:.0} Mbit/s", c.rx_mbps, c.tx_mbps));
+                                k(ui, t!("Datenrate", "Data rate"), format!("Rx {:.0} · Tx {:.0} Mbit/s", c.rx_mbps, c.tx_mbps));
                                 k(ui, t!("Sicherheit", "Security"), format!("{} · {}", c.auth, c.cipher));
                             });
                             ui.add_space(4.0);
@@ -133,7 +135,7 @@ impl WifiApp {
                     }
                 });
 
-                card_full(&mut cols[1], Some(t!("Frequenzbänder", "Frequency bands")), ROW_H, |ui| {
+                card_full(&mut cols[1], Some(t!("Frequenzbänder", "Frequency bands")), ROW1_H, |ui| {
                     ui.add_space(8.0);
                     let segs = vec![
                         (t!("2,4 GHz", "2.4 GHz").to_string(), per_band(Band::B24), p.accent),
@@ -143,13 +145,13 @@ impl WifiApp {
                     donut(ui, &segs, &vis.len().to_string(), "APs");
                 });
 
-                card_full(&mut cols[2], Some(t!("Sicherheit", "Security")), ROW_H, |ui| {
+                card_full(&mut cols[2], Some(t!("Sicherheit", "Security")), ROW1_H, |ui| {
                     ui.add_space(8.0);
                     let lvl = |l: SecLevel| vis.iter().filter(|r| r.info.sec_level == l).count();
                     let segs = vec![
                         (t!("Stark (WPA3/OWE)", "Strong (WPA3/OWE)").to_string(), lvl(SecLevel::Strong), sec_color(ui, SecLevel::Strong)),
                         (t!("Gut (WPA2)", "Good (WPA2)").to_string(), lvl(SecLevel::Ok), p.accent),
-                        (t!("Schwach (WEP/WPA/TKIP)", "Weak (WEP/WPA/TKIP)").to_string(), lvl(SecLevel::Weak), p.warning),
+                        (t!("Schwach (WEP/TKIP)", "Weak (WEP/TKIP)").to_string(), lvl(SecLevel::Weak), p.warning),
                         (t!("Offen", "Open").to_string(), lvl(SecLevel::Open), p.danger),
                     ];
                     let unsafe_n = lvl(SecLevel::Weak) + lvl(SecLevel::Open);

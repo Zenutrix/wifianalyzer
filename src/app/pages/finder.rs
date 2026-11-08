@@ -8,7 +8,7 @@ use egui_plot::{Line, Plot, PlotPoints};
 use crate::app::WifiApp;
 use crate::model::*;
 use crate::theme::pal;
-use crate::widgets::{card, dbm_axis, page_header, signal_gauge};
+use crate::widgets::{card, page_header, signal_gauge};
 use crate::{t, tf};
 
 impl WifiApp {
@@ -67,6 +67,61 @@ impl WifiApp {
                         .color(p.weak),
                 );
             });
+            // Schnellauswahl: die stärksten Access Points als Karten
+            let now = std::time::Instant::now();
+            let mut top: Vec<_> = self.aps.values().filter(|r| !self.is_stale(r, now)).collect();
+            top.sort_by(|a, b| b.info.rssi.cmp(&a.info.rssi));
+            top.truncate(8);
+            if !top.is_empty() {
+                ui.add_space(28.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new(t!("Stärkste Access Points in der Nähe", "Strongest access points nearby")).strong().color(p.text));
+                });
+                ui.add_space(10.0);
+                let mut pick = None;
+                let w = 230.0f32;
+                let cols = ((ui.available_width() + 10.0) / (w + 10.0)).floor().clamp(1.0, 4.0) as usize;
+                let total_w = cols as f32 * (w + 10.0) - 10.0;
+                ui.horizontal(|ui| {
+                    ui.add_space(((ui.available_width() - total_w) / 2.0).max(0.0));
+                    egui::Grid::new("finder_pick").num_columns(cols).spacing([10.0, 10.0]).show(ui, |ui| {
+                        for (i, r) in top.iter().enumerate() {
+                            let col = signal_color(r.info.rssi);
+                            let resp = egui::Frame::none()
+                                .fill(p.surface)
+                                .stroke(egui::Stroke::new(1.0f32, p.border))
+                                .rounding(10.0)
+                                .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+                                .show(ui, |ui| {
+                                    ui.set_width(w - 24.0);
+                                    ui.horizontal(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.add(egui::Label::new(RichText::new(Self::display_ssid(r)).strong().color(p.text)).truncate());
+                                            ui.label(RichText::new(format!("{} · {}", &fmt_mac(&r.info.bssid)[9..], Self::vendor_label(r))).small().color(p.weak));
+                                        });
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                            ui.label(RichText::new(format!("{}", r.info.rssi)).size(18.0).strong().color(col));
+                                        });
+                                    });
+                                })
+                                .response;
+                            let resp = ui.interact(resp.rect, ui.id().with(("finder_pick", i)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if resp.hovered() {
+                                ui.painter().rect_stroke(resp.rect, 10.0, egui::Stroke::new(1.0f32, p.accent));
+                            }
+                            if resp.clicked() {
+                                pick = Some(r.info.bssid);
+                            }
+                            if (i + 1) % cols == 0 {
+                                ui.end_row();
+                            }
+                        }
+                    });
+                });
+                if pick.is_some() {
+                    self.selected = pick;
+                }
+            }
             return;
         };
         let rssi = r.info.rssi;
@@ -102,6 +157,7 @@ impl WifiApp {
         let t_now = self.now_t();
         let pts: Vec<[f64; 2]> = r.history.iter().filter(|(t, _)| t_now - t <= 180.0).map(|(t, v)| [t - t_now, *v]).collect();
         let col = ap_color(&r.info.bssid);
+        crate::widgets::plot_style(ui, true);
         Plot::new("finder_plot")
             .height(ui.available_height().max(120.0))
             .include_y(-100.0)
@@ -111,10 +167,11 @@ impl WifiApp {
             .allow_zoom(false)
             .allow_drag(false)
             .allow_scroll(false)
-            .y_axis_formatter(dbm_axis)
+            .custom_y_axes(vec![crate::widgets::dbm_y_axis()])
             .x_axis_formatter(|m, _| if m.value <= 0.5 { format!("{:.0} s", m.value) } else { String::new() })
             .show(ui, |pui| {
                 pui.line(Line::new(PlotPoints::from(pts)).color(col).width(2.5f32).fill(-100.0f32));
             });
+        crate::widgets::plot_style(ui, false);
     }
 }

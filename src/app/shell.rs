@@ -104,6 +104,9 @@ impl WifiApp {
                     }
                     ui.label(RichText::new("WiFi Analyzer").size(17.0).strong().color(p.text));
                     ui.label(RichText::new(format!("v{VERSION}")).size(11.5).color(p.weak));
+                    if crate::demo::enabled() {
+                        crate::widgets::badge(ui, "DEMO", p.purple);
+                    }
                     ui.add_space(18.0);
 
                     // Adapter

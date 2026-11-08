@@ -44,6 +44,10 @@ pub(super) fn quality_color(p: &Palette, q: Quality) -> Color32 {
 
 /// Ordner für Messungen: „Dokumente\WiFi Analyzer“ (auch wenn „Dokumente“ z. B. in OneDrive liegt)
 pub(super) fn survey_dir() -> PathBuf {
+    if crate::demo::enabled() {
+        // Demo-Messungen nicht zwischen die echten legen
+        return std::env::temp_dir().join("WiFi Analyzer Demo");
+    }
     documents_dir().join("WiFi Analyzer")
 }
 

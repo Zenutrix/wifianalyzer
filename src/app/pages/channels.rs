@@ -4,12 +4,12 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use eframe::egui::{Align2, Color32, RichText, Stroke, Ui, Vec2b};
-use egui_plot::{uniform_grid_spacer, Bar, BarChart, Plot, PlotPoint, PlotPoints, Polygon, Text};
+use egui_plot::{uniform_grid_spacer, AxisHints, Bar, BarChart, Plot, PlotPoint, PlotPoints, Polygon, Text};
 
 use crate::app::WifiApp;
 use crate::model::*;
 use crate::theme::pal;
-use crate::widgets::{card, dbm_axis, load_color, page_header, segmented};
+use crate::widgets::{card, load_color, page_header, segmented};
 use crate::{t, tf};
 
 /// Kurvenform eines APs (flaches Dach, steile Flanken)
@@ -147,6 +147,7 @@ impl WifiApp {
         let sel = self.selected;
         let text_col = p.text;
         let h = ui.available_height() - 40.0;
+        crate::widgets::plot_style(ui, true);
         let resp = Plot::new(("chan", band as u8))
             .height(h.max(220.0))
             .include_x(xmin)
@@ -158,16 +159,20 @@ impl WifiApp {
             .allow_scroll(false)
             .allow_boxed_zoom(false)
             .x_grid_spacer(uniform_grid_spacer(move |_| steps))
-            .x_axis_formatter(move |m, _| {
-                let max = if band == Band::B24 { 14.0 } else { 240.0 };
-                if m.value.fract() == 0.0 && m.value >= 1.0 && m.value <= max {
-                    format!("{}", m.value)
-                } else {
-                    String::new()
-                }
-            })
-            .y_axis_formatter(dbm_axis)
-            .x_axis_label(t!("Kanal", "Channel"))
+            // eigene X-Achse: Kanalnummern auch bei hoher Bildschirmskalierung (Standard blendet < 60 pt aus)
+            .custom_x_axes(vec![AxisHints::new_x()
+                .label(t!("Kanal", "Channel"))
+                .label_spacing(22.0..=30.0)
+                .formatter(move |m, _| {
+                    let max = if band == Band::B24 { 14.0 } else { 240.0 };
+                    let v = m.value.round();
+                    if (m.value - v).abs() < 1e-3 && v >= 1.0 && v <= max {
+                        format!("{v}")
+                    } else {
+                        String::new()
+                    }
+                })])
+            .custom_y_axes(vec![crate::widgets::dbm_y_axis()])
             .label_formatter(|_, v| crate::tf!("Kanal {:.0}\n{:.0} dBm", "Channel {:.0}\n{:.0} dBm", v.x, v.y))
             .show(ui, |pui| {
                 if band == Band::B5 {
@@ -216,6 +221,7 @@ impl WifiApp {
                 }
                 (pui.pointer_coordinate(), pui.response().clicked())
             });
+        crate::widgets::plot_style(ui, false);
         let (ptr, clicked) = resp.inner;
         let hits: Vec<&&ApRecord> = match ptr {
             Some(pt) => {
@@ -344,6 +350,7 @@ impl WifiApp {
             })
             .collect();
         let steps = if band == Band::B24 { [1.0, 1.0, 1.0] } else { [4.0, 4.0, 16.0] };
+        crate::widgets::plot_style(ui, true);
         Plot::new(("rating", band as u8))
             .height((ui.available_height() - 10.0).max(200.0))
             .include_y(0.0)
@@ -352,11 +359,14 @@ impl WifiApp {
             .allow_drag(false)
             .allow_scroll(false)
             .x_grid_spacer(uniform_grid_spacer(move |_| steps))
-            .x_axis_formatter(|m, _| if m.value.fract() == 0.0 && m.value > 0.0 { format!("{}", m.value) } else { String::new() })
-            .x_axis_label(t!("Kanal", "Channel"))
+            .custom_x_axes(vec![AxisHints::new_x()
+                .label(t!("Kanal", "Channel"))
+                .label_spacing(22.0..=30.0)
+                .formatter(|m, _| if (m.value - m.value.round()).abs() < 1e-3 && m.value > 0.5 { format!("{}", m.value.round()) } else { String::new() })])
             .y_axis_formatter(|m, _| if m.value >= 0.0 && (m.value % 10.0).abs() < 1e-6 { format!("{} dB", m.value) } else { String::new() })
             .show(ui, |pui| {
                 pui.bar_chart(BarChart::new(bars).element_formatter(Box::new(|b, _| format!("{}\n{:.0} dB", b.name, b.value))));
             });
+        crate::widgets::plot_style(ui, false);
     }
 }

@@ -69,7 +69,10 @@ fn visuals(p: &Palette, dark: bool) -> egui::Visuals {
     let mut v = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
     v.panel_fill = p.bg;
     v.window_fill = p.surface;
-    v.extreme_bg_color = if dark { Color32::from_rgb(1, 4, 9) } else { Color32::WHITE };
+    // Eingabefelder und Diagramme: knapp dunkler als Karten statt Schwarz
+    v.extreme_bg_color = if dark { Color32::from_rgb(15, 19, 26) } else { Color32::WHITE };
+    v.slider_trailing_fill = true;
+    v.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.55 };
     v.faint_bg_color = p.surface2;
     v.code_bg_color = p.surface2;
     v.hyperlink_color = p.accent;
@@ -81,7 +84,7 @@ fn visuals(p: &Palette, dark: bool) -> egui::Visuals {
     v.window_shadow.color = Color32::from_black_alpha(if dark { 120 } else { 40 });
     v.popup_shadow.color = Color32::from_black_alpha(if dark { 100 } else { 30 });
 
-    let r = Rounding::same(6.0);
+    let r = Rounding::same(7.0);
     v.widgets.noninteractive.bg_fill = p.surface;
     v.widgets.noninteractive.weak_bg_fill = p.surface;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0f32, p.border);
@@ -115,11 +118,14 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
     ctx.set_visuals_of(Theme::Dark, visuals(&DARK, true));
     ctx.set_visuals_of(Theme::Light, visuals(&LIGHT, false));
     ctx.set_theme(if dark { Theme::Dark } else { Theme::Light });
+    crate::model::LIGHT_THEME.store(!dark, std::sync::atomic::Ordering::Relaxed);
     ctx.all_styles_mut(|s| {
         s.interaction.selectable_labels = false; // Labels sollen Klicks an Tabellenzeilen durchreichen
         s.spacing.item_spacing = Vec2::new(8.0, 6.0);
         s.spacing.button_padding = Vec2::new(10.0, 5.0);
         s.spacing.interact_size.y = 26.0;
+        s.spacing.slider_rail_height = 5.0;
+        s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.text_styles.insert(TextStyle::Body, FontId::proportional(14.0));
         s.text_styles.insert(TextStyle::Button, FontId::proportional(14.0));
         s.text_styles.insert(TextStyle::Small, FontId::proportional(11.5));

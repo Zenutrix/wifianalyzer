@@ -8,7 +8,7 @@ use egui_plot::{Corner, Legend, Line, LineStyle, Plot, PlotPoints};
 use crate::app::WifiApp;
 use crate::model::*;
 use crate::theme::pal;
-use crate::widgets::{dbm_axis, page_header, segmented};
+use crate::widgets::{page_header, segmented};
 use crate::{t, tf};
 
 impl WifiApp {
@@ -58,6 +58,7 @@ impl WifiApp {
             ui.label(RichText::new(t!("Nur die aktuelle Verbindung – weitere APs mit ☆ markieren.", "Only the current connection – pin more APs with ☆.")).color(p.weak));
         }
         let sel = self.selected;
+        crate::widgets::plot_style(ui, true);
         Plot::new("history")
             .legend(Legend::default().position(Corner::LeftTop))
             .include_y(-100.0)
@@ -68,7 +69,7 @@ impl WifiApp {
             .allow_drag(false)
             .allow_scroll(false)
             .x_axis_label(t!("Zeit", "Time"))
-            .y_axis_formatter(dbm_axis)
+            .custom_y_axes(vec![crate::widgets::dbm_y_axis()])
             .x_axis_formatter(|m, _| {
                 if m.value > 0.5 {
                     return String::new();
@@ -106,5 +107,6 @@ impl WifiApp {
                     );
                 }
             });
+        crate::widgets::plot_style(ui, false);
     }
 }

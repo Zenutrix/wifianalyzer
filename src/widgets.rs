@@ -65,11 +65,10 @@ pub fn kpi(ui: &mut Ui, title: &str, value: &str, sub: &str, color: Color32, wid
         .show(ui, |ui| {
             ui.set_width(width);
             ui.vertical(|ui| {
-                ui.label(RichText::new(title).size(12.0).color(p.weak));
-                ui.label(RichText::new(value).size(24.0).strong().color(color));
-                if !sub.is_empty() {
-                    ui.label(RichText::new(sub).size(11.5).color(p.weak));
-                }
+                ui.add(egui::Label::new(RichText::new(title).size(12.0).color(p.weak)).truncate());
+                ui.add(egui::Label::new(RichText::new(value).size(22.0).strong().color(color)).truncate());
+                // Unterzeile immer belegen, damit alle Kacheln einer Reihe gleich hoch sind
+                ui.add(egui::Label::new(RichText::new(if sub.is_empty() { " " } else { sub }).size(11.5).color(p.weak)).truncate());
             });
         })
         .response
@@ -94,8 +93,8 @@ pub fn kpi_tile(ui: &mut Ui, icon: &str, title: &str, value: &str, sub: &str, co
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, icon, FontId::proportional(18.0), color);
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(title).size(12.0).color(p.weak));
-                    ui.label(RichText::new(value).size(23.0).strong().color(p.text));
+                    ui.add(egui::Label::new(RichText::new(title).size(12.0).color(p.weak)).truncate());
+                    ui.add(egui::Label::new(RichText::new(value).size(23.0).strong().color(p.text)).truncate());
                     ui.add(egui::Label::new(RichText::new(sub).size(11.5).color(p.weak)).truncate());
                 });
             });
@@ -158,7 +157,8 @@ pub fn badge(ui: &mut Ui, text: &str, color: Color32) {
         .rounding(9.0)
         .inner_margin(Margin::symmetric(6.0, 0.0))
         .show(ui, |ui| {
-            ui.label(RichText::new(text).size(11.0).strong().color(color));
+            // nie abschneiden – in Tabellenzellen wird sonst „…“ daraus
+            ui.add(egui::Label::new(RichText::new(text).size(11.0).strong().color(color)).extend());
         });
 }
 
@@ -330,4 +330,21 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
             });
         });
     changed
+}
+
+/// Ruhiger Stil für Diagramme: egui_plot färbt Gitter und Achsen mit der Textfarbe –
+/// für die Dauer des Diagramms auf ein gedämpftes Grau umstellen (`on = false` setzt zurück).
+pub fn plot_style(ui: &mut Ui, on: bool) {
+    let dark = ui.visuals().dark_mode;
+    ui.visuals_mut().override_text_color = if on {
+        Some(if dark { Color32::from_rgb(104, 114, 127) } else { Color32::from_rgb(140, 149, 159) })
+    } else {
+        None
+    };
+}
+
+/// Y-Achse in dBm; Beschriftung auch in niedrigen Diagrammen und bei hoher Skalierung
+/// (egui_plot blendet Y-Beschriftungen sonst unter 20 pt Abstand aus)
+pub fn dbm_y_axis() -> egui_plot::AxisHints<'static> {
+    egui_plot::AxisHints::new_y().formatter(dbm_axis).label_spacing(11.0..=18.0)
 }

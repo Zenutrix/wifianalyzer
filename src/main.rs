@@ -5,6 +5,7 @@
 
 mod app;
 mod beeper;
+mod demo;
 mod i18n;
 mod ie;
 mod measure;

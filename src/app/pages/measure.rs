@@ -7,7 +7,7 @@ use crate::app::WifiApp;
 use crate::measure::EventKind;
 use crate::model::*;
 use crate::theme::pal;
-use crate::widgets::{card, dbm_axis, fmt_mmss, kpi, page_header, primary_button, signal_gauge};
+use crate::widgets::{card, fmt_mmss, kpi, page_header, primary_button, signal_gauge};
 use crate::{t, tf};
 
 impl WifiApp {
@@ -231,7 +231,8 @@ impl WifiApp {
                 Some(m) => {
                     let s = m.stats(t_now);
                     let pct = |v: f64| format!("{:.0} %", v * 100.0);
-                    let w = 128.0;
+                    // 6 Kacheln je Reihe in die verbleibende Breite einpassen (Rahmen + Abstand ≈ 38 pt)
+                    let w = ((ui.available_width() - 6.0 * 38.0) / 6.0).clamp(78.0, 150.0);
                     ui.vertical(|ui| {
                         ui.horizontal_wrapped(|ui| {
                             let state = if m.running { t!("läuft", "running") } else { t!("beendet", "stopped") };
@@ -367,7 +368,8 @@ impl WifiApp {
             (Some(_), Some(c)) => ap_color(&c.bssid),
             _ => p.accent,
         };
-        let plot_h = (ui.available_height() * 0.5).max(180.0);
+        let plot_h = (ui.available_height() * 0.5).max(240.0);
+        crate::widgets::plot_style(ui, true);
         Plot::new(("meas_plot", self.meas_follow))
             .height(plot_h)
             .legend(Legend::default().position(Corner::LeftBottom))
@@ -379,7 +381,7 @@ impl WifiApp {
             .allow_drag(false)
             .allow_scroll(false)
             .allow_double_click_reset(false)
-            .y_axis_formatter(dbm_axis)
+            .custom_y_axes(vec![crate::widgets::dbm_y_axis()])
             .x_axis_formatter(|m, _| if m.value >= 0.0 { fmt_mmss(m.value) } else { String::new() })
             .label_formatter(|name, v| format!("{name}\n{} · {:.0} dBm", fmt_mmss(v.x.max(0.0)), v.y))
             .show(ui, |pui| {
@@ -425,6 +427,7 @@ impl WifiApp {
                     );
                 }
             });
+        crate::widgets::plot_style(ui, false);
 
         // ---------- Messpunkte | Ereignisse ----------
         ui.add_space(6.0);

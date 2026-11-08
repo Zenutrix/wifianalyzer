@@ -80,8 +80,16 @@ pub fn ap_color(bssid: &[u8; 6]) -> Color32 {
     h = h.wrapping_mul(0x85eb_ca6b);
     h ^= h >> 13;
     let hue = (h % 360) as f32 / 360.0;
-    Hsva::new(hue, 0.70, 0.95, 1.0).into()
+    // im hellen Design dunkler, damit Text in AP-Farbe lesbar bleibt
+    if LIGHT_THEME.load(std::sync::atomic::Ordering::Relaxed) {
+        Hsva::new(hue, 0.80, 0.62, 1.0).into()
+    } else {
+        Hsva::new(hue, 0.70, 0.95, 1.0).into()
+    }
 }
+
+/// Aktives Design für Farben ohne Zugriff auf den Ui-Kontext (wird von `theme::apply` gesetzt)
+pub static LIGHT_THEME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn fmt_mac(m: &[u8; 6]) -> String {
     format!(

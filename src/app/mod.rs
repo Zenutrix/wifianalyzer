@@ -254,7 +254,7 @@ impl WifiApp {
         i18n::set(settings.lang);
         crate::theme::apply(ctx, settings.dark);
 
-        let scanner = wlan::spawn(ctx.clone());
+        let scanner = if crate::demo::enabled() { crate::demo::spawn(ctx.clone()) } else { wlan::spawn(ctx.clone()) };
         let _ = scanner.tx.send(ScanCmd::SetInterval(settings.interval));
         let mut app = Self {
             scanner,
