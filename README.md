@@ -86,6 +86,8 @@ cargo test --release
 
 Alternativ mit der GNU-Toolchain: `rustup default stable-x86_64-pc-windows-gnu` plus MinGW-w64 (z. B. WinLibs) im `PATH`. Siehe `build.cmd`.
 
+**Demo-Modus:** `wifi-analyzer.exe --demo` zeigt eine erfundene WLAN-Umgebung (mit Roaming) statt echter Scans – für Präsentationen, Screenshots und Entwicklung ohne WLAN.
+
 ### Projektaufbau
 
 ```

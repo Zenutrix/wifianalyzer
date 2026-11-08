@@ -47,6 +47,15 @@ Erste öffentliche Version.
 - Messungen werden automatisch in `Dokumente\WiFi Analyzer` gespeichert und lassen sich wieder öffnen (Liste „Gespeicherte Messungen“).
 - Export als **Bericht für Kunden** (HTML, im Browser als PDF druckbar) mit Zusammenfassung, Verlauf, Tabelle und Hinweisen, als **Liste der Messpunkte** (CSV/Excel) oder mit allen Messwerten.
 
+### Oberfläche
+- Diagramme mit ruhigem Hintergrund und dezentem Gitter, Achsen auch bei hoher Bildschirmskalierung beschriftet.
+- Einheitlich hohe Kacheln, AP-Anzahl als Abzeichen in der Netzwerkliste, Schnellauswahl im AP-Finder.
+- Heller Modus: besser lesbare AP-Farben.
+- **Demo-Modus** (`--demo`) mit erfundener WLAN-Umgebung für Präsentationen und Screenshots.
+
+### Website
+- Neue Website mit Screenshots, Funktionsübersicht, Download (Installer und portable) und FAQ – ohne externe Schriften oder Skripte.
+
 ### Messung (Walk-Survey) überarbeitet
 - Der Verlauf läuft flüssig mit: Die Linie reicht bis „jetzt“, ein Live-Punkt markiert den aktuellen Wert, Neuzeichnen 10× pro Sekunde während der Messung.
 - Die Zeitachse wächst in festen Stufen (1 / 2 / 5 / 10 min …) statt jede Sekunde neu zu skalieren.

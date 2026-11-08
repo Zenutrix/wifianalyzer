@@ -4,213 +4,479 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>WiFi Analyzer – WLAN-Analyse für Windows</title>
-  <meta name="description" content="Kostenloser WLAN-Analyzer für Windows: Netzwerke, Kanäle, Befunde mit Empfehlungen und Walk-Survey mit Roaming-Erkennung. Open Source (GPL-3.0) von Thomas Schöpf.">
+  <meta name="description" content="Kostenloser WLAN-Analyzer für Windows: Netzwerke, Kanäle, Befunde mit Empfehlungen, Walk-Survey mit Messpunkten pro Raum und Kundenbericht. Open Source (GPL-3.0) von Thomas Schöpf.">
   <meta name="author" content="Thomas Schöpf">
+  <meta name="theme-color" content="#07090d">
   <link rel="icon" type="image/png" href="icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://wifianalyzer.schoepf-tirol.at/">
   <meta property="og:title" content="WiFi Analyzer – WLAN-Analyse für Windows">
-  <meta property="og:description" content="Netzwerke, Kanäle, Befunde und Walk-Survey mit Roaming-Erkennung. Kostenlos und Open Source.">
-  <meta property="og:image" content="icon.png">
+  <meta property="og:description" content="Netzwerke, Kanäle, Befunde, Walk-Survey mit Messpunkten und Kundenbericht. Kostenlos und Open Source.">
+  <meta property="og:image" content="https://wifianalyzer.schoepf-tirol.at/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
   <style>
     :root {
-      --bg: #f6f8fa; --surface: #ffffff; --surface2: #f0f3f6; --border: #d0d7de;
-      --text: #1f2328; --weak: #59636e; --accent: #0969da; --accent-ink: #ffffff;
-      --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --shadow: 0 8px 30px rgba(31,35,40,.08);
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0d1117; --surface: #161b22; --surface2: #1e242d; --border: #30363d;
-        --text: #e6edf3; --weak: #8b949e; --accent: #2f81f7; --accent-ink: #ffffff;
-        --ok: #3fb950; --warn: #d29922; --bad: #f85149; --shadow: 0 8px 30px rgba(0,0,0,.35);
-      }
+      --bg: #07090d; --bg2: #0b0f16; --surface: rgba(22, 27, 34, .72); --surface-solid: #141a22;
+      --border: rgba(240, 246, 252, .09); --border-strong: rgba(240, 246, 252, .16);
+      --text: #e9eef4; --weak: #96a1ad; --faint: #6b7683;
+      --accent: #3b8cff; --accent2: #8b5cf6; --cyan: #22d3ee; --ok: #3fb950; --warn: #e3a52b; --bad: #f85149;
+      --radius: 18px; --shadow: 0 30px 80px rgba(0, 0, 0, .55);
     }
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; scroll-padding-top: 76px; }
     body {
-      margin: 0; background: var(--bg); color: var(--text);
-      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden;
+      font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+    a { color: inherit; }
+    img { max-width: 100%; height: auto; display: block; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+    html[lang="de"] [data-en], html[lang="en"] [data-de] { display: none !important; }
 
-    header.top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent);
-      backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-    .top .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--text); }
-    .brand img { width: 30px; height: 30px; }
-    nav.links { margin-left: auto; display: flex; gap: 18px; font-size: 15px; }
-    nav.links a { color: var(--weak); }
-    .lang { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px;
-      padding: 4px 10px; font: inherit; font-size: 14px; cursor: pointer; }
+    /* ---------- Hintergrund ---------- */
+    .aurora { position: fixed; inset: 0; z-index: -2; pointer-events: none; overflow: hidden; }
+    .aurora i { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .55; }
+    .aurora i:nth-child(1) { width: 720px; height: 720px; left: -180px; top: -260px; background: radial-gradient(circle, #1d4ed8 0%, transparent 65%); animation: drift 22s ease-in-out infinite alternate; }
+    .aurora i:nth-child(2) { width: 640px; height: 640px; right: -200px; top: 120px; background: radial-gradient(circle, #6d28d9 0%, transparent 65%); animation: drift 26s ease-in-out infinite alternate-reverse; }
+    .aurora i:nth-child(3) { width: 520px; height: 520px; left: 30%; top: 900px; background: radial-gradient(circle, #0e7490 0%, transparent 65%); opacity: .35; animation: drift 30s ease-in-out infinite alternate; }
+    @keyframes drift { to { transform: translate(60px, 40px) scale(1.08); } }
+    .grid-bg { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+      background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 56px 56px; mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%); opacity: .55; }
 
-    .hero { padding: 72px 0 40px; text-align: center; }
-    .hero img.logo { width: 132px; height: 132px; filter: drop-shadow(0 12px 30px rgba(47,129,247,.35)); }
-    .hero h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.1; margin: 22px 0 12px; letter-spacing: -.02em; }
-    .hero p.lead { font-size: 19px; color: var(--weak); max-width: 680px; margin: 0 auto 30px; }
+    /* ---------- Navigation ---------- */
+    header.nav { position: sticky; top: 0; z-index: 50; transition: background .25s, border-color .25s; border-bottom: 1px solid transparent; }
+    header.nav.scrolled { background: rgba(7, 9, 13, .72); backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); border-color: var(--border); }
+    .nav .wrap { display: flex; align-items: center; gap: 22px; height: 68px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; text-decoration: none; font-size: 17px; }
+    .brand img { width: 32px; height: 32px; }
+    .nav nav { display: flex; gap: 22px; margin-left: 18px; }
+    .nav nav a { color: var(--weak); text-decoration: none; font-size: 14.5px; transition: color .15s; }
+    .nav nav a:hover { color: var(--text); }
+    .nav .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .chip { border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .03); color: var(--text); border-radius: 999px; padding: 6px 12px; font: 600 13px/1 inherit; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+    .chip:hover { border-color: rgba(255, 255, 255, .3); }
+
+    .btn { display: inline-flex; align-items: center; gap: 10px; border-radius: 12px; padding: 13px 20px; font-weight: 650; font-size: 15.5px; text-decoration: none; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .04); color: var(--text); transition: transform .15s, box-shadow .2s, background .2s; }
+    .btn:hover { transform: translateY(-1px); background: rgba(255, 255, 255, .07); }
+    .btn.primary { border: 0; color: #fff; background: linear-gradient(135deg, #2f81f7, #6d5cf6); box-shadow: 0 10px 30px rgba(59, 130, 246, .35), inset 0 1px 0 rgba(255, 255, 255, .25); }
+    .btn.primary:hover { box-shadow: 0 14px 40px rgba(99, 102, 241, .5), inset 0 1px 0 rgba(255, 255, 255, .25); }
+    .btn.small { padding: 8px 14px; font-size: 14px; border-radius: 10px; }
+    .btn svg { flex: none; }
+
+    /* ---------- Hero ---------- */
+    .hero { position: relative; padding: 70px 0 40px; text-align: center; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, .04); border-radius: 999px; padding: 6px 14px 6px 8px; font-size: 13.5px; color: var(--weak); text-decoration: none; }
+    .pill b { background: linear-gradient(135deg, #2f81f7, #8b5cf6); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+    .hero h1 { font-size: clamp(40px, 6.4vw, 78px); line-height: 1.02; letter-spacing: -.035em; margin: 22px auto 18px; max-width: 900px; font-weight: 800; }
+    .grad { background: linear-gradient(100deg, #7cc4ff 0%, #8b5cf6 45%, #22d3ee 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .hero p.lead { font-size: clamp(17px, 2vw, 20px); color: var(--weak); max-width: 700px; margin: 0 auto 30px; }
     .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-    .btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px; border-radius: 10px;
-      font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
-    .btn:hover { text-decoration: none; border-color: var(--weak); }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-    .btn.primary:hover { filter: brightness(1.08); }
-    .meta { margin-top: 16px; font-size: 14px; color: var(--weak); }
+    .meta { margin-top: 18px; color: var(--faint); font-size: 13.5px; display: flex; gap: 8px 18px; justify-content: center; flex-wrap: wrap; }
+    .meta span::before { content: "✓"; color: var(--ok); margin-right: 6px; }
 
-    section { padding: 44px 0; }
-    h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -.01em; }
-    .sub { color: var(--weak); margin: 0 0 26px; }
-    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
-      box-shadow: var(--shadow); }
-    .card h3 { margin: 10px 0 6px; font-size: 17px; }
+    .rings { position: absolute; left: 50%; top: 40px; width: 0; height: 0; z-index: -1; }
+    .rings i { position: absolute; border: 1px solid rgba(96, 165, 250, .35); border-radius: 50%; left: 0; top: 0; transform: translate(-50%, -50%); animation: ring 6s linear infinite; opacity: 0; }
+    .rings i:nth-child(2) { animation-delay: 2s; } .rings i:nth-child(3) { animation-delay: 4s; }
+    @keyframes ring { 0% { width: 120px; height: 120px; opacity: .7; } 100% { width: 1300px; height: 1300px; opacity: 0; } }
+
+    .shot-stage { perspective: 2000px; margin: 64px auto 0; max-width: 1120px; }
+    .window { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--border-strong); background: #0d1117; box-shadow: var(--shadow), 0 0 0 1px rgba(0, 0, 0, .4); }
+    .window .bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 14px; background: #10151d; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--faint); }
+    .window .bar i { width: 11px; height: 11px; border-radius: 50%; background: #2b323c; }
+    .window .bar span { margin-left: 10px; }
+    .hero .window { transform: rotateX(18deg) scale(.96); transform-origin: 50% 0; transition: transform .1s linear; }
+    .glow { position: absolute; inset: -2px; z-index: -1; border-radius: 18px; background: linear-gradient(135deg, rgba(59, 130, 246, .6), rgba(139, 92, 246, .5), rgba(34, 211, 238, .4)); filter: blur(40px); opacity: .55; }
+    .shot-wrap { position: relative; }
+
+    /* ---------- Abschnitte ---------- */
+    section { padding: 100px 0; position: relative; }
+    .eyebrow { color: var(--accent); font-weight: 700; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; }
+    h2 { font-size: clamp(30px, 4vw, 48px); line-height: 1.08; letter-spacing: -.03em; margin: 12px 0 14px; font-weight: 800; }
+    .sub { color: var(--weak); font-size: 18px; max-width: 680px; margin: 0; }
+    .center { text-align: center; } .center .sub { margin: 0 auto; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 70px; }
+    .stats div { background: var(--bg2); padding: 22px 20px; text-align: center; }
+    .stats b { display: block; font-size: 26px; letter-spacing: -.02em; }
+    .stats span { color: var(--weak); font-size: 14px; }
+
+    /* Bento */
+    .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 50px; }
+    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; overflow: hidden; backdrop-filter: blur(6px); transition: border-color .2s, transform .2s; }
+    .card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+    .card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 0%), rgba(99, 102, 241, .12), transparent 40%); opacity: 0; transition: opacity .3s; pointer-events: none; }
+    .card:hover::before { opacity: 1; }
+    .card h3 { margin: 14px 0 6px; font-size: 19px; letter-spacing: -.01em; }
     .card p { margin: 0; color: var(--weak); font-size: 15px; }
-    .ico { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center;
-      background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-    .ico svg { width: 22px; height: 22px; }
+    .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: rgba(59, 130, 246, .14); color: #7cb4ff; border: 1px solid rgba(59, 130, 246, .25); }
+    .ico.v { background: rgba(139, 92, 246, .14); color: #b9a1ff; border-color: rgba(139, 92, 246, .28); }
+    .ico.g { background: rgba(63, 185, 80, .13); color: #6fdc80; border-color: rgba(63, 185, 80, .26); }
+    .ico.o { background: rgba(227, 165, 43, .13); color: #f2c35b; border-color: rgba(227, 165, 43, .26); }
+    .ico.c { background: rgba(34, 211, 238, .12); color: #67e3f5; border-color: rgba(34, 211, 238, .25); }
+    .ico.r { background: rgba(248, 81, 73, .12); color: #ff8a83; border-color: rgba(248, 81, 73, .25); }
+    .span2 { grid-column: span 2; } .span3 { grid-column: span 3; } .span4 { grid-column: span 4; }
+    .card .mini { margin-top: 18px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden; height: 220px; }
+    .card .mini img { width: 100%; height: 100%; object-fit: cover; object-position: 16% 0; }
+    .card .mini.ch img { object-position: 60% 45%; transform: scale(1.35); transform-origin: 55% 40%; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+    .tags span { font-size: 12px; color: var(--weak); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
 
-    .steps { counter-reset: s; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .step { position: relative; padding-left: 54px; }
-    .step::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: 0; width: 38px; height: 38px;
-      border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--accent); color: var(--accent-ink); }
-    .step h3 { margin: 4px 0 4px; font-size: 17px; }
-    .step p { margin: 0; color: var(--weak); }
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 40px 0 24px; }
+    .tabs button { border: 1px solid var(--border); background: rgba(255, 255, 255, .03); color: var(--weak); border-radius: 999px; padding: 9px 16px; font: 600 14px/1 inherit; cursor: pointer; transition: all .15s; }
+    .tabs button:hover { color: var(--text); border-color: var(--border-strong); }
+    .tabs button[aria-selected="true"] { color: #fff; background: linear-gradient(135deg, rgba(47, 129, 247, .9), rgba(109, 92, 246, .9)); border-color: transparent; }
+    .tab-shot img { transition: opacity .25s; }
+    .caption { text-align: center; color: var(--weak); margin-top: 18px; min-height: 26px; }
 
-    details { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; }
-    summary { cursor: pointer; font-weight: 600; }
-    details p { color: var(--weak); margin: 10px 0 0; }
+    /* Survey */
+    .split { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; }
+    .steps { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 14px; }
+    .steps li { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+    .steps .n { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, #2f81f7, #8b5cf6); color: #fff; }
+    .steps b { display: block; margin-bottom: 2px; }
+    .steps span { color: var(--weak); font-size: 15px; }
+    kbd { font: 600 12.5px/1 ui-monospace, Consolas, monospace; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 6px; padding: 3px 7px; background: rgba(255, 255, 255, .05); color: var(--text); }
+    .stack { position: relative; }
+    .report { position: absolute; right: -18px; bottom: -48px; width: 54%; background: #fff; color: #1f2328; border-radius: 12px; box-shadow: 0 30px 70px rgba(0, 0, 0, .6); padding: 16px 16px 12px; font-size: 11px; transform: rotate(2deg); }
+    .report h4 { margin: 0; font-size: 15px; } .report .rm { color: #59636e; font-size: 10.5px; border-bottom: 2px solid #0969da; padding-bottom: 7px; margin-bottom: 8px; }
+    .report table { width: 100%; border-collapse: collapse; } .report td { padding: 5px 4px; border-bottom: 1px solid #e6eaef; }
+    .report .p { color: #fff; border-radius: 99px; padding: 1px 7px; font-weight: 700; font-size: 10px; white-space: nowrap; }
+    .report .bar2 { height: 4px; border-radius: 2px; background: #e6eaef; width: 60px; margin-top: 3px; } .report .bar2 i { display: block; height: 4px; border-radius: 2px; }
 
-    footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--weak); font-size: 14px; }
-    footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
-    footer .right { margin-left: auto; display: flex; gap: 18px; }
+    /* Download */
+    .download { background: radial-gradient(ellipse 60% 55% at 50% 60%, rgba(59, 130, 246, .09), transparent 72%); }
+    .dl { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-top: 44px; }
+    .dl .card { padding: 32px; }
+    .dl .big { background: linear-gradient(160deg, rgba(47, 129, 247, .16), rgba(139, 92, 246, .12)), var(--surface); border-color: rgba(99, 102, 241, .35); }
+    .dl h3 { font-size: 24px; margin-top: 0; }
+    .dl ul { margin: 16px 0 24px; padding: 0; list-style: none; display: grid; gap: 8px; color: var(--weak); }
+    .dl li::before { content: "✓"; color: var(--ok); font-weight: 700; margin-right: 10px; }
+    .ver { color: var(--weak); font-size: 14px; margin-top: 14px; }
+    .ver b { color: var(--text); }
+    .alt { display: grid; gap: 10px; margin-top: 8px; }
+    .alt a { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; text-decoration: none; background: rgba(255, 255, 255, .02); transition: border-color .15s; }
+    .alt a:hover { border-color: var(--border-strong); }
+    .alt small { color: var(--weak); display: block; }
+    .note { margin-top: 18px; color: var(--faint); font-size: 13.5px; }
 
-    [data-en] { display: none; }
-    html[lang="en"] [data-de] { display: none; }
-    html[lang="en"] [data-en] { display: revert; }
+    /* FAQ */
+    .faq { max-width: 820px; margin: 40px auto 0; display: grid; gap: 10px; }
+    details { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 4px 20px; }
+    details[open] { border-color: var(--border-strong); }
+    summary { cursor: pointer; list-style: none; padding: 16px 0; font-weight: 650; display: flex; justify-content: space-between; gap: 16px; }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; color: var(--weak); font-size: 22px; line-height: 1; transition: transform .2s; }
+    details[open] summary::after { transform: rotate(45deg); }
+    details p { margin: 0 0 18px; color: var(--weak); }
 
-    @media (max-width: 640px) {
-      nav.links { display: none; }
-      .hero { padding-top: 48px; }
-      footer .right { margin-left: 0; }
+    /* Abschluss + Footer */
+    .final { text-align: center; padding: 110px 0; }
+    .final .card { padding: 60px 30px; background: radial-gradient(800px circle at 50% 0%, rgba(99, 102, 241, .22), transparent 60%), var(--surface); }
+    footer { border-top: 1px solid var(--border); padding: 30px 0 40px; color: var(--faint); font-size: 14px; }
+    footer .wrap { display: flex; gap: 14px 24px; flex-wrap: wrap; align-items: center; }
+    footer .links { margin-left: auto; display: flex; gap: 20px; flex-wrap: wrap; }
+    footer a { color: var(--weak); text-decoration: none; } footer a:hover { color: var(--text); }
+
+    /* Einblenden beim Scrollen */
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+
+    @media (max-width: 980px) {
+      .nav nav { display: none; }
+      .bento { grid-template-columns: repeat(2, 1fr); }
+      .span2, .span3, .span4 { grid-column: span 2; }
+      .bento .half { grid-column: span 1; }
+      .split, .dl { grid-template-columns: 1fr; }
+      .report { position: relative; right: auto; bottom: auto; width: 88%; margin: -40px auto 0; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .wrap { padding: 0 16px; }
+      section { padding: 70px 0; }
+      .hero { padding-top: 44px; }
+      .bento { grid-template-columns: 1fr; }
+      .bento .half, .span2, .span3, .span4 { grid-column: auto; }
+      .nav .gh { display: none; }
+      .btn { width: 100%; justify-content: center; }
+      .cta { flex-direction: column; }
+      .window .bar span { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .reveal { opacity: 1; transform: none; }
+      .hero .window { transform: none; }
     }
   </style>
 </head>
 <body>
-  <header class="top">
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <header class="nav" id="top">
     <div class="wrap">
-      <a class="brand" href="#"><img src="icon.png" alt=""> WiFi Analyzer</a>
-      <nav class="links">
+      <a class="brand" href="#top"><img src="icon.png" alt="" width="32" height="32">WiFi Analyzer</a>
+      <nav>
         <a href="#features"><span data-de>Funktionen</span><span data-en>Features</span></a>
-        <a href="#start"><span data-de>Erste Schritte</span><span data-en>Getting started</span></a>
+        <a href="#tour"><span data-de>Einblicke</span><span data-en>Tour</span></a>
+        <a href="#survey"><span data-de>Messung</span><span data-en>Survey</span></a>
+        <a href="#download">Download</a>
         <a href="#faq">FAQ</a>
-        <a href="https://github.com/zenutrix/wifianalyzer">GitHub</a>
       </nav>
-      <button class="lang" id="lang" type="button" aria-label="Sprache / language">EN</button>
+      <div class="right">
+        <button class="chip" id="lang" type="button" aria-label="Sprache / language">EN</button>
+        <a class="chip gh" href="https://github.com/zenutrix/wifianalyzer" rel="noopener">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+        <a class="btn primary small" href="#download">Download</a>
+      </div>
     </div>
   </header>
 
   <main>
-    <div class="hero wrap">
-      <img class="logo" src="icon.png" alt="WiFi Analyzer">
-      <h1>WiFi Analyzer</h1>
-      <p class="lead">
-        <span data-de>WLAN-Analyse für Techniker unter Windows: Netzwerke, Kanäle, Sicherheitsbefunde mit Empfehlungen und Walk-Survey mit Roaming-Erkennung. Kostenlos und Open Source.</span>
-        <span data-en>Wi-Fi analysis for technicians on Windows: networks, channels, security findings with recommendations and walk surveys with roaming detection. Free and open source.</span>
-      </p>
-      <div class="cta">
-        <a class="btn primary" href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer-Setup.exe">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
-          <span data-de>Für Windows herunterladen</span><span data-en>Download for Windows</span>
-        </a>
-        <a class="btn" href="https://github.com/zenutrix/wifianalyzer">
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          <span data-de>Quellcode auf GitHub</span><span data-en>Source on GitHub</span>
-        </a>
-      </div>
-      <p class="meta">
-        <span data-de>Windows 10 / 11 · 64 Bit · keine Installation · Deutsch &amp; Englisch · <a href="https://github.com/zenutrix/wifianalyzer/releases">alle Versionen</a></span>
-        <span data-en>Windows 10 / 11 · 64-bit · no installation · German &amp; English · <a href="https://github.com/zenutrix/wifianalyzer/releases">all releases</a></span>
-      </p>
-    </div>
+    <!-- ================= HERO ================= -->
+    <section class="hero">
+      <div class="grid-bg" aria-hidden="true"></div>
+      <div class="rings" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="wrap">
+        <a class="pill" href="#survey"><b><span data-de>Neu</span><span data-en>New</span></b><span data-de>Messpunkte pro Raum &amp; Kundenbericht</span><span data-en>Points per room &amp; customer report</span> ›</a>
+        <h1><span data-de>WLAN-Analyse,<br><span class="grad">die Techniker lieben.</span></span><span data-en>Wi-Fi analysis<br><span class="grad">technicians love.</span></span></h1>
+        <p class="lead">
+          <span data-de>Netzwerke, Kanäle und Sicherheit auf einen Blick. Ausleuchtung Raum für Raum messen, Access Points orten und dem Kunden einen sauberen Bericht übergeben – kostenlos und Open Source für Windows.</span>
+          <span data-en>Networks, channels and security at a glance. Survey coverage room by room, locate access points and hand your customer a clean report – free and open source for Windows.</span>
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer-Setup.exe">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+            <span data-de>Für Windows herunterladen</span><span data-en>Download for Windows</span>
+          </a>
+          <a class="btn" href="#tour">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z" fill="currentColor"/></svg>
+            <span data-de>Einblicke ansehen</span><span data-en>Take the tour</span>
+          </a>
+        </div>
+        <div class="meta">
+          <span data-de>Kostenlos</span><span data-en>Free</span>
+          <span>Open Source (GPL-3.0)</span>
+          <span>Windows 10 / 11</span>
+          <span data-de>Ohne Adminrechte</span><span data-en>No admin rights</span>
+          <span data-de>Deutsch &amp; Englisch</span><span data-en>German &amp; English</span>
+        </div>
 
+        <div class="shot-stage">
+          <div class="shot-wrap">
+            <div class="glow" aria-hidden="true"></div>
+            <div class="window" id="heroShot">
+              <div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div>
+              <img src="img/overview.webp" width="1600" height="922" alt="WiFi Analyzer – Übersicht mit Kennzahlen, Verbindung, Frequenzbändern und Sicherheit" fetchpriority="high">
+            </div>
+          </div>
+        </div>
+
+        <div class="stats reveal">
+          <div><b>Wi-Fi 4 – 7</b><span data-de>802.11n bis be</span><span data-en>802.11n to be</span></div>
+          <div><b>2,4 · 5 · 6 GHz</b><span data-de>alle Bänder</span><span data-en>all bands</span></div>
+          <div><b>k · r · v</b><span data-de>Roaming-Standards</span><span data-en>roaming standards</span></div>
+          <div><b>0 €</b><span data-de>auch beruflich</span><span data-en>also for business</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FEATURES ================= -->
     <section id="features">
       <div class="wrap">
-        <h2><span data-de>Alles, was ein WLAN-Techniker braucht</span><span data-en>Everything a Wi-Fi technician needs</span></h2>
-        <p class="sub"><span data-de>Übersichtlich wie ein Business-Tool – mit allen Details, wenn man sie braucht.</span><span data-en>Clean like a business tool – with every detail when you need it.</span></p>
-        <div class="grid">
-          <div class="card">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9a13 13 0 0 1 18 0M6.5 12.5a8 8 0 0 1 11 0M10 16a3 3 0 0 1 4 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/></svg></div>
+        <div class="center reveal">
+          <div class="eyebrow"><span data-de>Funktionen</span><span data-en>Features</span></div>
+          <h2><span data-de>Alles, was ein WLAN-Einsatz braucht.</span><span data-en>Everything a Wi-Fi job needs.</span></h2>
+          <p class="sub"><span data-de>Vom ersten Überblick bis zur Übergabe beim Kunden – ein Werkzeug statt fünf.</span><span data-en>From the first overview to the customer handover – one tool instead of five.</span></p>
+        </div>
+
+        <div class="bento">
+          <div class="card span4 reveal">
+            <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg></div>
             <h3><span data-de>Netzwerke &amp; Access Points</span><span data-en>Networks &amp; access points</span></h3>
-            <p><span data-de>Alle BSSIDs, nach SSID gruppiert: Signal, Kanal, Breite, Wi-Fi 4–7, Sicherheit, PHY-Rate, Clients, Auslastung und Hersteller.</span><span data-en>All BSSIDs grouped by SSID: signal, channel, width, Wi-Fi 4–7, security, PHY rate, clients, load and vendor.</span></p>
+            <p><span data-de>Alle Netze nach SSID gruppiert, mit Signal, Kanal, Breite, Standard, Sicherheit, Clients und Auslastung. Hersteller aus der IEEE-Datenbank, versteckte SSIDs inklusive.</span><span data-en>All networks grouped by SSID with signal, channel, width, standard, security, clients and utilisation. Vendors from the IEEE database, hidden SSIDs included.</span></p>
+            <div class="mini"><img src="img/networks.webp" width="1600" height="922" alt="" loading="lazy"></div>
           </div>
-          <div class="card">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 20h18M5 20c1-8 3-12 4-12s3 4 4 12M11 20c1.5-6 3-9 4-9s2.5 3 4 9"/></svg></div>
-            <h3><span data-de>Kanäle &amp; Empfehlung</span><span data-en>Channels &amp; recommendation</span></h3>
-            <p><span data-de>Spektrum für 2,4 / 5 / 6 GHz mit echter Kanalbreite und Bewertung des Störpegels – inklusive bester 80-MHz-Block und DFS.</span><span data-en>Spectrum for 2.4 / 5 / 6 GHz with real channel width and an interference rating – incl. best 80 MHz block and DFS.</span></p>
+          <div class="card span2 reveal">
+            <div class="ico v"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 20h18M6 16V9M10 16V5M14 16v-6M18 16v-9"/></svg></div>
+            <h3><span data-de>Kanäle &amp; Empfehlung</span><span data-en>Channels &amp; advice</span></h3>
+            <p><span data-de>Kanalbelegung als Spektrum, Störpegel pro Kanal und eine klare Empfehlung für 2,4, 5 und 6 GHz – inklusive DFS.</span><span data-en>Channel usage as a spectrum, interference per channel and a clear recommendation for 2.4, 5 and 6 GHz – DFS included.</span></p>
+            <div class="tags"><span>1 / 6 / 11</span><span>DFS</span><span>160 MHz</span><span>6 GHz</span></div>
+            <div class="mini ch" style="height:150px"><img src="img/channels.webp" width="1600" height="922" alt="" loading="lazy"></div>
           </div>
-          <div class="card">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4m0 3v.01"/></svg></div>
-            <h3><span data-de>Befunde mit Empfehlung</span><span data-en>Findings with advice</span></h3>
-            <p><span data-de>Offene Netze, WEP/TKIP, WPS, Überlappung, Co-Channel, fehlendes PMF oder 802.11k/v, Evil Twin – jeweils mit konkretem Lösungsvorschlag.</span><span data-en>Open networks, WEP/TKIP, WPS, overlap, co-channel, missing PMF or 802.11k/v, evil twin – each with a concrete fix.</span></p>
+          <div class="card span2 reveal">
+            <div class="ico r"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/></svg></div>
+            <h3><span data-de>Befunde mit Lösung</span><span data-en>Findings with fixes</span></h3>
+            <p><span data-de>Offene Netze, WEP/TKIP, fehlendes PMF oder 802.11k/v, Co-Channel-Störungen, Evil-Twin-Verdacht – jeweils mit konkreter Empfehlung.</span><span data-en>Open networks, WEP/TKIP, missing PMF or 802.11k/v, co-channel interference, evil-twin suspicion – each with a concrete recommendation.</span></p>
           </div>
-          <div class="card">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l5-6 4 4 4-7 5 9"/><path d="M3 21h18"/></svg></div>
+          <div class="card span2 reveal">
+            <div class="ico g"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg></div>
             <h3><span data-de>Walk-Survey &amp; Roaming</span><span data-en>Walk survey &amp; roaming</span></h3>
-            <p><span data-de>Verbindung jede Sekunde messen, Roams, Abbrüche und Sticky Clients erkennen, Räume markieren und als CSV exportieren.</span><span data-en>Measure the connection every second, detect roams, disconnects and sticky clients, mark rooms and export to CSV.</span></p>
+            <p><span data-de>Signal jede Sekunde, Roams, Abbrüche und „Sticky Clients“ erkennen – live im Verlauf.</span><span data-en>Signal every second, detect roams, drop-outs and sticky clients – live in the timeline.</span></p>
           </div>
-          <div class="card">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></div>
+          <div class="card span2 reveal">
+            <div class="ico o"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></div>
             <h3><span data-de>AP-Finder</span><span data-en>AP finder</span></h3>
-            <p><span data-de>Einen Access Point über die Signalstärke orten – mit großer Anzeige und optionalem „Geigerzähler“-Ton.</span><span data-en>Locate an access point by signal strength – with a large gauge and an optional Geiger counter tone.</span></p>
+            <p><span data-de>Mit dem Laptop herumgehen und den Access Point per Signal und Piepton finden – wie ein Geigerzähler.</span><span data-en>Walk around with the laptop and find the access point by signal and beep – like a Geiger counter.</span></p>
           </div>
-          <div class="card">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
-            <h3><span data-de>Privat &amp; offen</span><span data-en>Private &amp; open</span></h3>
-            <p><span data-de>Alle Daten bleiben auf dem PC. Quellcode unter GPL-3.0 auf GitHub – nachvollziehbar und frei.</span><span data-en>All data stays on your PC. Source code under GPL-3.0 on GitHub – transparent and free.</span></p>
+          <div class="card span3 reveal">
+            <div class="ico c"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></div>
+            <h3><span data-de>Bericht für den Kunden</span><span data-en>Report for your customer</span></h3>
+            <p><span data-de>Ergebnisse pro Raum mit Ampel-Bewertung, Verlauf und Hinweisen – im Browser als PDF gespeichert. Dazu CSV-Export für Excel.</span><span data-en>Results per room with traffic-light rating, timeline and notes – saved as PDF from the browser. Plus CSV export for Excel.</span></p>
+          </div>
+          <div class="card span3 reveal">
+            <div class="ico v"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+            <h3><span data-de>Privat by Design</span><span data-en>Private by design</span></h3>
+            <p><span data-de>Alle Messungen bleiben auf deinem PC. Kein Konto, keine Cloud, kein Tracking. Quellcode offen auf GitHub.</span><span data-en>All measurements stay on your PC. No account, no cloud, no tracking. Source code open on GitHub.</span></p>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="start">
+    <!-- ================= TOUR ================= -->
+    <section id="tour">
       <div class="wrap">
-        <h2><span data-de>In drei Schritten loslegen</span><span data-en>Get started in three steps</span></h2>
-        <p class="sub"><span data-de>Installation in Sekunden, ohne Adminrechte – oder als portable EXE.</span><span data-en>Installs in seconds without admin rights – or use the portable EXE.</span></p>
-        <div class="steps">
-          <div class="step card">
-            <h3><span data-de>Installieren</span><span data-en>Install</span></h3>
-            <p><span data-de><code>WiFiAnalyzer-Setup.exe</code> starten – legt Programmordner, Startmenü- und Desktop-Verknüpfung an. Alternativ die <a href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer.exe">portable EXE</a>.</span><span data-en>Run <code>WiFiAnalyzer-Setup.exe</code> – creates the program folder plus Start menu and desktop shortcuts. Or use the <a href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer.exe">portable EXE</a>.</span></p>
+        <div class="center reveal">
+          <div class="eyebrow"><span data-de>Einblicke</span><span data-en>Tour</span></div>
+          <h2><span data-de>Klar. Schnell. Aufgeräumt.</span><span data-en>Clear. Fast. Tidy.</span></h2>
+          <p class="sub"><span data-de>Ein ruhiges Business-Design im Hell- oder Dunkelmodus – mit allen Details, wenn du sie brauchst.</span><span data-en>A calm business design in light or dark mode – with every detail when you need it.</span></p>
+        </div>
+        <div class="tabs" role="tablist" id="tabs">
+          <button role="tab" aria-selected="true" data-img="overview"><span data-de>Übersicht</span><span data-en>Overview</span></button>
+          <button role="tab" aria-selected="false" data-img="networks"><span data-de>Netzwerke</span><span data-en>Networks</span></button>
+          <button role="tab" aria-selected="false" data-img="channels"><span data-de>Kanäle</span><span data-en>Channels</span></button>
+          <button role="tab" aria-selected="false" data-img="rating"><span data-de>Kanalbewertung</span><span data-en>Channel rating</span></button>
+          <button role="tab" aria-selected="false" data-img="findings"><span data-de>Befunde</span><span data-en>Findings</span></button>
+          <button role="tab" aria-selected="false" data-img="measure"><span data-de>Messung</span><span data-en>Survey</span></button>
+          <button role="tab" aria-selected="false" data-img="finder">AP-Finder</button>
+        </div>
+        <div class="shot-wrap reveal">
+          <div class="glow" aria-hidden="true" style="opacity:.3"></div>
+          <div class="window tab-shot">
+            <div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div>
+            <img id="tabImg" src="img/overview.webp" width="1600" height="922" alt="Screenshot" loading="lazy">
           </div>
-          <div class="step card">
-            <h3><span data-de>Starten &amp; erlauben</span><span data-en>Run &amp; allow</span></h3>
-            <p><span data-de>Beim ersten Start fragt Windows nach dem Standortzugriff – ohne ihn gibt Windows keine WLAN-Scans heraus.</span><span data-en>On first start Windows asks for location access – without it Windows does not provide Wi-Fi scans.</span></p>
+        </div>
+        <p class="caption" id="caption"></p>
+      </div>
+    </section>
+
+    <!-- ================= SURVEY ================= -->
+    <section id="survey">
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow"><span data-de>Vom Rundgang zum Bericht</span><span data-en>From walk to report</span></div>
+          <h2><span data-de>Jeder Raum ein Messwert.<br>Jeder Kunde zufrieden.</span><span data-en>One value per room.<br>Happy customers.</span></h2>
+          <p class="sub"><span data-de>Messung starten, durchs Gebäude gehen und in jedem Raum kurz Enter drücken. Am Ende steht ein Bericht, den jeder versteht.</span><span data-en>Start a survey, walk the building and press Enter in each room. You end up with a report anyone understands.</span></p>
+          <ol class="steps">
+            <li><div class="n">1</div><div><b><span data-de>Messung starten</span><span data-en>Start the survey</span></b><span data-de>SSID wählen – die App misst jede Sekunde und erkennt Roams.</span><span data-en>Pick the SSID – the app measures every second and detects roams.</span></div></li>
+            <li><div class="n">2</div><div><b><span data-de><kbd>Enter</kbd> – Raum eingeben – <kbd>Enter</kbd></span><span data-en><kbd>Enter</kbd> – type the room – <kbd>Enter</kbd></span></b><span data-de>Der Wert an der Stelle wird gemittelt und bewertet: Sehr gut, Gut, Ausreichend, Schwach.</span><span data-en>The value at the spot is averaged and rated: excellent, good, fair, weak.</span></div></li>
+            <li><div class="n">3</div><div><b><span data-de>Bericht übergeben</span><span data-en>Hand over the report</span></b><span data-de>Als PDF mit Verlauf, Tabelle und Empfehlungen – oder als Liste für Excel.</span><span data-en>As a PDF with timeline, table and recommendations – or as a list for Excel.</span></div></li>
+          </ol>
+        </div>
+        <div class="stack reveal">
+          <div class="shot-wrap">
+            <div class="glow" aria-hidden="true" style="opacity:.35"></div>
+            <div class="window"><div class="bar"><i></i><i></i><i></i><span>WiFi Analyzer</span></div><img src="img/measure.webp" width="1600" height="922" alt="Messung mit Messpunkten pro Raum" loading="lazy"></div>
           </div>
-          <div class="step card">
-            <h3><span data-de>Analysieren</span><span data-en>Analyse</span></h3>
-            <p><span data-de>Die Übersicht zeigt sofort Netze, Befunde und Kanalempfehlungen.</span><span data-en>The overview instantly shows networks, findings and channel recommendations.</span></p>
+          <div class="report" aria-hidden="true">
+            <h4><span data-de>WLAN-Messbericht</span><span data-en>Wi-Fi survey report</span></h4>
+            <div class="rm">SSID <b>Musterfirma</b> · 4 <span data-de>Messpunkte</span><span data-en>points</span></div>
+            <table>
+              <tr><td><b>Büro 1.03</b></td><td><b>-43 dBm</b><div class="bar2"><i style="width:82%;background:#1a7f37"></i></div></td><td><span class="p" style="background:#1a7f37" data-de>Sehr gut</span><span class="p" style="background:#1a7f37" data-en>Excellent</span></td></tr>
+              <tr><td><b><span data-de>Besprechung</span><span data-en>Meeting room</span></b></td><td><b>-58 dBm</b><div class="bar2"><i style="width:60%;background:#1a7f37"></i></div></td><td><span class="p" style="background:#1a7f37" data-de>Sehr gut</span><span class="p" style="background:#1a7f37" data-en>Excellent</span></td></tr>
+              <tr><td><b><span data-de>Teeküche</span><span data-en>Kitchen</span></b></td><td><b>-66 dBm</b><div class="bar2"><i style="width:48%;background:#2da44e"></i></div></td><td><span class="p" style="background:#2da44e" data-de>Gut</span><span class="p" style="background:#2da44e" data-en>Good</span></td></tr>
+              <tr><td><b><span data-de>Lager</span><span data-en>Storage</span></b></td><td><b>-79 dBm</b><div class="bar2"><i style="width:30%;background:#cf222e"></i></div></td><td><span class="p" style="background:#cf222e" data-de>Schwach</span><span class="p" style="background:#cf222e" data-en>Weak</span></td></tr>
+            </table>
           </div>
         </div>
       </div>
     </section>
 
+    <!-- ================= DOWNLOAD ================= -->
+    <section id="download" class="download">
+      <div class="wrap">
+        <div class="center reveal">
+          <div class="eyebrow">Download</div>
+          <h2><span data-de>In 30 Sekunden startklar.</span><span data-en>Ready in 30 seconds.</span></h2>
+          <p class="sub"><span data-de>Kostenlos, ohne Konto, ohne Adminrechte. Updates installiert die App auf Wunsch selbst.</span><span data-en>Free, no account, no admin rights. The app installs updates itself if you like.</span></p>
+        </div>
+        <div class="dl">
+          <div class="card big reveal">
+            <h3><span data-de>Installer für Windows</span><span data-en>Installer for Windows</span></h3>
+            <ul>
+              <li><span data-de>Startmenü, Desktop-Verknüpfung und Deinstallation</span><span data-en>Start menu, desktop shortcut and uninstaller</span></li>
+              <li><span data-de>Installation nur für dich – keine Adminrechte nötig</span><span data-en>Installs just for you – no admin rights needed</span></li>
+              <li><span data-de>Automatische Updates mit Prüfsumme</span><span data-en>Automatic updates with checksum</span></li>
+            </ul>
+            <a class="btn primary" href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer-Setup.exe">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+              WiFiAnalyzer-Setup.exe
+            </a>
+            <div class="ver" id="ver"><span data-de>Immer die neueste Version von GitHub.</span><span data-en>Always the latest version from GitHub.</span></div>
+          </div>
+          <div class="card reveal">
+            <h3 style="font-size:19px"><span data-de>Weitere Varianten</span><span data-en>Other options</span></h3>
+            <div class="alt">
+              <a href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer.exe"><span><b><span data-de>Portable EXE</span><span data-en>Portable EXE</span></b><small><span data-de>Ohne Installation, z. B. vom USB-Stick</span><span data-en>No installation, e.g. from a USB stick</span></small></span><span>↓</span></a>
+              <a href="https://github.com/zenutrix/wifianalyzer/releases/latest"><span><b><span data-de>Alle Dateien &amp; Prüfsummen</span><span data-en>All files &amp; checksums</span></b><small>ZIP · SHA256SUMS · <span data-de>Versionshinweise</span><span data-en>release notes</span></small></span><span>›</span></a>
+              <a href="https://github.com/zenutrix/wifianalyzer"><span><b><span data-de>Quellcode</span><span data-en>Source code</span></b><small>Rust · GPL-3.0</small></span><span>›</span></a>
+            </div>
+            <p class="note"><span data-de>Voraussetzung: Windows 10 oder 11 (64 Bit) mit WLAN-Adapter.</span><span data-en>Requires Windows 10 or 11 (64-bit) with a Wi-Fi adapter.</span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FAQ ================= -->
     <section id="faq">
       <div class="wrap">
-        <h2>FAQ</h2>
-        <p class="sub"></p>
-        <details>
-          <summary><span data-de>Warum braucht die App den Standortzugriff?</span><span data-en>Why does the app need location access?</span></summary>
-          <p><span data-de>WLAN-Netze verraten den Aufenthaltsort. Deshalb gibt Windows BSSIDs und Signalstärken nur an Apps heraus, die auf den Standort zugreifen dürfen. Der WiFi Analyzer nutzt selbst keine Standortdaten.</span><span data-en>Wi-Fi networks reveal where you are, so Windows only hands out BSSIDs and signal strengths to apps that may access the location. WiFi Analyzer itself does not use location data.</span></p>
-        </details>
-        <details>
-          <summary><span data-de>Windows SmartScreen warnt beim Start – ist das normal?</span><span data-en>Windows SmartScreen warns on start – is that normal?</span></summary>
-          <p><span data-de>Ja, solange die EXE nicht digital signiert ist. Über „Weitere Informationen“ → „Trotzdem ausführen“ startet sie. Der Quellcode ist öffentlich auf GitHub einsehbar, die Prüfsummen liegen jedem Release bei.</span><span data-en>Yes, as long as the EXE is not code-signed. Choose “More info” → “Run anyway”. The source code is public on GitHub and every release ships checksums.</span></p>
-        </details>
-        <details>
-          <summary><span data-de>Welche Daten werden übertragen?</span><span data-en>Which data is transmitted?</span></summary>
-          <p><span data-de>Keine Messdaten. Einmalig wird die öffentliche Hersteller-Datenbank (Wireshark/IEEE) geladen, und – abschaltbar – prüft die App bei GitHub, ob es eine neue Version gibt.</span><span data-en>No measurement data. The public vendor database (Wireshark/IEEE) is downloaded once and – optionally – the app checks GitHub for a new version.</span></p>
-        </details>
-        <details>
-          <summary><span data-de>Was kostet der WiFi Analyzer?</span><span data-en>How much does it cost?</span></summary>
-          <p><span data-de>Nichts. Er ist freie Software unter der GNU GPL v3 – auch für den beruflichen Einsatz.</span><span data-en>Nothing. It is free software under the GNU GPL v3 – including professional use.</span></p>
-        </details>
+        <div class="center reveal">
+          <div class="eyebrow">FAQ</div>
+          <h2><span data-de>Häufige Fragen</span><span data-en>Frequently asked</span></h2>
+        </div>
+        <div class="faq">
+          <details class="reveal">
+            <summary><span data-de>Warum braucht die App den Standortzugriff?</span><span data-en>Why does the app need location access?</span></summary>
+            <p><span data-de>WLAN-Netze verraten den Aufenthaltsort. Deshalb gibt Windows BSSIDs und Signalstärken nur an Apps heraus, die auf den Standort zugreifen dürfen. Der WiFi Analyzer nutzt selbst keine Standortdaten.</span><span data-en>Wi-Fi networks reveal where you are, so Windows only hands out BSSIDs and signal strengths to apps that may access the location. WiFi Analyzer itself does not use location data.</span></p>
+          </details>
+          <details class="reveal">
+            <summary><span data-de>Windows SmartScreen warnt beim Start – ist das normal?</span><span data-en>Windows SmartScreen warns on start – is that normal?</span></summary>
+            <p><span data-de>Ja, solange die Dateien nicht digital signiert sind. Über „Weitere Informationen“ → „Trotzdem ausführen“ startet das Setup. Der Quellcode ist öffentlich, jedem Release liegen SHA-256-Prüfsummen bei.</span><span data-en>Yes, as long as the files are not code-signed. Choose “More info” → “Run anyway”. The source code is public and every release ships SHA-256 checksums.</span></p>
+          </details>
+          <details class="reveal">
+            <summary><span data-de>Brauche ich Administratorrechte?</span><span data-en>Do I need admin rights?</span></summary>
+            <p><span data-de>Nein. Das Setup installiert standardmäßig nur für dich. Wer möchte, wählt „für alle Benutzer“ – dann fragt Windows nach Adminrechten.</span><span data-en>No. By default the installer installs just for you. Choose “for all users” if you like – then Windows asks for admin rights.</span></p>
+          </details>
+          <details class="reveal">
+            <summary><span data-de>Wie bekomme ich einen Bericht für meinen Kunden?</span><span data-en>How do I get a report for my customer?</span></summary>
+            <p><span data-de>Messung starten, in jedem Raum Enter drücken und den Raum eingeben. Danach unter „Export“ den Bericht erstellen – er öffnet sich im Browser und lässt sich mit Strg+P als PDF speichern.</span><span data-en>Start a survey, press Enter in each room and type its name. Then create the report via “Export” – it opens in the browser and can be saved as PDF with Ctrl+P.</span></p>
+          </details>
+          <details class="reveal">
+            <summary><span data-de>Welche Daten werden übertragen?</span><span data-en>Which data is transmitted?</span></summary>
+            <p><span data-de>Keine Messdaten. Einmalig wird die öffentliche Hersteller-Datenbank (Wireshark/IEEE) geladen, und – abschaltbar – prüft die App bei GitHub, ob es eine neue Version gibt.</span><span data-en>No measurement data. The public vendor database (Wireshark/IEEE) is downloaded once and – optionally – the app checks GitHub for a new version.</span></p>
+          </details>
+          <details class="reveal">
+            <summary><span data-de>Was kostet der WiFi Analyzer?</span><span data-en>How much does it cost?</span></summary>
+            <p><span data-de>Nichts. Er ist freie Software unter der GNU GPL v3 – auch für den beruflichen Einsatz.</span><span data-en>Nothing. It is free software under the GNU GPL v3 – including professional use.</span></p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="final">
+      <div class="wrap">
+        <div class="card reveal">
+          <h2 style="margin-top:0"><span data-de>Bereit für den nächsten Einsatz?</span><span data-en>Ready for your next job?</span></h2>
+          <p class="sub" style="margin:0 auto 28px"><span data-de>Lade den WiFi Analyzer herunter und sieh dein WLAN, wie es wirklich ist.</span><span data-en>Download WiFi Analyzer and see your Wi-Fi as it really is.</span></p>
+          <div class="cta">
+            <a class="btn primary" href="https://github.com/zenutrix/wifianalyzer/releases/latest/download/WiFiAnalyzer-Setup.exe"><span data-de>Kostenlos herunterladen</span><span data-en>Download for free</span></a>
+            <a class="btn" href="https://github.com/zenutrix/wifianalyzer">GitHub</a>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -218,29 +484,101 @@
   <footer>
     <div class="wrap">
       <span>© <span id="year">2026</span> Thomas Schöpf · <span data-de>Freie Software unter der</span><span data-en>Free software under the</span> <a href="https://github.com/zenutrix/wifianalyzer/blob/main/LICENSE">GPL-3.0</a></span>
-      <span class="right">
+      <span class="links">
         <a href="https://github.com/zenutrix/wifianalyzer">GitHub</a>
+        <a href="https://github.com/zenutrix/wifianalyzer/blob/main/CHANGELOG.md">Changelog</a>
         <a href="https://github.com/zenutrix/wifianalyzer/issues"><span data-de>Fehler melden</span><span data-en>Report a bug</span></a>
-        <!-- TODO: Link zum Impressum der Website eintragen (in Österreich Pflicht, § 5 ECG / § 25 MedienG) -->
+        <!-- TODO: Link zum Impressum eintragen (in Österreich Pflicht, § 5 ECG / § 25 MedienG) -->
         <a href="#impressum">Impressum</a>
       </span>
     </div>
   </footer>
 
   <script>
-    // Sprache: gespeicherte Wahl, sonst Browsersprache
     (function () {
-      var root = document.documentElement, btn = document.getElementById('lang');
-      var saved = null;
+      var root = document.documentElement;
+
+      // Sprache: gespeicherte Wahl, sonst Browsersprache
+      var btn = document.getElementById('lang'), saved = null;
       try { saved = localStorage.getItem('wa-lang'); } catch (e) {}
       var lang = saved || ((navigator.language || 'de').toLowerCase().indexOf('de') === 0 ? 'de' : 'en');
-      function apply(l) { root.lang = l; btn.textContent = l === 'de' ? 'EN' : 'DE'; }
-      apply(lang);
+      function applyLang(l) { root.lang = l; btn.textContent = l === 'de' ? 'EN' : 'DE'; caption(); }
       btn.addEventListener('click', function () {
         lang = root.lang === 'de' ? 'en' : 'de';
-        apply(lang);
         try { localStorage.setItem('wa-lang', lang); } catch (e) {}
+        applyLang(lang);
       });
+
+      // Screenshot-Tabs
+      var captions = {
+        overview: ['Kennzahlen, aktuelle Verbindung, Frequenzbänder und Sicherheit auf einen Blick.', 'Key figures, current connection, bands and security at a glance.'],
+        networks: ['Alle Netze nach SSID gruppiert – Klick klappt die einzelnen Access Points auf.', 'All networks grouped by SSID – click to expand the individual access points.'],
+        channels: ['Kanalbelegung als Spektrum: Wer stört wen? Klick auf eine Kurve zeigt Details.', 'Channel usage as a spectrum: who interferes with whom? Click a curve for details.'],
+        rating: ['Störpegel pro Kanal und eine klare Empfehlung für den besten Kanal.', 'Interference per channel and a clear recommendation for the best channel.'],
+        findings: ['Automatische Prüfung mit konkreten Empfehlungen – nach Schweregrad sortiert.', 'Automatic checks with concrete recommendations – sorted by severity.'],
+        measure: ['Walk-Survey mit Messpunkten pro Raum, Roaming-Erkennung und Live-Verlauf.', 'Walk survey with points per room, roaming detection and live timeline.'],
+        finder: ['Access Point orten: je stärker das Signal, desto näher – optional mit Piepton.', 'Locate an access point: the stronger the signal, the closer – optionally with a beep.']
+      };
+      var current = 'overview', img = document.getElementById('tabImg'), cap = document.getElementById('caption');
+      function caption() { if (cap) cap.textContent = captions[current][root.lang === 'de' ? 0 : 1]; }
+      var tabs = document.querySelectorAll('#tabs button');
+      tabs.forEach(function (b) {
+        b.addEventListener('click', function () {
+          tabs.forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
+          current = b.getAttribute('data-img');
+          img.style.opacity = 0;
+          setTimeout(function () { img.src = 'img/' + current + '.webp'; img.onload = function () { img.style.opacity = 1; }; }, 150);
+          caption();
+        });
+      });
+      // Bilder vorladen, damit der Wechsel sofort geht
+      window.addEventListener('load', function () { Object.keys(captions).forEach(function (k) { var i = new Image(); i.src = 'img/' + k + '.webp'; }); });
+      applyLang(lang);
+
+      // Navigation beim Scrollen hinterlegen, Hero-Screenshot aufrichten
+      var nav = document.querySelector('header.nav'), hero = document.getElementById('heroShot');
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      function onScroll() {
+        var y = window.scrollY;
+        nav.classList.toggle('scrolled', y > 10);
+        if (!reduce && hero) {
+          var t = Math.min(1, y / 420);
+          hero.style.transform = 'rotateX(' + (18 * (1 - t)).toFixed(2) + 'deg) scale(' + (0.96 + 0.04 * t).toFixed(3) + ')';
+        }
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+
+      // Einblenden beim Scrollen
+      var els = document.querySelectorAll('.reveal');
+      if ('IntersectionObserver' in window && !reduce) {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+        }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+        els.forEach(function (el) { io.observe(el); });
+      } else {
+        els.forEach(function (el) { el.classList.add('in'); });
+      }
+
+      // Lichtschein der Karten folgt der Maus
+      document.querySelectorAll('.card').forEach(function (c) {
+        c.addEventListener('pointermove', function (e) {
+          var r = c.getBoundingClientRect();
+          c.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+          c.style.setProperty('--my', (e.clientY - r.top) + 'px');
+        });
+      });
+
+      // Aktuelle Version von GitHub (falls erreichbar)
+      if (window.fetch) {
+        fetch('https://api.github.com/repos/zenutrix/wifianalyzer/releases/latest').then(function (r) { return r.ok ? r.json() : null; }).then(function (rel) {
+          if (!rel || !rel.tag_name) return;
+          var d = new Date(rel.published_at), el = document.getElementById('ver');
+          var de = d.toLocaleDateString('de-AT'), en = d.toLocaleDateString('en-GB');
+          el.innerHTML = '<span data-de>Version <b>' + rel.tag_name.replace(/^v/, '') + '</b> vom ' + de + '</span><span data-en>Version <b>' + rel.tag_name.replace(/^v/, '') + '</b> from ' + en + '</span>';
+        }).catch(function () {});
+      }
+
       document.getElementById('year').textContent = new Date().getFullYear();
     })();
   </script>
