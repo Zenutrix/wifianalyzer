@@ -173,6 +173,9 @@ pub struct MeasPoint {
     /// Position im Grundriss (0..1 relativ zu Breite/Höhe des Plans)
     #[serde(default)]
     pub pos: Option<[f32; 2]>,
+    /// stärkster AP der SSID je Frequenzband an dieser Stelle (dBm)
+    #[serde(default)]
+    pub bands: BandValues,
     /// Latenz/Durchsatz an dieser Stelle
     #[serde(default)]
     pub net: Option<NetTest>,
@@ -184,6 +187,68 @@ pub struct FloorPlan {
     pub name: String,
     #[serde(with = "b64")]
     pub data: Vec<u8>,
+    /// reale Breite des Plans in Metern (aus dem Maßstab)
+    #[serde(default)]
+    pub width_m: Option<f32>,
+    /// Linie, mit der der Maßstab gesetzt wurde (Plan-Koordinaten 0..1)
+    #[serde(default)]
+    pub scale_line: Option<[[f32; 2]; 2]>,
+    /// eingegebene Länge dieser Linie in Metern
+    #[serde(default)]
+    pub scale_len_m: Option<f32>,
+}
+
+impl FloorPlan {
+    pub fn new(name: String, data: Vec<u8>) -> Self {
+        Self { name, data, width_m: None, scale_line: None, scale_len_m: None }
+    }
+}
+
+/// Signal je Frequenzband (stärkster AP der SSID), dBm
+#[derive(Clone, Copy, Default, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BandValues {
+    pub b24: Option<i32>,
+    pub b5: Option<i32>,
+    pub b6: Option<i32>,
+}
+
+impl BandValues {
+    pub fn any(&self) -> bool {
+        self.b24.is_some() || self.b5.is_some() || self.b6.is_some()
+    }
+
+    /// Kurztext „2,4 -48 · 5 -55 · 6 -62“
+    pub fn summary(&self) -> String {
+        let mut v = Vec::new();
+        for (l, x) in [("2,4", self.b24), ("5", self.b5), ("6", self.b6)] {
+            if let Some(x) = x {
+                v.push(format!("{l}: {x}"));
+            }
+        }
+        v.join(" · ")
+    }
+}
+
+/// Ebene der Heatmap: gemessener Wert oder ein Frequenzband
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Layer {
+    Measured,
+    B24,
+    B5,
+    B6,
+}
+
+impl Layer {
+    pub const ALL: [Layer; 4] = [Layer::Measured, Layer::B24, Layer::B5, Layer::B6];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Layer::Measured => crate::t!("Messwert", "Measured"),
+            Layer::B24 => "2,4 GHz",
+            Layer::B5 => "5 GHz",
+            Layer::B6 => "6 GHz",
+        }
+    }
 }
 
 /// Bilddaten als Base64 in der JSON-Datei
@@ -205,13 +270,38 @@ impl MeasPoint {
     pub fn quality(&self) -> Option<Quality> {
         self.rssi.map(Quality::of)
     }
+
+    /// Wert für eine Heatmap-Ebene
+    pub fn value_for(&self, layer: Layer) -> Option<f64> {
+        match layer {
+            Layer::Measured => self.rssi,
+            Layer::B24 => self.bands.b24.map(f64::from),
+            Layer::B5 => self.bands.b5.map(f64::from),
+            Layer::B6 => self.bands.b6.map(f64::from),
+        }
+    }
+}
+
+impl Measurement {
+    /// Platzierte Punkte mit Wert für die Heatmap
+    pub fn heat_points(&self, layer: Layer) -> Vec<([f32; 2], f64)> {
+        self.points.iter().filter_map(|p| Some((p.pos?, p.value_for(layer)?))).collect()
+    }
+
+    /// Ebenen, für die es Werte gibt
+    pub fn layers_with_data(&self) -> Vec<Layer> {
+        Layer::ALL.into_iter().filter(|l| self.points.iter().any(|p| p.pos.is_some() && p.value_for(*l).is_some())).collect()
+    }
 }
 
 /// Was die App beim Erfassen eines Punktes aus dem aktuellen Scan beisteuert
+#[derive(Default)]
 pub struct ScanContext {
     /// stärkster AP der SSID: BSSID, RSSI, Kanal
     pub best: Option<([u8; 6], i32, u32)>,
     pub aps_visible: usize,
+    /// stärkster AP der SSID je Band
+    pub bands: BandValues,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -343,6 +433,7 @@ impl Measurement {
             best_bssid: scan.best.map(|b| b.0),
             best_rssi: scan.best.map(|b| b.1),
             aps_visible: scan.aps_visible,
+            bands: scan.bands,
             id: self.points.iter().map(|p| p.id).max().unwrap_or(0) + 1,
             pos,
             net: None,
@@ -745,7 +836,7 @@ mod tests {
     #[test]
     fn point_averages_samples_at_the_spot_and_roundtrips() {
         let mut m = Measurement::new("Net".into(), 0.0);
-        let ctx = ScanContext { best: Some((B, -50, 36)), aps_visible: 3 };
+        let ctx = ScanContext { best: Some((B, -50, 36)), aps_visible: 3, ..Default::default() };
         // unterwegs schwach, am Punkt (Dialog ab t=10) stark
         for t in 1..=9 {
             m.on_conn(t as f64, Some(&conn("Net", A, -80)));
@@ -783,7 +874,7 @@ mod tests {
         crate::i18n::set(crate::i18n::Lang::De);
         let mut m = Measurement::new("Net".into(), 0.0);
         m.on_conn(1.5, Some(&conn("Net", A, -60)));
-        let ctx = ScanContext { best: None, aps_visible: 1 };
+        let ctx = ScanContext { best: None, aps_visible: 1, ..Default::default() };
         m.add_point(2.0, 1.0, "Raum A", "", None, &ctx);
         let csv = m.to_csv();
         // Zeit (s);Uhrzeit;Typ;... – Dezimalkomma, Typ in Spalte 3
@@ -807,7 +898,7 @@ mod tests {
         let mut m = Measurement::new("Net".into(), 0.0);
         m.on_scan(2.0, &[bss("Net", A, -70)]);
         m.on_scan(4.0, &[bss("Net", A, -72)]);
-        let ctx = ScanContext { best: Some((A, -72, 36)), aps_visible: 1 };
+        let ctx = ScanContext { best: Some((A, -72, 36)), aps_visible: 1, ..Default::default() };
         let p = m.add_point(5.0, 4.5, "", "", None, &ctx).clone();
         assert!(p.from_scan);
         assert_eq!(p.name, "Messpunkt 1");

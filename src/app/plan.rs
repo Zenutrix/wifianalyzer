@@ -14,7 +14,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, RichText, Sense, S
 
 use crate::app::{Page, Sev, WifiApp};
 use crate::heatmap;
-use crate::measure::{FloorPlan, Quality};
+use crate::measure::{FloorPlan, Layer, Quality};
 use crate::nettest::{self, NetTest, NetTestPlan};
 use crate::theme::pal;
 use crate::widgets::primary_button;
@@ -24,6 +24,14 @@ use crate::{t, tf};
 pub(crate) struct NetJob {
     pub id: u64,
     pub rx: Receiver<NetTest>,
+}
+
+/// Maßstab setzen: zwei Punkte einer bekannten Strecke + deren Länge
+#[derive(Default)]
+pub(crate) struct ScaleDraft {
+    a: Option<[f32; 2]>,
+    b: Option<[f32; 2]>,
+    meters: String,
 }
 
 /// Grundriss-Textur (Schlüssel: Name + Größe der Bilddaten)
@@ -144,7 +152,7 @@ impl WifiApp {
         match res {
             Ok((data, w, h)) => {
                 let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "plan".into());
-                let plan = FloorPlan { name: name.clone(), data };
+                let plan = FloorPlan::new(name.clone(), data);
                 self.last_plan = Some(plan.clone());
                 if let Some(m) = self.meas.as_mut() {
                     m.plan = Some(plan);
@@ -184,11 +192,14 @@ impl WifiApp {
     /// Heatmap-Textur passend zu den platzierten Messpunkten
     fn heat_texture(&mut self, ctx: &egui::Context, size: [usize; 2]) -> Option<egui::TextureId> {
         let m = self.meas.as_ref()?;
-        let pts: Vec<([f32; 2], f64)> = m.points.iter().filter_map(|p| Some((p.pos?, p.rssi?))).collect();
+        let pts = m.heat_points(self.plan_layer);
         if pts.is_empty() {
             return None;
         }
+        let width_m = m.plan.as_ref().and_then(|p| p.width_m);
         let mut h = DefaultHasher::new();
+        width_m.map(f32::to_bits).hash(&mut h);
+        heatmap::scale_to_string(&heatmap::scale()).hash(&mut h);
         for (p, v) in &pts {
             p[0].to_bits().hash(&mut h);
             p[1].to_bits().hash(&mut h);
@@ -199,7 +210,7 @@ impl WifiApp {
         if self.heat_tex.as_ref().map(|t| t.0) != Some(key) {
             let aspect = size[0] as f32 / size[1].max(1) as f32;
             let (w, hgt) = if aspect >= 1.0 { (220usize, ((220.0 / aspect) as usize).max(8)) } else { (((220.0 * aspect) as usize).max(8), 220usize) };
-            let field = heatmap::field(&pts, w, hgt, aspect);
+            let field = heatmap::field(&pts, w, hgt, aspect, width_m);
             let rgba: Vec<u8> = field.iter().flatten().copied().collect();
             let img = egui::ColorImage::from_rgba_unmultiplied([w, hgt], &rgba);
             let tex = ctx.load_texture("heatmap", img, TextureOptions::LINEAR);
@@ -237,26 +248,119 @@ impl WifiApp {
         // Werkzeugleiste
         let unplaced = m.points.iter().filter(|pt| pt.pos.is_none()).count();
         let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id)).map(|i| i + 1);
-        let (mut change, mut remove) = (false, false);
+        let with_data = m.layers_with_data();
+        let (width_m, plan_px) = (m.plan.as_ref().and_then(|p| p.width_m), self.plan_tex.as_ref().map(|t| t.size));
+        let (mut change, mut remove, mut start_scale) = (false, false, false);
         let mut heat = self.plan_heat;
+        let mut layer = self.plan_layer;
         ui.horizontal(|ui| {
             ui.checkbox(&mut heat, t!("Heatmap", "Heatmap"));
+            let opts: Vec<(Layer, String)> = Layer::ALL
+                .iter()
+                .map(|l| (*l, if *l == Layer::Measured || with_data.contains(l) { l.label().to_string() } else { format!("{} –", l.label()) }))
+                .collect();
+            let opts_ref: Vec<(Layer, &str)> = opts.iter().map(|(l, s)| (*l, s.as_str())).collect();
+            crate::widgets::segmented(ui, &mut layer, &opts_ref);
+            ui.separator();
+            let scale_btn = ui.button(t!("📏 Maßstab", "📏 Scale")).on_hover_text(t!(
+                "Zwei Punkte einer bekannten Strecke anklicken (z. B. eine Wand) und die Länge in Metern eingeben",
+                "Click two points of a known distance (e.g. a wall) and enter its length in metres"
+            ));
+            if scale_btn.clicked() {
+                start_scale = true;
+            }
+            if ui.button(t!("🎨 Farbskala", "🎨 Colour scale")).on_hover_text(t!("dBm-Schwellen und Farben der Heatmap einstellen", "Set the dBm thresholds and colours of the heatmap")).clicked() {
+                self.show_scale_editor = !self.show_scale_editor;
+            }
             if ui.button(t!("🗺 Anderer Grundriss …", "🗺 Other floor plan …")).clicked() {
                 change = true;
             }
             if ui.button(t!("Entfernen", "Remove")).on_hover_text(t!("Grundriss aus dieser Messung entfernen", "Remove the floor plan from this survey")).clicked() {
                 remove = true;
             }
-            ui.separator();
-            let hint = match sel_no {
-                Some(n) => tf!("Klick in den Plan setzt Messpunkt {n}", "Click into the plan to place point {n}"),
-                None if unplaced > 0 => tf!("{unplaced} Messpunkte ohne Position – in der Liste anklicken und dann im Plan setzen", "{unplaced} points without position – click one in the list, then place it"),
-                None => t!("Messpunkte lassen sich mit der Maus verschieben", "Drag points with the mouse to move them").into(),
-            };
-            ui.label(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak }));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| legend(ui));
         });
+        if layer != self.plan_layer {
+            self.plan_layer = layer;
+            self.heat_tex = None;
+        }
+        if start_scale {
+            self.plan_scale = Some(ScaleDraft::default());
+            self.plan_sel = None;
+        }
+        // Statuszeile: Maßstab bzw. Hinweis
+        let mut apply_scale: Option<f32> = None;
+        let mut cancel_scale = false;
+        ui.horizontal(|ui| {
+            if let Some(sd) = self.plan_scale.as_mut() {
+                ui.label(RichText::new("📏").color(p.accent));
+                match (sd.a, sd.b) {
+                    (None, _) => {
+                        ui.label(RichText::new(t!("Maßstab: auf den Anfang einer bekannten Strecke klicken (z. B. Wandlänge, Türbreite)", "Scale: click the start of a known distance (e.g. wall length, door width)")).color(p.accent));
+                    }
+                    (Some(_), None) => {
+                        ui.label(RichText::new(t!("Jetzt auf das Ende der Strecke klicken", "Now click the end of the distance")).color(p.accent));
+                    }
+                    (Some(_), Some(_)) => {
+                        ui.label(RichText::new(t!("Länge der Strecke:", "Length of the distance:")).color(p.text));
+                        let r = ui.add(egui::TextEdit::singleline(&mut sd.meters).desired_width(70.0).hint_text("z. B. 8,5"));
+                        if sd.meters.is_empty() && !r.has_focus() {
+                            r.request_focus();
+                        }
+                        ui.label("m");
+                        let parsed = sd.meters.trim().replace(',', ".").parse::<f32>().ok().filter(|v| *v > 0.05 && *v < 10_000.0);
+                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if ui.add_enabled(parsed.is_some(), egui::Button::new(t!("Übernehmen", "Apply"))).clicked() || (enter && parsed.is_some()) {
+                            apply_scale = parsed;
+                        }
+                    }
+                }
+                if ui.button(t!("Abbrechen", "Cancel")).clicked() {
+                    cancel_scale = true;
+                }
+            } else {
+                match width_m {
+                    Some(wm) => {
+                        let hm = plan_px.map(|s| wm * s[1] as f32 / s[0].max(1) as f32).unwrap_or(0.0);
+                        ui.label(RichText::new(tf!("📏 Maßstab: Plan {wm:.1} × {hm:.1} m", "📏 Scale: plan {wm:.1} × {hm:.1} m")).color(p.weak));
+                    }
+                    None => {
+                        ui.label(RichText::new(t!("📏 Kein Maßstab gesetzt – angenommen 40 m Breite. Für eine genaue Heatmap „Maßstab“ setzen.", "📏 No scale set – assuming 40 m width. Set the \"Scale\" for an accurate heatmap.")).color(p.warning));
+                    }
+                }
+                ui.separator();
+                let hint = match sel_no {
+                    Some(n) => tf!("Klick in den Plan setzt Messpunkt {n}", "Click into the plan to place point {n}"),
+                    None if unplaced > 0 => tf!("{unplaced} Messpunkte ohne Position – in der Liste anklicken und dann im Plan setzen", "{unplaced} points without position – click one in the list, then place it"),
+                    None => t!("Klick in den Plan = Messpunkt · Punkte lassen sich verschieben", "Click into the plan = point · points can be dragged").into(),
+                };
+                ui.label(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak }));
+            }
+        });
+        if cancel_scale {
+            self.plan_scale = None;
+        }
+        if let (Some(meters), Some(size)) = (apply_scale, plan_px) {
+            if let Some(sd) = self.plan_scale.take() {
+                if let (Some(a), Some(b)) = (sd.a, sd.b) {
+                    let len_px = (((b[0] - a[0]) * size[0] as f32).powi(2) + ((b[1] - a[1]) * size[1] as f32).powi(2)).sqrt();
+                    if len_px > 2.0 {
+                        let wm = meters * size[0] as f32 / len_px;
+                        if let Some(pl) = self.meas.as_mut().and_then(|m| m.plan.as_mut()) {
+                            pl.width_m = Some(wm);
+                            pl.scale_line = Some([a, b]);
+                            pl.scale_len_m = Some(meters);
+                            self.last_plan = Some(pl.clone());
+                        }
+                        self.heat_tex = None;
+                        self.survey_changed();
+                        self.toast(Sev::Info, tf!("Maßstab gesetzt: Plan ist {wm:.1} m breit", "Scale set: plan is {wm:.1} m wide"));
+                    }
+                }
+            }
+        }
         self.plan_heat = heat;
+        self.scale_editor_window(ui.ctx());
         if change {
             self.load_plan();
         }
@@ -271,7 +375,7 @@ impl WifiApp {
             return;
         };
         let heat_tex = if self.plan_heat { self.heat_texture(&ctx, size) } else { None };
-        let h = (height - 30.0).max(160.0);
+        let h = (height - 56.0).max(160.0);
         let (area, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
         let img = fit_rect(area, size);
         let painter = ui.painter_at(area);
@@ -287,8 +391,11 @@ impl WifiApp {
             .points
             .iter()
             .enumerate()
-            .filter_map(|(i, pt)| pt.pos.map(|pos| (pt.id, i + 1, to_screen(img, pos), pt.rssi, pt.name.clone())))
+            .filter_map(|(i, pt)| pt.pos.map(|pos| (pt.id, i + 1, to_screen(img, pos), pt.value_for(self.plan_layer), pt.name.clone())))
             .collect();
+        let heat_pts = m.heat_points(self.plan_layer);
+        let plan_m = m.plan.as_ref().map(|pl| (pl.width_m, pl.scale_line)).unwrap_or((None, None));
+        let scaling = self.plan_scale.is_some();
         let next_ids: Vec<u64> = m.points.iter().filter(|pt| pt.pos.is_none()).map(|pt| pt.id).collect();
         let running = m.running;
         let mut click_measure: Option<[f32; 2]> = None;
@@ -296,11 +403,41 @@ impl WifiApp {
         for (id, no, c, rssi, _) in &markers {
             draw_marker(&painter, *c, r, *no, *rssi, self.plan_sel == Some(*id) || self.plan_drag == Some(*id));
         }
+        // Maßstabsleiste unten links
+        if let Some(wm) = plan_m.0 {
+            let len = heatmap::nice_length(wm * 0.18);
+            let px = len / wm * img.width();
+            let base = Pos2::new(img.min.x + 14.0, img.max.y - 14.0);
+            let bg = Rect::from_min_max(Pos2::new(base.x - 8.0, base.y - 22.0), Pos2::new(base.x + px + 8.0, base.y + 6.0));
+            painter.rect_filled(bg, 4.0, Color32::from_white_alpha(225));
+            let ink = Color32::from_rgb(40, 44, 52);
+            painter.line_segment([base, base + Vec2::new(px, 0.0)], Stroke::new(2.0f32, ink));
+            for x in [0.0, px] {
+                painter.line_segment([base + Vec2::new(x, -5.0), base + Vec2::new(x, 3.0)], Stroke::new(2.0f32, ink));
+            }
+            let label = if len < 1.0 { format!("{:.0} cm", len * 100.0) } else { format!("{len:.0} m") };
+            painter.text(base + Vec2::new(px / 2.0, -12.0), Align2::CENTER_CENTER, label, FontId::proportional(11.5), ink);
+        }
+        // Maßstab setzen: Linie zeichnen
+        if let Some(sd) = &self.plan_scale {
+            let accent = Color32::from_rgb(59, 130, 246);
+            if let Some([a, b]) = plan_m.1 {
+                painter.line_segment([to_screen(img, a), to_screen(img, b)], Stroke::new(1.5f32, accent.gamma_multiply(0.35)));
+            }
+            let end = sd.b.map(|b| to_screen(img, b)).or_else(|| resp.hover_pos().filter(|h| img.contains(*h)));
+            if let Some(a) = sd.a.map(|a| to_screen(img, a)) {
+                if let Some(e) = end {
+                    painter.line_segment([a, e], Stroke::new(3.0f32, accent));
+                    painter.circle(e, 5.0, Color32::WHITE, Stroke::new(2.0f32, accent));
+                }
+                painter.circle(a, 5.0, Color32::WHITE, Stroke::new(2.0f32, accent));
+            }
+        }
 
         // Interaktion: Marker ziehen, klicken = auswählen, Klick ins Leere = ausgewählten Punkt setzen
         let hit = |pos: Pos2| markers.iter().filter(|m| m.2.distance(pos) <= r + 4.0).min_by(|a, b| a.2.distance(pos).total_cmp(&b.2.distance(pos))).map(|m| m.0);
         let mut set_pos: Option<(u64, [f32; 2])> = None;
-        if resp.drag_started() {
+        if resp.drag_started() && !scaling {
             self.plan_drag = resp.interact_pointer_pos().and_then(hit);
         }
         if let (Some(id), Some(pos)) = (self.plan_drag, resp.interact_pointer_pos()) {
@@ -312,7 +449,10 @@ impl WifiApp {
             self.plan_drag = None;
             self.survey_changed();
         }
-        if resp.clicked() {
+        let mut scale_click: Option<[f32; 2]> = None;
+        if resp.clicked() && scaling {
+            scale_click = resp.interact_pointer_pos().filter(|p| img.contains(*p)).map(|p| to_norm(img, p));
+        } else if resp.clicked() {
             if let Some(pos) = resp.interact_pointer_pos() {
                 match hit(pos) {
                     Some(id) => self.plan_sel = if self.plan_sel == Some(id) { None } else { Some(id) },
@@ -330,8 +470,18 @@ impl WifiApp {
                 }
             }
         }
+        if let (Some(c), Some(sd)) = (scale_click, self.plan_scale.as_mut()) {
+            if sd.a.is_none() || sd.b.is_some() {
+                sd.a = Some(c);
+                sd.b = None;
+            } else {
+                sd.b = Some(c);
+            }
+        }
         if let Some(pos) = resp.hover_pos() {
-            if let Some(id) = hit(pos) {
+            if scaling {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+            } else if let Some(id) = hit(pos) {
                 if let Some((_, no, _, rssi, name)) = markers.iter().find(|mk| mk.0 == id) {
                     let txt = match rssi {
                         Some(v) => format!("{no}. {name}\n{v:.0} dBm · {}", Quality::of(*v).label()),
@@ -340,8 +490,22 @@ impl WifiApp {
                     resp.clone().on_hover_text_at_pointer(txt);
                 }
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-            } else if self.plan_sel.is_some() && img.contains(pos) {
+            } else if img.contains(pos) {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                // geschätzter Wert unter dem Mauszeiger
+                if self.plan_heat && !heat_pts.is_empty() {
+                    let n = to_norm(img, pos);
+                    let wm = plan_m.0.unwrap_or(heatmap::DEFAULT_WIDTH_M);
+                    let hm = wm * img.height() / img.width();
+                    if let Some((v, d)) = heatmap::estimate(&heat_pts, n[0], n[1], wm, hm) {
+                        let txt = if v < heatmap::scale_min() {
+                            tf!("{} · kaum Empfang (< {:.0} dBm)", "{} · hardly any signal (< {:.0} dBm)", self.plan_layer.label(), heatmap::scale_min())
+                        } else {
+                            tf!("{} · ≈ {v:.0} dBm (geschätzt, {d:.1} m vom nächsten Messpunkt)", "{} · ≈ {v:.0} dBm (estimated, {d:.1} m from the nearest point)", self.plan_layer.label())
+                        };
+                        resp.clone().on_hover_text_at_pointer(txt);
+                    }
+                }
             }
         }
         if let Some((id, pos)) = set_pos {
@@ -352,9 +516,82 @@ impl WifiApp {
         if let Some(pos) = click_measure {
             self.open_point_dialog_at(Some(pos));
         }
-        // Hinweis unter dem Plan
-        if running && self.plan_sel.is_none() {
-            ui.label(RichText::new(t!("Klick in den Plan = Messpunkt an dieser Stelle · Punkte lassen sich mit der Maus verschieben", "Click into the plan = point at that spot · drag points to move them")).small().color(p.weak));
+    }
+
+    /// Fenster: Farbskala der Heatmap (dBm-Schwellen + Farben)
+    fn scale_editor_window(&mut self, ctx: &egui::Context) {
+        if !self.show_scale_editor {
+            return;
+        }
+        let mut open = true;
+        let mut stops = heatmap::scale();
+        let mut changed = false;
+        let mut reset = false;
+        egui::Window::new(RichText::new(t!("🎨 Farbskala der Heatmap", "🎨 Heatmap colour scale")).strong())
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(340.0)
+            .anchor(Align2::RIGHT_TOP, [-24.0, 150.0])
+            .show(ctx, |ui| {
+                let p = pal(ui);
+                ui.label(RichText::new(t!("Ab welchem Signal welche Farbe gilt. Schwächer als die unterste Schwelle bleibt frei.", "Which colour applies from which signal. Weaker than the lowest threshold stays empty.")).size(12.0).color(p.weak));
+                ui.add_space(6.0);
+                let mut remove = None;
+                egui::Grid::new("scale_grid").num_columns(4).spacing([10.0, 6.0]).show(ui, |ui| {
+                    let n = stops.len();
+                    for (i, (d, c)) in stops.iter_mut().enumerate() {
+                        ui.label(RichText::new(if i == 0 { t!("ab", "from") } else { t!("ab", "from") }).color(p.weak));
+                        if ui.add(egui::DragValue::new(d).range(-100.0..=-20.0).speed(0.5).suffix(" dBm").fixed_decimals(0)).changed() {
+                            changed = true;
+                        }
+                        if ui.color_edit_button_srgb(c).changed() {
+                            changed = true;
+                        }
+                        if ui.add_enabled(n > 2, egui::Button::new("🗑").small()).clicked() {
+                            remove = Some(i);
+                        }
+                        ui.end_row();
+                    }
+                });
+                if let Some(i) = remove {
+                    stops.remove(i);
+                    changed = true;
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button(t!("+ Schwelle", "+ Threshold")).clicked() {
+                        let last = stops.last().map(|s| s.0).unwrap_or(-85.0);
+                        stops.push(((last - 5.0).max(-100.0), [140, 0, 0]));
+                        changed = true;
+                    }
+                    if ui.button(t!("Standard", "Default")).clicked() {
+                        reset = true;
+                    }
+                });
+                ui.add_space(4.0);
+                // Vorschau
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 14.0), Sense::hover());
+                let (lo, hi) = (stops.iter().map(|s| s.0).fold(f64::MAX, f64::min), stops.iter().map(|s| s.0).fold(f64::MIN, f64::max) + 5.0);
+                let steps = 60;
+                for k in 0..steps {
+                    let v = lo + (hi - lo) * k as f64 / (steps - 1) as f64;
+                    let [r, g, b] = heatmap::color(v);
+                    let x0 = rect.min.x + rect.width() * k as f32 / steps as f32;
+                    ui.painter().rect_filled(Rect::from_min_max(Pos2::new(x0, rect.min.y), Pos2::new(x0 + rect.width() / steps as f32 + 0.5, rect.max.y)), 0.0, Color32::from_rgb(r, g, b));
+                }
+            });
+        if reset {
+            heatmap::set_scale(Vec::new());
+            self.settings.heat_scale.clear();
+            self.heat_tex = None;
+        } else if changed {
+            heatmap::set_scale(stops);
+            self.settings.heat_scale = heatmap::scale_to_string(&heatmap::scale());
+            self.heat_tex = None;
+        }
+        if !open {
+            self.show_scale_editor = false;
         }
     }
 
@@ -471,17 +708,18 @@ impl WifiApp {
 fn legend(ui: &mut Ui) {
     let p = pal(ui);
     // rechts-nach-links-Layout: zuerst das rechte Ende
-    ui.label(RichText::new("-50 dBm").small().color(p.weak));
+    let (lo, hi) = (heatmap::scale_min(), heatmap::scale_max());
+    ui.label(RichText::new(format!("{hi:.0} dBm")).small().color(p.weak));
     let (rect, _) = ui.allocate_exact_size(Vec2::new(140.0, 10.0), Sense::hover());
     let steps = 28;
     for i in 0..steps {
-        let v = -85.0 + 35.0 * i as f64 / (steps - 1) as f64;
+        let v = lo + (hi - lo) * i as f64 / (steps - 1) as f64;
         let x0 = rect.min.x + rect.width() * i as f32 / steps as f32;
         let r = Rect::from_min_max(Pos2::new(x0, rect.min.y), Pos2::new(x0 + rect.width() / steps as f32 + 0.5, rect.max.y));
         let [rr, g, b] = heatmap::color(v);
         ui.painter().rect_filled(r, 0.0, Color32::from_rgb(rr, g, b));
     }
-    ui.label(RichText::new("-85").small().color(p.weak));
+    ui.label(RichText::new(format!("{lo:.0}")).small().color(p.weak));
 }
 
 /// Kleiner, anklickbarer Grundriss im Messpunkt-Dialog

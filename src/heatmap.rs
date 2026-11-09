@@ -1,78 +1,159 @@
 //! Heatmap der Ausleuchtung auf dem Grundriss.
 //!
-//! Zwischen den Messpunkten wird per inverser Distanzgewichtung (IDW) interpoliert. Weit weg von
-//! jedem Messpunkt blendet die Farbe aus – dort wurde nicht gemessen, also wird auch nichts
-//! behauptet.
+//! Modell: Zwischen den Messpunkten wird per inverser Distanzgewichtung (IDW) interpoliert –
+//! die Punkte beeinflussen sich gegenseitig. Entfernt man sich vom nächsten Messpunkt, nimmt das
+//! Signal wie in der Funkausbreitung logarithmisch ab (Pfadverlust). Dadurch werden Bereiche
+//! zwischen guten Punkten grün, Ränder und Lücken gelb/orange/rot, und unterhalb der untersten
+//! Farbschwelle bleibt der Plan frei – wie bei professionellen Survey-Tools.
+//!
+//! Abstände rechnen in Metern, sobald der Maßstab gesetzt ist (sonst Annahme: Plan ist 40 m breit).
+
+use std::sync::RwLock;
 
 use image::{imageops, ImageFormat, Rgb, RgbImage, RgbaImage};
 
-/// Ab diesem Abstand (in Planhöhen) zum nächsten Messpunkt beginnt die Farbe auszublenden …
-const FADE_START: f32 = 0.10;
-/// … und ist hier ganz weg
-const FADE_END: f32 = 0.32;
 /// Deckkraft der Heatmap über dem Plan
-const OPACITY: f32 = 0.58;
+const OPACITY: f32 = 0.62;
+/// Annahme für die Planbreite ohne Maßstab (m)
+pub const DEFAULT_WIDTH_M: f32 = 40.0;
+/// Bis zu diesem Abstand (m) vom Messpunkt gilt der gemessene Wert ohne Abschlag
+const TRUST_M: f32 = 2.5;
+/// Pfadverlust-Exponent (Innenräume mit Wänden ≈ 3)
+const PATH_EXP: f64 = 3.0;
+/// Weiter als hier (m) vom nächsten Messpunkt wird nichts mehr eingefärbt
+const MAX_RANGE_M: f32 = 30.0;
 
-/// Farbe für einen Signalwert (dBm), stufenlos von Grün über Gelb nach Rot
-pub fn color(rssi: f64) -> [u8; 3] {
-    const STOPS: [(f64, [f64; 3]); 6] = [
-        (-50.0, [22.0, 163.0, 74.0]),
-        (-60.0, [63.0, 185.0, 80.0]),
-        (-67.0, [163.0, 205.0, 57.0]),
-        (-72.0, [234.0, 179.0, 8.0]),
-        (-78.0, [245.0, 115.0, 22.0]),
-        (-85.0, [220.0, 38.0, 38.0]),
-    ];
-    if rssi >= STOPS[0].0 {
-        return STOPS[0].1.map(|c| c as u8);
+/// Farbschwelle: ab `dbm` (und stärker) diese Farbe
+pub type Stop = (f64, [u8; 3]);
+
+/// Standard-Farbskala (an gängige Survey-Tools angelehnt), stärkste zuerst
+pub const DEFAULT_SCALE: [Stop; 7] = [
+    (-45.0, [0, 176, 80]),
+    (-55.0, [102, 204, 51]),
+    (-62.0, [190, 225, 40]),
+    (-67.0, [255, 230, 0]),
+    (-72.0, [255, 160, 0]),
+    (-78.0, [255, 80, 30]),
+    (-85.0, [205, 20, 20]),
+];
+
+static SCALE: RwLock<Vec<Stop>> = RwLock::new(Vec::new());
+
+/// Aktuelle Farbskala (absteigend nach dBm sortiert)
+pub fn scale() -> Vec<Stop> {
+    let s = SCALE.read().map(|s| s.clone()).unwrap_or_default();
+    if s.len() < 2 {
+        DEFAULT_SCALE.to_vec()
+    } else {
+        s
     }
-    for w in STOPS.windows(2) {
+}
+
+/// Farbskala setzen (wird sortiert); leer = Standard
+pub fn set_scale(mut stops: Vec<Stop>) {
+    stops.sort_by(|a, b| b.0.total_cmp(&a.0));
+    stops.dedup_by(|a, b| (a.0 - b.0).abs() < 0.01);
+    if let Ok(mut s) = SCALE.write() {
+        *s = stops;
+    }
+}
+
+/// Skala als Text für die Einstellungen: "-45:00b050,-55:66cc33,…"
+pub fn scale_to_string(stops: &[Stop]) -> String {
+    stops.iter().map(|(d, c)| format!("{d:.0}:{:02x}{:02x}{:02x}", c[0], c[1], c[2])).collect::<Vec<_>>().join(",")
+}
+
+pub fn scale_from_string(s: &str) -> Vec<Stop> {
+    s.split(',')
+        .filter_map(|part| {
+            let (d, c) = part.trim().split_once(':')?;
+            let d: f64 = d.trim().parse().ok()?;
+            let c = c.trim();
+            if c.len() != 6 {
+                return None;
+            }
+            let v = u32::from_str_radix(c, 16).ok()?;
+            Some((d, [(v >> 16) as u8, (v >> 8) as u8, v as u8]))
+        })
+        .collect()
+}
+
+/// Farbe für einen Signalwert; `None` = schwächer als die unterste Schwelle (nicht einfärben)
+pub fn color_opt(rssi: f64) -> Option<[u8; 3]> {
+    let s = scale();
+    if rssi >= s[0].0 {
+        return Some(s[0].1);
+    }
+    for w in s.windows(2) {
         let ((a, ca), (b, cb)) = (w[0], w[1]);
         if rssi >= b {
             let t = (a - rssi) / (a - b);
-            return [0, 1, 2].map(|i| (ca[i] + (cb[i] - ca[i]) * t).round() as u8);
+            return Some([0, 1, 2].map(|i| (ca[i] as f64 + (cb[i] as f64 - ca[i] as f64) * t).round() as u8));
         }
     }
-    STOPS[5].1.map(|c| c as u8)
+    None
+}
+
+/// Farbe für einen Signalwert (unterhalb der Skala: Farbe der untersten Schwelle)
+pub fn color(rssi: f64) -> [u8; 3] {
+    color_opt(rssi).unwrap_or_else(|| scale().last().map(|s| s.1).unwrap_or([200, 0, 0]))
+}
+
+/// Unterste Schwelle der Skala (dBm)
+pub fn scale_min() -> f64 {
+    scale().last().map(|s| s.0).unwrap_or(-85.0)
+}
+
+pub fn scale_max() -> f64 {
+    scale().first().map(|s| s.0).unwrap_or(-45.0)
+}
+
+/// Geschätztes Signal an einer Stelle (Plan-Koordinaten 0..1). `w_m`/`h_m` = Planmaße in Metern.
+/// Liefert (Wert, Abstand zum nächsten Messpunkt in m).
+pub fn estimate(points: &[([f32; 2], f64)], px: f32, py: f32, w_m: f32, h_m: f32) -> Option<(f64, f32)> {
+    if points.is_empty() {
+        return None;
+    }
+    let (mut sw, mut sv, mut dmin) = (0.0f64, 0.0f64, f32::MAX);
+    for (p, v) in points {
+        let dx = (px - p[0]) * w_m;
+        let dy = (py - p[1]) * h_m;
+        let d2 = dx * dx + dy * dy;
+        dmin = dmin.min(d2.sqrt());
+        // gegenseitige Beeinflussung: nahe Punkte zählen stark, ferne schwach
+        let wgt = 1.0 / (d2 as f64 + 0.25);
+        sw += wgt;
+        sv += wgt * v;
+    }
+    let idw = sv / sw;
+    // jenseits des Vertrauensradius: Pfadverlust ab dem nächsten Messpunkt
+    let extra = (dmin - TRUST_M).max(0.0) / TRUST_M;
+    let loss = 10.0 * PATH_EXP * (1.0 + extra as f64).log10();
+    Some((idw - loss, dmin))
 }
 
 /// Heatmap als RGBA-Raster (`w` × `h`). `points`: Position (0..1 relativ zum Plan) und dBm.
-/// `aspect` = Planbreite / Planhöhe, damit Abstände in beiden Richtungen gleich zählen.
-pub fn field(points: &[([f32; 2], f64)], w: usize, h: usize, aspect: f32) -> Vec<[u8; 4]> {
+/// `aspect` = Planbreite / Planhöhe, `width_m` = reale Breite des Plans (Maßstab).
+pub fn field(points: &[([f32; 2], f64)], w: usize, h: usize, aspect: f32, width_m: Option<f32>) -> Vec<[u8; 4]> {
     let mut out = vec![[0u8; 4]; w * h];
     if points.is_empty() || w == 0 || h == 0 {
         return out;
     }
+    let w_m = width_m.filter(|v| *v > 0.5).unwrap_or(DEFAULT_WIDTH_M);
+    let h_m = w_m / aspect.max(0.01);
+    let min = scale_min();
     for y in 0..h {
         let py = (y as f32 + 0.5) / h as f32;
         for x in 0..w {
             let px = (x as f32 + 0.5) / w as f32;
-            let (mut sw, mut sv, mut dmin) = (0.0f64, 0.0f64, f32::MAX);
-            let mut exact = None;
-            for (p, v) in points {
-                let dx = (px - p[0]) * aspect;
-                let dy = py - p[1];
-                let d2 = dx * dx + dy * dy;
-                dmin = dmin.min(d2.sqrt());
-                if d2 < 1e-8 {
-                    exact = Some(*v);
-                    break;
-                }
-                let wgt = 1.0 / d2 as f64;
-                sw += wgt;
-                sv += wgt * v;
+            let Some((v, dmin)) = estimate(points, px, py, w_m, h_m) else { continue };
+            if dmin > MAX_RANGE_M {
+                continue;
             }
-            let v = exact.unwrap_or(sv / sw);
-            let fade = if dmin <= FADE_START {
-                1.0
-            } else if dmin >= FADE_END {
-                0.0
-            } else {
-                let t = (dmin - FADE_START) / (FADE_END - FADE_START);
-                1.0 - t * t * (3.0 - 2.0 * t) // weich ausblenden
-            };
-            let [r, g, b] = color(v);
-            out[y * w + x] = [r, g, b, (fade * OPACITY * 255.0) as u8];
+            let Some([r, g, b]) = color_opt(v) else { continue };
+            // weich auslaufen in den letzten 3 dB über der untersten Schwelle
+            let edge = ((v - min) / 3.0).clamp(0.0, 1.0) as f32;
+            out[y * w + x] = [r, g, b, (OPACITY * (0.35 + 0.65 * edge) * 255.0) as u8];
         }
     }
     out
@@ -104,14 +185,14 @@ pub fn prepare_plan(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
 }
 
 /// Plan + Heatmap als ein Bild (für Bericht und PDF), Breite höchstens `max_w`
-pub fn composite(plan: &RgbaImage, points: &[([f32; 2], f64)], max_w: u32) -> RgbImage {
+pub fn composite(plan: &RgbaImage, points: &[([f32; 2], f64)], max_w: u32, width_m: Option<f32>) -> RgbImage {
     let (pw, ph) = plan.dimensions();
     let scale = (max_w as f32 / pw as f32).min(1.0);
     let (w, h) = (((pw as f32 * scale) as u32).max(1), ((ph as f32 * scale) as u32).max(1));
     let base = if scale < 1.0 { imageops::resize(plan, w, h, imageops::FilterType::Triangle) } else { plan.clone() };
     // Heatmap in reduzierter Auflösung rechnen und weich hochskalieren
     let (fw, fh) = ((w / 4).max(1), (h / 4).max(1));
-    let f = field(points, fw as usize, fh as usize, w as f32 / h as f32);
+    let f = field(points, fw as usize, fh as usize, w as f32 / h as f32, width_m);
     let mut small = RgbaImage::new(fw, fh);
     for (i, px) in f.iter().enumerate() {
         small.put_pixel(i as u32 % fw, i as u32 / fw, image::Rgba(*px));
@@ -138,38 +219,58 @@ pub fn to_jpeg(img: &RgbImage) -> Vec<u8> {
     out
 }
 
+/// „Runde“ Länge für eine Maßstabsleiste (m), etwa `target` lang
+pub fn nice_length(target: f32) -> f32 {
+    [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0, 200.0].into_iter().rev().find(|v| *v <= target).unwrap_or(0.5)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn colors_follow_quality() {
-        assert_eq!(color(-40.0), [22, 163, 74]);
-        assert_eq!(color(-95.0), [220, 38, 38]);
+    fn scale_colors_and_cutoff() {
+        set_scale(Vec::new());
+        assert_eq!(color(-40.0), [0, 176, 80]);
+        assert_eq!(color_opt(-95.0), None);
         let mid = color(-69.5);
-        assert!(mid[0] > 163 && mid[0] < 234);
+        assert!(mid[1] > 160 && mid[1] < 230);
+        let txt = scale_to_string(&DEFAULT_SCALE);
+        assert_eq!(scale_from_string(&txt), DEFAULT_SCALE.to_vec());
     }
 
     #[test]
-    fn field_interpolates_and_fades() {
-        let pts = [([0.1f32, 0.5f32], -45.0), ([0.9, 0.5], -85.0)];
-        let f = field(&pts, 50, 10, 1.0);
-        let left = f[5 * 50 + 5];
-        let right = f[5 * 50 + 45];
-        assert!(left[1] > right[1], "links grün, rechts rot");
-        assert!(left[3] > 0 && right[3] > 0);
-        // Mitte ist weit von beiden Punkten (0.4 > FADE_END) -> ausgeblendet
-        assert_eq!(f[5 * 50 + 25][3], 0);
+    fn points_influence_each_other_and_signal_decays() {
+        set_scale(Vec::new());
+        // zwei gute Punkte 8 m auseinander, Plan 40 m breit
+        let pts = [([0.40f32, 0.5f32], -45.0), ([0.60, 0.5], -45.0)];
+        let (mid, _) = estimate(&pts, 0.5, 0.5, 40.0, 20.0).unwrap();
+        assert!(mid > -55.0, "zwischen zwei guten Punkten bleibt es gut: {mid}");
+        let (far, _) = estimate(&pts, 0.95, 0.5, 40.0, 20.0).unwrap();
+        assert!(far < -62.0, "weit weg schwächer: {far}");
+        // guter und schlechter Punkt: Mitte liegt dazwischen
+        let pts2 = [([0.45f32, 0.5f32], -45.0), ([0.55, 0.5], -80.0)];
+        let (m2, _) = estimate(&pts2, 0.5, 0.5, 40.0, 20.0).unwrap();
+        assert!(m2 < -50.0 && m2 > -80.0);
+    }
+
+    #[test]
+    fn field_transparent_far_away() {
+        set_scale(Vec::new());
+        let f = field(&[([0.1f32, 0.5f32], -60.0)], 50, 10, 4.0, Some(40.0));
+        assert!(f[5 * 50 + 5][3] > 0);
+        assert_eq!(f[5 * 50 + 49][3], 0, "36 m entfernt: nicht eingefärbt");
     }
 
     #[test]
     fn composite_keeps_size_and_tints() {
+        set_scale(Vec::new());
         let plan = RgbaImage::from_pixel(200, 100, image::Rgba([255, 255, 255, 255]));
-        let img = composite(&plan, &[([0.5, 0.5], -45.0)], 1000);
+        let img = composite(&plan, &[([0.5, 0.5], -45.0)], 1000, Some(20.0));
         assert_eq!(img.dimensions(), (200, 100));
         let c = img.get_pixel(100, 50);
         assert!(c[1] > c[0], "Mitte grünlich");
-        assert_eq!(*img.get_pixel(0, 0), Rgb([255, 255, 255]));
         assert!(!to_jpeg(&img).is_empty());
+        assert_eq!(nice_length(7.0), 5.0);
     }
 }

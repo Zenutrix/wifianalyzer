@@ -4,7 +4,7 @@
 use crate::app::survey::{base_name, open_path, report_notes};
 use crate::app::{Sev, WifiApp};
 use crate::heatmap;
-use crate::measure::{Measurement, Quality};
+use crate::measure::{Layer, Measurement, Quality};
 use crate::model::fmt_mac;
 use crate::pdf::{fit, text_width, wrap, Pdf, Rgb, PAGE_H, PAGE_W};
 use crate::widgets::fmt_mmss;
@@ -124,51 +124,8 @@ impl WifiApp {
         y += 8.0 + boxes.len().div_ceil(4) as f32 * 58.0;
 
         if m.plan_mode {
-        // ---------- Grundriss
-        if let Some(plan) = m.plan.as_ref().and_then(|p| heatmap::decode_plan(&p.data).ok()) {
-            let placed: Vec<([f32; 2], f64)> = pts.iter().filter_map(|p| Some((p.pos?, p.rssi?))).collect();
-            let comp = heatmap::composite(&plan, &placed, 1600);
-            let (iw, ih) = comp.dimensions();
-            let mut w = CW;
-            let mut h = w * ih as f32 / iw as f32;
-            // auf Seite 1 so groß wie möglich, sonst 430 pt auf einer neuen Seite
-            let max_h = if m.plan_mode { (BOTTOM - y - 60.0).clamp(260.0, 470.0) } else { 430.0 };
-            if h > max_h {
-                h = max_h;
-                w = h * iw as f32 / ih as f32;
-            }
-            if y + 32.0 + h + 24.0 > BOTTOM {
-                pdf.new_page();
-                y = M;
-            }
-            heading(&mut pdf, &mut y, t!("Ausleuchtung im Grundriss", "Coverage on the floor plan"));
-            let idx = pdf.add_jpeg(heatmap::to_jpeg(&comp), iw, ih);
-            let x0 = M + (CW - w) / 2.0;
-            pdf.image(idx, x0, y, w, h);
-            pdf.rect_stroke(x0, y, w, h, BORDER, 0.6);
-            for (i, p) in pts.iter().enumerate() {
-                let Some(pos) = p.pos else { continue };
-                let (cx, cy) = (x0 + pos[0] * w, y + pos[1] * h);
-                let c = p.rssi.map(heatmap::color).unwrap_or([120, 120, 120]);
-                pdf.circle(cx, cy, 7.5, c, Some((WHITE, 1.4)));
-                pdf.text_center(cx, cy + 2.8, 7.5, true, WHITE, &(i + 1).to_string());
-            }
-            y += h + 10.0;
-            // Farblegende
-            let lw = 160.0;
-            let lx = M + CW - lw;
-            pdf.text_right(lx - 6.0, y + 6.5, 7.5, false, WEAK, "-85 dBm");
-            for k in 0..32 {
-                let v = -85.0 + 35.0 * k as f64 / 31.0;
-                pdf.rect(lx + k as f32 * lw / 32.0, y, lw / 32.0 + 0.3, 7.0, heatmap::color(v));
-            }
-            pdf.text(lx + lw + 6.0, y + 6.5, 7.5, false, WEAK, "-50");
-            let missing = pts.iter().filter(|p| p.pos.is_none()).count();
-            if missing > 0 {
-                pdf.text(M, y + 6.5, 7.5, false, WEAK, &tf!("{missing} Messpunkte ohne Position", "{missing} points without position"));
-            }
-            y += 14.0;
-        }
+        // ---------- Grundriss (je Ebene: Messwert, 2,4 / 5 / 6 GHz)
+        self.pdf_plan_maps(&mut pdf, m, &mut y);
 
         // ---------- Signalverlauf
         heading(&mut pdf, &mut y, t!("Signalverlauf", "Signal over time"));
@@ -183,51 +140,8 @@ impl WifiApp {
         self.pdf_chart(&mut pdf, m, M, y, CW, 150.0);
         y += 162.0;
 
-        // ---------- Grundriss
-        if let Some(plan) = m.plan.as_ref().and_then(|p| heatmap::decode_plan(&p.data).ok()) {
-            let placed: Vec<([f32; 2], f64)> = pts.iter().filter_map(|p| Some((p.pos?, p.rssi?))).collect();
-            let comp = heatmap::composite(&plan, &placed, 1600);
-            let (iw, ih) = comp.dimensions();
-            let mut w = CW;
-            let mut h = w * ih as f32 / iw as f32;
-            // auf Seite 1 so groß wie möglich, sonst 430 pt auf einer neuen Seite
-            let max_h = if m.plan_mode { (BOTTOM - y - 60.0).clamp(260.0, 470.0) } else { 430.0 };
-            if h > max_h {
-                h = max_h;
-                w = h * iw as f32 / ih as f32;
-            }
-            if y + 32.0 + h + 24.0 > BOTTOM {
-                pdf.new_page();
-                y = M;
-            }
-            heading(&mut pdf, &mut y, t!("Ausleuchtung im Grundriss", "Coverage on the floor plan"));
-            let idx = pdf.add_jpeg(heatmap::to_jpeg(&comp), iw, ih);
-            let x0 = M + (CW - w) / 2.0;
-            pdf.image(idx, x0, y, w, h);
-            pdf.rect_stroke(x0, y, w, h, BORDER, 0.6);
-            for (i, p) in pts.iter().enumerate() {
-                let Some(pos) = p.pos else { continue };
-                let (cx, cy) = (x0 + pos[0] * w, y + pos[1] * h);
-                let c = p.rssi.map(heatmap::color).unwrap_or([120, 120, 120]);
-                pdf.circle(cx, cy, 7.5, c, Some((WHITE, 1.4)));
-                pdf.text_center(cx, cy + 2.8, 7.5, true, WHITE, &(i + 1).to_string());
-            }
-            y += h + 10.0;
-            // Farblegende
-            let lw = 160.0;
-            let lx = M + CW - lw;
-            pdf.text_right(lx - 6.0, y + 6.5, 7.5, false, WEAK, "-85 dBm");
-            for k in 0..32 {
-                let v = -85.0 + 35.0 * k as f64 / 31.0;
-                pdf.rect(lx + k as f32 * lw / 32.0, y, lw / 32.0 + 0.3, 7.0, heatmap::color(v));
-            }
-            pdf.text(lx + lw + 6.0, y + 6.5, 7.5, false, WEAK, "-50");
-            let missing = pts.iter().filter(|p| p.pos.is_none()).count();
-            if missing > 0 {
-                pdf.text(M, y + 6.5, 7.5, false, WEAK, &tf!("{missing} Messpunkte ohne Position", "{missing} points without position"));
-            }
-            y += 14.0;
-        }
+        // ---------- Grundriss (je Ebene: Messwert, 2,4 / 5 / 6 GHz)
+        self.pdf_plan_maps(&mut pdf, m, &mut y);
 
         }
 
@@ -277,8 +191,14 @@ impl WifiApp {
             pdf.text(x + 4.0, base, 8.5, false, WEAK, &(i + 1).to_string());
             next(&mut x);
             pdf.text(x + 4.0, base, 8.8, true, TEXT, &fit(&p.name, 8.8, true, cols[1].1 - 8.0));
-            if !p.note.is_empty() {
-                pdf.text(x + 4.0, sub, 7.2, false, WEAK, &fit(&p.note, 7.2, false, cols[1].1 - 8.0));
+            let subline = match (p.bands.any(), p.note.is_empty()) {
+                (true, true) => format!("{} GHz", p.bands.summary()).replace(" · ", " | "),
+                (true, false) => format!("{} | {}", p.bands.summary(), p.note),
+                (false, false) => p.note.clone(),
+                (false, true) => String::new(),
+            };
+            if !subline.is_empty() {
+                pdf.text(x + 4.0, sub, 7.0, false, WEAK, &fit(&subline, 7.0, false, cols[1].1 - 8.0));
             }
             next(&mut x);
             match (p.rssi, p.quality()) {
@@ -402,6 +322,77 @@ impl WifiApp {
             pdf.text_right(M + CW, fy, 7.5, false, WEAK, &tf!("Seite {} / {n}", "Page {} / {n}", i + 1));
         }
         pdf.finish()
+    }
+
+    /// Grundriss mit Heatmap – je Ebene mit Daten eine Karte (Messwert, 2,4 / 5 / 6 GHz)
+    fn pdf_plan_maps(&self, pdf: &mut Pdf, m: &Measurement, y: &mut f32) {
+        let Some(fp) = m.plan.as_ref() else { return };
+        let Ok(plan) = heatmap::decode_plan(&fp.data) else { return };
+        let layers = m.layers_with_data();
+        for (li, layer) in layers.iter().enumerate() {
+            let placed = m.heat_points(*layer);
+            let comp = heatmap::composite(&plan, &placed, 1600, fp.width_m);
+            let (iw, ih) = comp.dimensions();
+            let mut w = CW;
+            let mut h = w * ih as f32 / iw as f32;
+            // erste Karte der Grundriss-Messung so groß wie möglich, weitere kompakter
+            let max_h = if li == 0 && m.plan_mode { (BOTTOM - *y - 60.0).clamp(260.0, 470.0) } else if li == 0 { 430.0 } else { 330.0 };
+            if h > max_h {
+                h = max_h;
+                w = h * iw as f32 / ih as f32;
+            }
+            if *y + 32.0 + h + 24.0 > BOTTOM {
+                pdf.new_page();
+                *y = M;
+            }
+            let title = match layer {
+                Layer::Measured => t!("Ausleuchtung im Grundriss", "Coverage on the floor plan").to_string(),
+                l => tf!("Ausleuchtung {}", "Coverage {}", l.label()),
+            };
+            heading(pdf, y, &title);
+            let idx = pdf.add_jpeg(heatmap::to_jpeg(&comp), iw, ih);
+            let x0 = M + (CW - w) / 2.0;
+            pdf.image(idx, x0, *y, w, h);
+            pdf.rect_stroke(x0, *y, w, h, BORDER, 0.6);
+            for (i, p) in m.points.iter().enumerate() {
+                let (Some(pos), Some(v)) = (p.pos, p.value_for(*layer)) else { continue };
+                let (cx, cy) = (x0 + pos[0] * w, *y + pos[1] * h);
+                pdf.circle(cx, cy, 7.5, heatmap::color(v), Some((WHITE, 1.4)));
+                pdf.text_center(cx, cy + 2.8, 7.5, true, WHITE, &(i + 1).to_string());
+            }
+            // Maßstabsleiste
+            if let Some(wm) = fp.width_m {
+                let len = heatmap::nice_length(wm * 0.18);
+                let px = len / wm * w;
+                let (bx, by) = (x0 + 10.0, *y + h - 10.0);
+                pdf.round_rect(bx - 5.0, by - 15.0, px + 10.0, 20.0, 3.0, WHITE, None);
+                pdf.line(bx, by, bx + px, by, TEXT, 1.2, false);
+                pdf.line(bx, by - 3.0, bx, by + 2.0, TEXT, 1.2, false);
+                pdf.line(bx + px, by - 3.0, bx + px, by + 2.0, TEXT, 1.2, false);
+                let label = if len < 1.0 { format!("{:.0} cm", len * 100.0) } else { format!("{len:.0} m") };
+                pdf.text_center(bx + px / 2.0, by - 5.0, 7.0, true, TEXT, &label);
+            }
+            *y += h + 10.0;
+            // Farblegende (Schwellen der Farbskala)
+            let scale = heatmap::scale();
+            let mut lx = M;
+            for (d, c) in scale.iter().rev() {
+                let label = format!(">= {d:.0}");
+                pdf.rect(lx, *y, 9.0, 7.0, *c);
+                pdf.text(lx + 12.0, *y + 6.5, 7.2, false, WEAK, &label);
+                lx += 18.0 + text_width(&label, 7.2, false);
+            }
+            pdf.text(lx, *y + 6.5, 7.2, false, WEAK, "dBm");
+            let missing = m.points.iter().filter(|p| p.pos.is_none()).count();
+            if missing > 0 && li == 0 {
+                pdf.text_right(M + CW, *y + 6.5, 7.5, false, WEAK, &tf!("{missing} Messpunkte ohne Position", "{missing} points without position"));
+            }
+            *y += 16.0;
+        }
+        if fp.width_m.is_none() && !layers.is_empty() {
+            pdf.text(M, *y, 7.2, false, WEAK, t!("Ohne Maßstab: Heatmap mit angenommener Planbreite von 40 m berechnet.", "Without scale: heatmap computed assuming a plan width of 40 m."));
+            *y += 10.0;
+        }
     }
 
     /// Signalverlauf als Vektorgrafik mit nummerierten Messpunkten

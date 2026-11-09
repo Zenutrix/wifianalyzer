@@ -232,6 +232,11 @@ pub struct WifiApp {
     plan_sel: Option<u64>,
     plan_drag: Option<u64>,
     plan_heat: bool,
+    /// Heatmap-Ebene: Messwert oder 2,4/5/6 GHz
+    plan_layer: crate::measure::Layer,
+    /// Maßstab wird gerade gesetzt
+    plan_scale: Option<plan::ScaleDraft>,
+    show_scale_editor: bool,
     /// zuletzt verwendeter Grundriss (für die nächste Grundriss-Messung)
     last_plan: Option<crate::measure::FloorPlan>,
     meas_follow: bool,
@@ -266,6 +271,7 @@ impl WifiApp {
         let settings = Settings::load();
         i18n::set(settings.lang);
         crate::theme::apply(ctx, settings.dark);
+        crate::heatmap::set_scale(crate::heatmap::scale_from_string(&settings.heat_scale));
 
         let scanner = if crate::demo::enabled() { crate::demo::spawn(ctx.clone()) } else { wlan::spawn(ctx.clone()) };
         let _ = scanner.tx.send(ScanCmd::SetInterval(settings.interval));
@@ -317,6 +323,9 @@ impl WifiApp {
             plan_sel: None,
             plan_drag: None,
             plan_heat: true,
+            plan_layer: crate::measure::Layer::Measured,
+            plan_scale: None,
+            show_scale_editor: false,
             last_plan: None,
             meas_follow: false,
             splash_done: false,
@@ -957,8 +966,10 @@ impl WifiApp {
             }
         }
         if esc {
-            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.meas_point.is_some() {
+            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.meas_point.is_some() || self.plan_scale.is_some() || self.show_scale_editor {
                 self.meas_point = None;
+                self.plan_scale = None;
+                self.show_scale_editor = false;
                 self.show_settings = false;
                 self.show_about = false;
                 self.show_update = false;

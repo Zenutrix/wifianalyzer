@@ -46,6 +46,10 @@ Erste öffentliche Version.
 - **Heatmap** der Ausleuchtung zwischen den Messpunkten; Punkte lassen sich verschieben, schwache Stellen sind sofort sichtbar.
 - Der Grundriss wird in der Messungsdatei gespeichert und für die nächste Grundriss-Messung übernommen.
 - Gespeicherte Messungen erscheinen jeweils bei ihrer Messart.
+- **Maßstab**: zwei Punkte einer bekannten Strecke anklicken und die Länge in Metern eingeben – Heatmap und Maßstabsleiste rechnen in echten Metern.
+- **Heatmap wie bei professionellen Survey-Tools**: Messpunkte beeinflussen sich gegenseitig (Interpolation), abseits der Punkte nimmt das Signal mit dem Pfadverlust ab; schwächer als die unterste Schwelle bleibt frei. Geschätzter Wert unter dem Mauszeiger.
+- **Farbskala einstellbar**: dBm-Schwellen und Farben frei wählbar (Standard angelehnt an gängige Tools), wird gespeichert.
+- **2,4 / 5 / 6 GHz**: pro Messpunkt wird der stärkste AP je Band gespeichert; Heatmap umschaltbar zwischen Messwert und den drei Bändern. Bericht (PDF/HTML) enthält eine Karte je Band, CSV die Werte.
 
 ### Latenz und Durchsatz pro Messpunkt
 - Ping zum Router und ins Internet (Ø, Min/Max, Jitter, Verlust) – läuft schon, während der Raumname eingegeben wird.

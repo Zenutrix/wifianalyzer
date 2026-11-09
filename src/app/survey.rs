@@ -184,12 +184,12 @@ pub(super) fn report_notes(m: &Measurement, s: &crate::measure::Stats) -> Vec<(O
 }
 
 /// Grundriss + Heatmap für den HTML-Bericht: ein SVG mit eingebettetem JPEG und nummerierten Punkten
-fn plan_svg(m: &Measurement) -> Option<String> {
+fn plan_svg(m: &Measurement, layer: crate::measure::Layer) -> Option<String> {
     use base64::Engine;
     let plan = m.plan.as_ref()?;
     let img = crate::heatmap::decode_plan(&plan.data).ok()?;
-    let pts: Vec<([f32; 2], f64)> = m.points.iter().filter_map(|p| Some((p.pos?, p.rssi?))).collect();
-    let comp = crate::heatmap::composite(&img, &pts, 1600);
+    let pts = m.heat_points(layer);
+    let comp = crate::heatmap::composite(&img, &pts, 1600, plan.width_m);
     let (w, h) = comp.dimensions();
     let b64 = base64::engine::general_purpose::STANDARD.encode(crate::heatmap::to_jpeg(&comp));
     let mut s = format!(
@@ -198,7 +198,7 @@ fn plan_svg(m: &Measurement) -> Option<String> {
     let r = (w.max(h) as f32 / 70.0).clamp(10.0, 22.0);
     for (i, p) in m.points.iter().enumerate() {
         let Some(pos) = p.pos else { continue };
-        let [cr, cg, cb] = p.rssi.map(crate::heatmap::color).unwrap_or([120, 120, 120]);
+        let [cr, cg, cb] = p.value_for(layer).map(crate::heatmap::color).unwrap_or([120, 120, 120]);
         let (x, y) = (pos[0] * w as f32, pos[1] * h as f32);
         let _ = write!(
             s,
@@ -332,7 +332,9 @@ impl WifiApp {
         let now = Instant::now();
         let aps: Vec<_> = self.aps.values().filter(|r| !r.info.hidden && r.info.ssid == ssid && !self.is_stale(r, now)).collect();
         let best = aps.iter().max_by_key(|r| r.info.rssi).map(|r| (r.info.bssid, r.info.rssi, r.info.channel));
-        ScanContext { best, aps_visible: aps.len() }
+        let band = |b: crate::model::Band| aps.iter().filter(|r| r.info.band == b).map(|r| r.info.rssi).max();
+        let bands = crate::measure::BandValues { b24: band(crate::model::Band::B24), b5: band(crate::model::Band::B5), b6: band(crate::model::Band::B6) };
+        ScanContext { best, aps_visible: aps.len(), bands }
     }
 
     pub(super) fn open_point_dialog(&mut self) {
@@ -343,6 +345,8 @@ impl WifiApp {
     pub(super) fn open_point_dialog_at(&mut self, pos: Option<[f32; 2]>) {
         if self.meas.as_ref().is_some_and(|m| m.running) && self.meas_point.is_none() {
             let net_rx = self.spawn_net_test();
+            // frischer Scan, damit die Werte je Band (2,4/5/6 GHz) von genau dieser Stelle stammen
+            self.scan_now();
             self.meas_point = Some(PointDraft {
                 name: String::new(),
                 note: String::new(),
@@ -370,6 +374,14 @@ impl WifiApp {
         let Some(m) = self.meas.as_ref() else { return };
         let others: Vec<([f32; 2], Option<f64>, usize)> = m.points.iter().enumerate().filter_map(|(i, p)| Some((p.pos?, p.rssi, i + 1))).collect();
         let (ping_on, speed_on) = (self.settings.point_ping, self.settings.point_speed);
+        let band_now = {
+            let ctx_b = self.survey_scan_ctx(&m.ssid).bands;
+            let ctx_b = match (crate::demo::enabled(), d.pos) {
+                (true, Some(pos)) => crate::demo::bands_at(pos),
+                _ => ctx_b,
+            };
+            ctx_b.summary()
+        };
         let t_now = self.now_t();
         let ssid = m.ssid.clone();
         let connected = self.conn.as_ref().is_some_and(|c| c.ssid == ssid);
@@ -412,6 +424,9 @@ impl WifiApp {
                             ui.label(RichText::new(t!("Noch kein Messwert", "No value yet")).size(20.0).color(p.weak));
                         }
                     });
+                    if !band_now.is_empty() {
+                        ui.label(RichText::new(tf!("Je Band (Scan): {band_now}", "Per band (scan): {band_now}")).size(12.0).color(p.text));
+                    }
                     let src = if connected { t!("Verbindung", "connection") } else { t!("Scan", "scan") };
                     ui.label(
                         RichText::new(tf!("An dieser Stelle seit {secs} s · {} Werte ({src})", "At this spot for {secs} s · {} values ({src})", vals.len()))
@@ -515,6 +530,7 @@ impl WifiApp {
                         pt.rssi = Some(v);
                         pt.min = Some(v as i32 - 2);
                         pt.max = Some(v as i32 + 2);
+                        pt.bands = crate::demo::bands_at(pos);
                     }
                 }
                 let p = m.points.last().expect("eben gespeichert");
@@ -592,13 +608,14 @@ impl WifiApp {
         let mut pick_for_plan: Option<u64> = None;
         let Some(m) = self.meas.as_mut() else { return };
         egui::ScrollArea::vertical().id_salt("meas_points").auto_shrink(false).show(ui, |ui| {
-            let cols = 9 + if show_net { 2 } else { 0 } + if has_plan { 1 } else { 0 };
+            let cols = 9 + if show_net { 2 } else { 0 } + if has_plan { 2 } else { 0 };
             egui::Grid::new("meas_points_grid").num_columns(cols).striped(true).spacing([12.0, 5.0]).show(ui, |ui| {
                 let mut heads = vec!["#", t!("Raum / Ort", "Room / location"), t!("Signal", "Signal"), t!("Bewertung", "Rating"), "AP", t!("Kanal", "Channel"), t!("Rate", "Rate")];
                 if show_net {
                     heads.extend([t!("Ping", "Ping"), "Down / Up"]);
                 }
                 if has_plan {
+                    heads.push("2,4 / 5 / 6 GHz");
                     heads.push(t!("Plan", "Plan"));
                 }
                 heads.extend([t!("Notiz", "Note"), ""]);
@@ -651,6 +668,11 @@ impl WifiApp {
                     ui.label(if pt.tx_mbps > 0.0 { format!("{:.0} Mbit/s", pt.tx_mbps) } else { "–".into() });
                     if show_net {
                         net_cells(ui, &p, pt.net.as_ref(), pending.contains(&pt.id));
+                    }
+                    if has_plan {
+                        let f = |v: Option<i32>| v.map(|x| x.to_string()).unwrap_or("–".into());
+                        ui.label(RichText::new(format!("{} / {} / {}", f(pt.bands.b24), f(pt.bands.b5), f(pt.bands.b6))).monospace().color(p.text))
+                            .on_hover_text(t!("Stärkster AP der SSID je Band an dieser Stelle (dBm)", "Strongest AP of the SSID per band at this spot (dBm)"));
                     }
                     if has_plan {
                         let (txt, tip) = if pt.pos.is_some() {
@@ -870,8 +892,8 @@ impl WifiApp {
 
     fn points_csv(&self, m: &Measurement) -> String {
         let header = t!(
-            "Nr;Raum / Ort;Uhrzeit;Signal Ø (dBm);Bewertung;Min (dBm);Max (dBm);Messwerte;Quelle;AP (BSSID);Hersteller;Kanal;Datenrate (Mbit/s);Stärkster AP;Stärkster AP (dBm);APs sichtbar;Ping Router Ø (ms);Verlust Router (%);Jitter Router (ms);Ping Internet Ø (ms);Download (Mbit/s);Upload (Mbit/s);Position X (%);Position Y (%);Notiz",
-            "No;Room / location;Time;Signal avg (dBm);Rating;Min (dBm);Max (dBm);Samples;Source;AP (BSSID);Vendor;Channel;Data rate (Mbit/s);Strongest AP;Strongest AP (dBm);APs visible;Ping router avg (ms);Loss router (%);Jitter router (ms);Ping internet avg (ms);Download (Mbit/s);Upload (Mbit/s);Position X (%);Position Y (%);Note"
+            "Nr;Raum / Ort;Uhrzeit;Signal Ø (dBm);Bewertung;Min (dBm);Max (dBm);Messwerte;Quelle;AP (BSSID);Hersteller;Kanal;Datenrate (Mbit/s);Stärkster AP;Stärkster AP (dBm);APs sichtbar;Ping Router Ø (ms);Verlust Router (%);Jitter Router (ms);Ping Internet Ø (ms);Download (Mbit/s);Upload (Mbit/s);2,4 GHz (dBm);5 GHz (dBm);6 GHz (dBm);Position X (%);Position Y (%);Notiz",
+            "No;Room / location;Time;Signal avg (dBm);Rating;Min (dBm);Max (dBm);Samples;Source;AP (BSSID);Vendor;Channel;Data rate (Mbit/s);Strongest AP;Strongest AP (dBm);APs visible;Ping router avg (ms);Loss router (%);Jitter router (ms);Ping internet avg (ms);Download (Mbit/s);Upload (Mbit/s);2.4 GHz (dBm);5 GHz (dBm);6 GHz (dBm);Position X (%);Position Y (%);Note"
         );
         let mut s = tf!(
             "\u{feff}# WLAN-Messung SSID \"{}\" vom {} (WiFi Analyzer {})\n{header}\n",
@@ -909,6 +931,9 @@ impl WifiApp {
                 dec(inet.and_then(|g| g.avg_ms)),
                 dec(pt.net.as_ref().and_then(|n| n.down_mbps)),
                 dec(pt.net.as_ref().and_then(|n| n.up_mbps)),
+                opt(pt.bands.b24),
+                opt(pt.bands.b5),
+                opt(pt.bands.b6),
                 dec(pt.pos.map(|p| p[0] as f64 * 100.0)),
                 dec(pt.pos.map(|p| p[1] as f64 * 100.0)),
                 pt.note.clone(),
@@ -1008,7 +1033,24 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
 
         // Verlauf und Grundriss (Grundriss-Messung: Plan zuerst)
         let chart = format!("<h2>{}</h2>{}", t!("Signalverlauf", "Signal over time"), self.report_svg(m));
-        let plan = plan_svg(m).map(|svg| format!("<h2>{}</h2>{svg}", t!("Ausleuchtung im Grundriss", "Coverage on the floor plan"))).unwrap_or_default();
+        let mut plan = String::new();
+        for layer in m.layers_with_data() {
+            if let Some(svg) = plan_svg(m, layer) {
+                let title = match layer {
+                    crate::measure::Layer::Measured => t!("Ausleuchtung im Grundriss", "Coverage on the floor plan").to_string(),
+                    l => tf!("Ausleuchtung {}", "Coverage {}", l.label()),
+                };
+                let _ = write!(plan, "<h2>{title}</h2>{svg}");
+            }
+        }
+        if !plan.is_empty() {
+            let scale = crate::heatmap::scale();
+            let _ = write!(plan, "<div style=\"display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-top:8px\">");
+            for (d, c) in &scale {
+                let _ = write!(plan, "<span><i style=\"display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;background:#{:02x}{:02x}{:02x}\"></i> ≥ {d:.0} dBm</span>", c[0], c[1], c[2]);
+            }
+            let _ = write!(plan, "</div>");
+        }
         if m.plan_mode {
             h.push_str(&plan);
             h.push_str(&chart);

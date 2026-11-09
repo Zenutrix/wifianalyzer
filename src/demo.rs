@@ -27,6 +27,13 @@ pub fn rssi_at(pos: [f32; 2]) -> i32 {
         .clamp(-92, -30)
 }
 
+/// Demo: Signal je Band – 2,4 GHz reicht weiter, 6 GHz dämpft am stärksten
+pub fn bands_at(pos: [f32; 2]) -> crate::measure::BandValues {
+    let base = rssi_at(pos);
+    let walls = if pos[1] > 0.6 { 1 } else { 0 };
+    crate::measure::BandValues { b24: Some((base + 6).min(-30)), b5: Some(base), b6: Some(base - 7 - 4 * walls).filter(|v| *v > -95) }
+}
+
 pub fn enabled() -> bool {
     std::env::args().any(|a| a == "--demo") || std::env::var_os("WIFIANALYZER_DEMO").is_some()
 }
