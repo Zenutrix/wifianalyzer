@@ -3,8 +3,9 @@
 //! Modell: Zwischen den Messpunkten wird per inverser Distanzgewichtung (IDW) interpoliert –
 //! die Punkte beeinflussen sich gegenseitig. Entfernt man sich vom nächsten Messpunkt, nimmt das
 //! Signal wie in der Funkausbreitung logarithmisch ab (Pfadverlust). Dadurch werden Bereiche
-//! zwischen guten Punkten grün, Ränder und Lücken gelb/orange/rot, und unterhalb der untersten
-//! Farbschwelle bleibt der Plan frei – wie bei professionellen Survey-Tools.
+//! zwischen guten Punkten grün, Ränder und Lücken gelb/orange/rot. Unterhalb der untersten
+//! Farbschwelle („kein Signal“) wird grau eingefärbt – Farbe einstellbar oder durchsichtig.
+//! Messpunkte ganz ohne Wert (kein Empfang) zählen als `NO_SIGNAL_DBM`.
 //!
 //! Abstände rechnen in Metern, sobald der Maßstab gesetzt ist (sonst Annahme: Plan ist 40 m breit).
 
@@ -22,6 +23,38 @@ const TRUST_M: f32 = 2.5;
 const PATH_EXP: f64 = 3.0;
 /// Weiter als hier (m) vom nächsten Messpunkt wird nichts mehr eingefärbt
 const MAX_RANGE_M: f32 = 30.0;
+
+/// Wert für Messpunkte ohne jeden Empfang
+pub const NO_SIGNAL_DBM: f64 = -100.0;
+/// Standardfarbe für „kein Signal“
+pub const DEFAULT_NO_SIGNAL: [u8; 3] = [150, 154, 162];
+
+static NO_SIGNAL: RwLock<String> = RwLock::new(String::new());
+
+/// Einstellung für „kein Signal“ setzen: leer = Grau, „none“ = durchsichtig, sonst rrggbb
+pub fn set_no_signal(v: &str) {
+    if let Ok(mut s) = NO_SIGNAL.write() {
+        *s = v.trim().to_string();
+    }
+}
+
+pub fn no_signal_setting() -> String {
+    NO_SIGNAL.read().map(|s| s.clone()).unwrap_or_default()
+}
+
+/// Farbe für Bereiche ohne (ausreichendes) Signal; `None` = nicht einfärben
+pub fn no_signal() -> Option<[u8; 3]> {
+    let s = no_signal_setting();
+    if s.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    if s.len() == 6 {
+        if let Ok(v) = u32::from_str_radix(&s, 16) {
+            return Some([(v >> 16) as u8, (v >> 8) as u8, v as u8]);
+        }
+    }
+    Some(DEFAULT_NO_SIGNAL)
+}
 
 /// Farbschwelle: ab `dbm` (und stärker) diese Farbe
 pub type Stop = (f64, [u8; 3]);
@@ -94,9 +127,9 @@ pub fn color_opt(rssi: f64) -> Option<[u8; 3]> {
     None
 }
 
-/// Farbe für einen Signalwert (unterhalb der Skala: Farbe der untersten Schwelle)
+/// Farbe für einen Signalwert (unterhalb der Skala: „kein Signal“-Farbe bzw. unterste Schwelle)
 pub fn color(rssi: f64) -> [u8; 3] {
-    color_opt(rssi).unwrap_or_else(|| scale().last().map(|s| s.1).unwrap_or([200, 0, 0]))
+    color_opt(rssi).or_else(no_signal).unwrap_or_else(|| scale().last().map(|s| s.1).unwrap_or([200, 0, 0]))
 }
 
 /// Unterste Schwelle der Skala (dBm)
@@ -142,6 +175,8 @@ pub fn field(points: &[([f32; 2], f64)], w: usize, h: usize, aspect: f32, width_
     let w_m = width_m.filter(|v| *v > 0.5).unwrap_or(DEFAULT_WIDTH_M);
     let h_m = w_m / aspect.max(0.01);
     let min = scale_min();
+    let nosig = no_signal();
+    let lowest = scale().last().map(|s| s.1).unwrap_or([200, 0, 0]);
     for y in 0..h {
         let py = (y as f32 + 0.5) / h as f32;
         for x in 0..w {
@@ -150,10 +185,22 @@ pub fn field(points: &[([f32; 2], f64)], w: usize, h: usize, aspect: f32, width_
             if dmin > MAX_RANGE_M {
                 continue;
             }
-            let Some([r, g, b]) = color_opt(v) else { continue };
-            // weich auslaufen in den letzten 3 dB über der untersten Schwelle
-            let edge = ((v - min) / 3.0).clamp(0.0, 1.0) as f32;
-            out[y * w + x] = [r, g, b, (OPACITY * (0.35 + 0.65 * edge) * 255.0) as u8];
+            match (color_opt(v), nosig) {
+                (Some([r, g, b]), Some(_)) => out[y * w + x] = [r, g, b, (OPACITY * 255.0) as u8],
+                (Some([r, g, b]), None) => {
+                    // durchsichtig: weich auslaufen in den letzten 3 dB über der untersten Schwelle
+                    let edge = ((v - min) / 3.0).clamp(0.0, 1.0) as f32;
+                    out[y * w + x] = [r, g, b, (OPACITY * (0.35 + 0.65 * edge) * 255.0) as u8];
+                }
+                (None, Some(grey)) => {
+                    // weicher Übergang von der untersten Farbe zu „kein Signal“ über 4 dB
+                    let t = ((min - v) / 4.0).clamp(0.0, 1.0);
+                    let c = [0, 1, 2].map(|i| (lowest[i] as f64 + (grey[i] as f64 - lowest[i] as f64) * t).round() as u8);
+                    let a = OPACITY * (1.0 - 0.1 * t as f32);
+                    out[y * w + x] = [c[0], c[1], c[2], (a * 255.0) as u8];
+                }
+                (None, None) => {}
+            }
         }
     }
     out

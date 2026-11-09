@@ -15,6 +15,15 @@ impl WifiApp {
     pub(crate) fn page_measure(&mut self, ui: &mut Ui, plan_mode: bool) {
         let p = pal(ui);
         let t_now = self.now_t();
+        // Vorbereitung der Grundriss-Messung gehört nicht auf die Rundgang-Seite: Pläne merken
+        if !plan_mode && self.meas.as_ref().is_some_and(|m| m.draft) {
+            if let Some(m) = self.meas.take() {
+                if !m.plans.is_empty() {
+                    self.last_plans = m.plans;
+                }
+            }
+            self.plan_scale = None;
+        }
         // Es ist immer nur eine Messung offen – gehört sie zur anderen Seite, dorthin verweisen
         if let Some(other) = self.meas.as_ref().filter(|m| m.plan_mode != plan_mode) {
             let other_running = other.running;
@@ -30,6 +39,11 @@ impl WifiApp {
         }
         let ssid = self.meas.as_ref().map(|m| m.ssid.clone()).or_else(|| self.meas_ssid.clone()).unwrap_or_default();
         let connected_ssid = self.conn.as_ref().map(|c| c.ssid.clone());
+        // Grundriss-Messung ohne offene Messung: Vorbereitung (Pläne laden, Maßstab setzen)
+        if plan_mode && self.meas.is_none() {
+            self.meas = Some(crate::measure::Measurement::draft(ssid.clone(), self.last_plans.clone()));
+        }
+        let draft = self.meas.as_ref().is_some_and(|m| m.draft);
 
         // Enter = Messpunkt erfassen (solange nicht gerade in ein Feld getippt wird)
         if running && self.meas_point.is_none() && self.plan_sel.is_none() && !ui.ctx().wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -42,12 +56,14 @@ impl WifiApp {
         let mut new_ssid = None;
         let mut follow = self.meas_follow;
         let (mut ping_on, mut speed_on) = (self.settings.point_ping, self.settings.point_speed);
-        let has_meas = self.meas.is_some();
+        let has_meas = self.meas.is_some() && !draft;
         let confirm = self.meas_discard_confirm;
         page_header(
             ui,
             if plan_mode { t!("Grundriss-Messung", "Floor plan survey") } else { t!("Messung", "Survey") },
-            if plan_mode {
+            if plan_mode && draft {
+                t!("Pläne laden, je Stockwerk den Maßstab setzen, Messung starten – dann in den Plan klicken, wo du stehst", "Load the plans, set the scale per floor, start – then click where you stand on the plan")
+            } else if plan_mode {
                 t!("In den Plan klicken, wo du stehst – die Heatmap entsteht live", "Click where you stand on the plan – the heatmap builds up live")
             } else {
                 t!("Rundgang mit Verlauf, Roaming und Messpunkten pro Raum", "Walk survey with timeline, roaming and points per room")
@@ -168,7 +184,22 @@ impl WifiApp {
         }
 
         if start {
-            self.start_survey(ssid.clone(), plan_mode);
+            // Vorbereitung: erst den Maßstab je Stockwerk setzen (sonst stimmt die Heatmap nicht)
+            let unscaled = if draft { self.meas.as_ref().and_then(|m| m.plans.iter().position(|f| f.width_m.is_none())) } else { None };
+            match unscaled {
+                Some(i) => {
+                    let name = self.meas.as_ref().map(|m| m.plans[i].title().to_string()).unwrap_or_default();
+                    self.plan_start_scale(i);
+                    self.toast(
+                        crate::app::Sev::Warning,
+                        tf!(
+                            "Für „{name}“ fehlt noch der Maßstab – z. B. eine Tür abmessen. Oder „ohne Maßstab starten“.",
+                            "\"{name}\" has no scale yet – e.g. measure a door. Or \"start without scale\"."
+                        ),
+                    );
+                }
+                None => self.start_survey(ssid.clone(), plan_mode),
+            }
         }
         if stop {
             self.stop_measurement();
@@ -213,7 +244,11 @@ impl WifiApp {
         let conn_here = self.conn.as_ref().filter(|c| c.ssid == ssid);
         let best = self.best_ap_of(&ssid);
         let live_rssi = conn_here.and_then(|c| c.rssi).or(best.map(|b| b.info.rssi));
-        if plan_mode {
+        if plan_mode && draft {
+            if self.plan_setup_strip(ui, !ssid.is_empty()) {
+                self.start_survey(ssid.clone(), true);
+            }
+        } else if plan_mode {
             self.plan_live_strip(ui, live_rssi, conn_here.is_some());
         } else {
         ui.horizontal(|ui| {
@@ -328,7 +363,11 @@ impl WifiApp {
             // Tabelle darunter soll mindestens ~4 Zeilen zeigen
             let avail = ui.available_height();
             let h = (avail - 190.0).clamp(240.0, (avail * 0.70).max(240.0));
-            self.plan_view(ui, h);
+            let draft = self.meas.as_ref().is_some_and(|m| m.draft);
+            self.plan_view(ui, if draft { ui.available_height() - 8.0 } else { h });
+            if draft {
+                return;
+            }
         } else {
             self.meas_chart(ui);
         }

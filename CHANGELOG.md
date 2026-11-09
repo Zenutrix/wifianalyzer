@@ -43,6 +43,8 @@ Erste öffentliche Version.
 
 ### Grundriss-Messung (neu)
 - Eigene Seite **Grundriss-Messung**, getrennt von der normalen Messung (Rundgang): Grundriss laden (PNG/JPG oder PDF), an der eigenen Position in den Plan klicken – dort wird gemessen.
+- **Vorbereitung vor dem Start**: Pläne laden und je Stockwerk den Maßstab setzen (z. B. eine Tür abmessen), bevor die Messung läuft. Eine Leiste zeigt die drei Schritte; nach dem Laden öffnet sich das Maßstab-Werkzeug automatisch und springt zum nächsten Stockwerk ohne Maßstab. Die Grundrisse bleiben auch nach einem Neustart erhalten.
+- **Kein Signal = grau**: Bereiche schwächer als die unterste Farbschwelle und Messpunkte ganz ohne Empfang werden grau statt rot dargestellt, mit weichem Übergang. Farbe einstellbar oder durchsichtig (Farbskala).
 - **Mehrere Stockwerke** pro Messung: je Stockwerk ein Grundriss mit eigenen Messpunkten und eigener Heatmap. Reiter zum Wechseln, Rechtsklick zum Umbenennen (z. B. „EG“) oder Entfernen, „+ Stockwerk“ zum Hinzufügen. Bericht (PDF/HTML) und CSV enthalten alle Stockwerke.
 - **PDF-Pläne**: Bei mehrseitigen PDFs erscheint eine Seitenauswahl mit Vorschaubildern; jede gewählte Seite wird ein Stockwerk. Gerendert wird mit dem in Windows eingebauten PDF-Renderer, ohne zusätzliche Bibliothek.
 - **Heatmap** der Ausleuchtung zwischen den Messpunkten; Punkte lassen sich verschieben, schwache Stellen sind sofort sichtbar.

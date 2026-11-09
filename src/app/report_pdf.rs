@@ -399,6 +399,11 @@ impl WifiApp {
                 lx += 18.0 + text_width(&label, 7.2, false);
             }
             pdf.text(lx, *y + 6.5, 7.2, false, WEAK, "dBm");
+            if let Some(c) = heatmap::no_signal() {
+                let lx = lx + text_width("dBm", 7.2, false) + 14.0;
+                pdf.rect(lx, *y, 9.0, 7.0, c);
+                pdf.text(lx + 12.0, *y + 6.5, 7.2, false, WEAK, t!("kein Signal", "no signal"));
+            }
             let missing = m.points.iter().filter(|p| p.pos.is_none()).count();
             if missing > 0 && li == 0 && fi == 0 {
                 pdf.text_right(M + CW, *y + 6.5, 7.5, false, WEAK, &tf!("{missing} Messpunkte ohne Position", "{missing} points without position"));

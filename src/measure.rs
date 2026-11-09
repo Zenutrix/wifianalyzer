@@ -299,9 +299,14 @@ impl MeasPoint {
 }
 
 impl Measurement {
-    /// Platzierte Punkte eines Stockwerks mit Wert für die Heatmap
+    /// Platzierte Punkte eines Stockwerks mit Wert für die Heatmap. Punkte ohne Wert (kein Empfang)
+    /// zählen als „kein Signal“, sofern die Ebene auf dem Stockwerk überhaupt Werte hat.
     pub fn heat_points(&self, floor: usize, layer: Layer) -> Vec<([f32; 2], f64)> {
-        self.points.iter().filter(|p| p.floor == floor).filter_map(|p| Some((p.pos?, p.value_for(layer)?))).collect()
+        let placed: Vec<&MeasPoint> = self.points.iter().filter(|p| p.floor == floor && p.pos.is_some()).collect();
+        if !placed.iter().any(|p| p.value_for(layer).is_some()) {
+            return Vec::new();
+        }
+        placed.iter().filter_map(|p| Some((p.pos?, p.value_for(layer).unwrap_or(crate::heatmap::NO_SIGNAL_DBM)))).collect()
     }
 
     /// Ebenen, für die es auf einem Stockwerk Werte gibt
@@ -411,6 +416,8 @@ pub struct Measurement {
     pub floor: usize,
     /// Grundriss-Messung (Klick in den Plan = Messpunkt) statt Rundgang mit Verlauf
     pub plan_mode: bool,
+    /// Vorbereitung einer Grundriss-Messung (Pläne + Maßstab), noch nicht gestartet – wird nie gespeichert
+    pub draft: bool,
     connected: bool,
     last: Option<ConnSample>,
     sticky_since: Option<f64>,
@@ -432,11 +439,23 @@ impl Measurement {
             plans: Vec::new(),
             floor: 0,
             plan_mode: false,
+            draft: false,
             connected: false,
             last: None,
             sticky_since: None,
             sticky_reported: false,
         }
+    }
+
+    /// Vorbereitung einer Grundriss-Messung mit den gegebenen Plänen
+    pub fn draft(ssid: String, plans: Vec<FloorPlan>) -> Self {
+        let mut m = Self::new(ssid, 0.0);
+        m.running = false;
+        m.draft = true;
+        m.plan_mode = true;
+        m.events.clear();
+        m.plans = plans;
+        m
     }
 
     fn rel(&self, now_t: f64) -> f64 {
@@ -617,6 +636,7 @@ impl Measurement {
             plan_mode: f.plan_mode || !plans.is_empty(),
             floor: 0,
             plans,
+            draft: false,
             connected: false,
             last: None,
             sticky_since: None,

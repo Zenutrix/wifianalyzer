@@ -241,6 +241,9 @@ pub struct WifiApp {
     pdf_pick: Option<plan::PdfPick>,
     /// zuletzt verwendeter Grundriss (für die nächste Grundriss-Messung)
     last_plans: Vec<crate::measure::FloorPlan>,
+    /// zuletzt verwendete Grundrisse: Stand der gespeicherten Datei bzw. noch zu speichernde Änderung
+    plans_saved_sig: u64,
+    plans_pending: Option<(u64, Instant)>,
     meas_follow: bool,
 
     splash_done: bool,
@@ -275,6 +278,8 @@ impl WifiApp {
         crate::theme::install_fonts(ctx);
         crate::theme::apply(ctx, settings.dark);
         crate::heatmap::set_scale(crate::heatmap::scale_from_string(&settings.heat_scale));
+        crate::heatmap::set_no_signal(&settings.heat_nosignal);
+        let saved_plans = plan::load_saved_plans();
 
         let scanner = if crate::demo::enabled() { crate::demo::spawn(ctx.clone()) } else { wlan::spawn(ctx.clone()) };
         let _ = scanner.tx.send(ScanCmd::SetInterval(settings.interval));
@@ -330,7 +335,9 @@ impl WifiApp {
             plan_scale: None,
             show_scale_editor: false,
             pdf_pick: None,
-            last_plans: Vec::new(),
+            plans_saved_sig: plan::plans_sig(&saved_plans),
+            plans_pending: None,
+            last_plans: saved_plans,
             meas_follow: false,
             splash_done: false,
             splash_progress: 0.0,
@@ -788,6 +795,7 @@ impl WifiApp {
         self.meas_last_save = None;
         self.meas_point = None;
         self.meas_ssid = Some(ssid.clone());
+        self.plan_scale = None;
         // Grundriss-Messung: Plan der vorherigen Grundriss-Messung übernehmen (gleiches Gebäude)
         let plans = if plan_mode {
             self.meas.as_ref().filter(|m| m.plan_mode && !m.plans.is_empty()).map(|m| m.plans.clone()).unwrap_or_else(|| self.last_plans.clone())
@@ -1037,6 +1045,7 @@ impl eframe::App for WifiApp {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
         self.autosave_survey(false);
+        self.save_plans_if_changed();
         self.poll_install(ctx);
         self.toasts(ctx);
         self.sync_settings();

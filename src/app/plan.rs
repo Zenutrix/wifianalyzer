@@ -98,7 +98,129 @@ pub(crate) fn draw_marker(painter: &egui::Painter, c: Pos2, r: f32, no: usize, r
     painter.text(c, Align2::CENTER_CENTER, no.to_string(), FontId::proportional(r * 1.05), Color32::WHITE);
 }
 
+/// Datei mit den zuletzt verwendeten Grundrissen (bleibt über einen Neustart erhalten)
+fn plans_path() -> std::path::PathBuf {
+    crate::settings::app_dir().join("grundrisse.json")
+}
+
+pub(crate) fn load_saved_plans() -> Vec<FloorPlan> {
+    std::fs::read_to_string(plans_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+/// Kurzer Fingerabdruck der Pläne (ohne die Bilddaten zu hashen)
+pub(crate) fn plans_sig(plans: &[FloorPlan]) -> u64 {
+    let mut h = DefaultHasher::new();
+    for p in plans {
+        p.name.hash(&mut h);
+        p.label.hash(&mut h);
+        p.data.len().hash(&mut h);
+        p.width_m.map(f32::to_bits).hash(&mut h);
+        p.scale_len_m.map(f32::to_bits).hash(&mut h);
+    }
+    plans.len().hash(&mut h);
+    h.finish()
+}
+
+/// Schritt der Vorbereitung: Nummer bzw. Häkchen + Text
+fn setup_step(ui: &mut Ui, p: &crate::theme::Palette, n: usize, done: bool, text: &str) {
+    let (mark, col) = if done { ("\u{E182}".to_string(), p.success) } else { (format!("{n}."), p.accent) };
+    ui.label(RichText::new(mark).strong().color(col));
+    ui.label(RichText::new(text).strong().color(p.text));
+}
+
 impl WifiApp {
+    /// Zuletzt verwendete Grundrisse speichern, kurz nachdem sie sich geändert haben
+    pub(super) fn save_plans_if_changed(&mut self) {
+        let sig = plans_sig(&self.last_plans);
+        if sig == self.plans_saved_sig {
+            self.plans_pending = None;
+            return;
+        }
+        match self.plans_pending {
+            Some((s, t)) if s == sig && t.elapsed() > Duration::from_secs(2) => {
+                let res = serde_json::to_string(&self.last_plans).map_err(|e| e.to_string()).and_then(|txt| {
+                    std::fs::create_dir_all(crate::settings::app_dir()).and_then(|_| std::fs::write(plans_path(), txt)).map_err(|e| e.to_string())
+                });
+                if let Err(e) = res {
+                    self.add_log(Sev::Warning, tf!("Grundrisse konnten nicht gespeichert werden: {e}", "Could not save the floor plans: {e}"));
+                }
+                self.plans_saved_sig = sig;
+                self.plans_pending = None;
+            }
+            Some((s, _)) if s == sig => {}
+            _ => self.plans_pending = Some((sig, std::time::Instant::now())),
+        }
+    }
+
+    /// Maßstab-Werkzeug für ein Stockwerk starten
+    pub(super) fn plan_start_scale(&mut self, floor: usize) {
+        if let Some(m) = self.meas.as_mut() {
+            if floor < m.plans.len() {
+                m.floor = floor;
+            }
+        }
+        self.plan_scale = Some(ScaleDraft::default());
+        self.plan_sel = None;
+        self.heat_tex = None;
+    }
+
+    /// Vorbereitung der Grundriss-Messung: Pläne laden → Maßstab je Stockwerk → starten.
+    /// Liefert true, wenn „ohne Maßstab starten“ geklickt wurde.
+    pub(super) fn plan_setup_strip(&mut self, ui: &mut Ui, ssid_ok: bool) -> bool {
+        let p = pal(ui);
+        let Some(m) = &self.meas else { return false };
+        let floors: Vec<(String, Option<f32>)> = m.plans.iter().map(|f| (f.title().to_string(), f.width_m)).collect();
+        let n = floors.len();
+        let all_scaled = n > 0 && floors.iter().all(|f| f.1.is_some());
+        let (mut goto_scale, mut load, mut start_anyway) = (None, false, false);
+        crate::widgets::card(ui, None, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(|ui| {
+                setup_step(ui, &p, 1, n > 0, t!("Grundrisse laden", "Load floor plans"));
+                if n == 0 {
+                    if ui.button(t!("\u{E31A} Bild oder PDF …", "\u{E31A} Image or PDF …")).clicked() {
+                        load = true;
+                    }
+                } else {
+                    ui.label(RichText::new(if n == 1 { t!("1 Stockwerk", "1 floor").to_string() } else { tf!("{n} Stockwerke", "{n} floors") }).color(p.weak));
+                }
+                ui.separator();
+                setup_step(ui, &p, 2, all_scaled, t!("Maßstab je Stockwerk", "Scale per floor"));
+                if n == 0 {
+                    ui.label(RichText::new("–").color(p.weak));
+                }
+                for (i, (title, w)) in floors.iter().enumerate() {
+                    let (txt, col, tip) = match w {
+                        Some(w) => (format!("\u{E182} {title}"), p.success, tf!("Plan ist {w:.1} m breit – klicken, um den Maßstab neu zu setzen", "Plan is {w:.1} m wide – click to set the scale again")),
+                        None => (format!("\u{E6B8} {title}"), p.warning, t!("Noch kein Maßstab – klicken und eine bekannte Strecke abmessen, z. B. eine Tür", "No scale yet – click and measure a known distance, e.g. a door").to_string()),
+                    };
+                    if ui.add(egui::Button::new(RichText::new(txt).color(col)).small()).on_hover_text(tip).clicked() {
+                        goto_scale = Some(i);
+                    }
+                }
+                ui.separator();
+                setup_step(ui, &p, 3, false, t!("Messung starten", "Start the survey"));
+                ui.label(RichText::new(t!("dann an deiner Position in den Plan klicken", "then click your position on the plan")).color(p.weak));
+                if n > 0 && !all_scaled && ssid_ok && ui.link(RichText::new(t!("ohne Maßstab starten", "start without scale")).small()).clicked() {
+                    start_anyway = true;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.menu_button(t!("\u{E256} Gespeicherte Messungen", "\u{E256} Saved surveys"), |ui| {
+                        ui.set_min_width(420.0);
+                        self.recent_surveys_ui(ui, true);
+                    });
+                });
+            });
+        });
+        if let Some(i) = goto_scale {
+            self.plan_start_scale(i);
+        }
+        if load {
+            self.load_plan(&ui.ctx().clone(), true);
+        }
+        start_anyway
+    }
+
     // ---------------------------------------------------------------- Netzwerktests
 
     /// Netzwerktest starten, falls aktiviert und mit der gemessenen SSID verbunden
@@ -255,7 +377,8 @@ impl WifiApp {
         }
         self.plan_sel = m.points.iter().find(|p| p.pos.is_none()).map(|p| p.id);
         self.last_plans = m.plans.clone();
-        self.plan_scale = None;
+        // ohne Maßstab: gleich das Maßstab-Werkzeug öffnen
+        self.plan_scale = m.plan().filter(|p| p.width_m.is_none()).map(|_| ScaleDraft::default());
         self.heat_tex = None;
         self.survey_changed();
         let (title, w, h) = first;
@@ -378,6 +501,7 @@ impl WifiApp {
         if let Some(m) = self.meas.as_mut() {
             let f = m.floor;
             m.remove_floor(f);
+            self.last_plans = m.plans.clone();
         }
         self.plan_tex = None;
         self.heat_tex = None;
@@ -482,6 +606,7 @@ impl WifiApp {
         m.floor.hash(&mut h);
         width_m.map(f32::to_bits).hash(&mut h);
         heatmap::scale_to_string(&heatmap::scale()).hash(&mut h);
+        heatmap::no_signal_setting().hash(&mut h);
         for (p, v) in &pts {
             p[0].to_bits().hash(&mut h);
             p[1].to_bits().hash(&mut h);
@@ -505,6 +630,7 @@ impl WifiApp {
 
     pub(super) fn plan_view(&mut self, ui: &mut Ui, height: f32) {
         let p = pal(ui);
+        let top = ui.cursor().top();
         self.pdf_pick_window(&ui.ctx().clone());
         if self.meas.as_ref().is_some_and(|m| !m.plans.is_empty()) {
             self.floor_tabs(ui);
@@ -532,6 +658,7 @@ impl WifiApp {
         }
 
         // Werkzeugleiste
+        let draft = m.draft;
         let unplaced = m.points.iter().filter(|pt| pt.pos.is_none()).count();
         let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id)).map(|i| i + 1);
         let with_data = m.layers_with_data(m.floor);
@@ -582,14 +709,14 @@ impl WifiApp {
                 ui.label(RichText::new("\u{E6B8}").color(p.accent));
                 match (sd.a, sd.b) {
                     (None, _) => {
-                        ui.label(RichText::new(t!("Maßstab: auf den Anfang einer bekannten Strecke klicken (z. B. Wandlänge, Türbreite)", "Scale: click the start of a known distance (e.g. wall length, door width)")).color(p.accent));
+                        ui.label(RichText::new(t!("Maßstab: auf den Anfang einer bekannten Strecke klicken – z. B. eine Tür (meist 0,80–1,00 m) oder eine Wand mit bekannter Länge", "Scale: click the start of a known distance – e.g. a door (usually 0.80–1.00 m) or a wall of known length")).color(p.accent));
                     }
                     (Some(_), None) => {
                         ui.label(RichText::new(t!("Jetzt auf das Ende der Strecke klicken", "Now click the end of the distance")).color(p.accent));
                     }
                     (Some(_), Some(_)) => {
                         ui.label(RichText::new(t!("Länge der Strecke:", "Length of the distance:")).color(p.text));
-                        let r = ui.add(egui::TextEdit::singleline(&mut sd.meters).desired_width(70.0).hint_text("z. B. 8,5"));
+                        let r = ui.add(egui::TextEdit::singleline(&mut sd.meters).desired_width(70.0).hint_text(t!("z. B. 0,9", "e.g. 0.9")));
                         if sd.meters.is_empty() && !r.has_focus() {
                             r.request_focus();
                         }
@@ -615,10 +742,14 @@ impl WifiApp {
                     }
                 }
                 ui.separator();
-                let hint = match sel_no {
+                let hint = if draft {
+                    t!("Vorbereitung: Maßstab je Stockwerk setzen, dann „Messung starten“ – danach Klick in den Plan = Messpunkt", "Preparation: set the scale per floor, then \"Start survey\" – after that a click on the plan = point").into()
+                } else {
+                    match sel_no {
                     Some(n) => tf!("Klick in den Plan setzt Messpunkt {n}", "Click into the plan to place point {n}"),
                     None if unplaced > 0 => tf!("{unplaced} Messpunkte ohne Position – in der Liste anklicken und dann im Plan setzen", "{unplaced} points without position – click one in the list, then place it"),
                     None => t!("Klick in den Plan = Messpunkt · Punkte lassen sich verschieben", "Click into the plan = point · points can be dragged").into(),
+                    }
                 };
                 ui.label(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak }));
             }
@@ -642,7 +773,15 @@ impl WifiApp {
                         }
                         self.heat_tex = None;
                         self.survey_changed();
-                        self.toast(Sev::Info, tf!("Maßstab gesetzt: Plan ist {wm:.1} m breit", "Scale set: plan is {wm:.1} m wide"));
+                        // Vorbereitung: weiter mit dem nächsten Stockwerk ohne Maßstab
+                        let next = self.meas.as_ref().filter(|m| m.draft).and_then(|m| m.plans.iter().position(|f| f.width_m.is_none()).map(|i| (i, m.plans[i].title().to_string())));
+                        match next {
+                            Some((i, name)) => {
+                                self.plan_start_scale(i);
+                                self.toast(Sev::Info, tf!("Maßstab gesetzt ({wm:.1} m breit) – jetzt „{name}“", "Scale set ({wm:.1} m wide) – now \"{name}\""));
+                            }
+                            None => self.toast(Sev::Info, tf!("Maßstab gesetzt: Plan ist {wm:.1} m breit", "Scale set: plan is {wm:.1} m wide")),
+                        }
                     }
                 }
             }
@@ -663,7 +802,8 @@ impl WifiApp {
             return;
         };
         let heat_tex = if self.plan_heat { self.heat_texture(&ctx, size) } else { None };
-        let h = (height - 56.0).max(160.0);
+        // Höhe abzüglich Reiter, Werkzeugleiste und Statuszeile
+        let h = (height - (ui.cursor().top() - top) - 4.0).max(160.0);
         let (area, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
         let img = fit_rect(area, size);
         let painter = ui.painter_at(area);
@@ -789,7 +929,7 @@ impl WifiApp {
                     let hm = wm * img.height() / img.width();
                     if let Some((v, d)) = heatmap::estimate(&heat_pts, n[0], n[1], wm, hm) {
                         let txt = if v < heatmap::scale_min() {
-                            tf!("{} · kaum Empfang (< {:.0} dBm)", "{} · hardly any signal (< {:.0} dBm)", self.plan_layer.label(), heatmap::scale_min())
+                            tf!("{} · kein brauchbares Signal (< {:.0} dBm)", "{} · no usable signal (< {:.0} dBm)", self.plan_layer.label(), heatmap::scale_min())
                         } else {
                             tf!("{} · ≈ {v:.0} dBm (geschätzt, {d:.1} m vom nächsten Messpunkt)", "{} · ≈ {v:.0} dBm (estimated, {d:.1} m from the nearest point)", self.plan_layer.label())
                         };
@@ -818,6 +958,7 @@ impl WifiApp {
         let mut stops = heatmap::scale();
         let mut changed = false;
         let mut reset = false;
+        let mut nosig: Option<String> = None;
         egui::Window::new(RichText::new(t!("\u{E6C8} Farbskala der Heatmap", "\u{E6C8} Heatmap colour scale")).strong())
             .open(&mut open)
             .collapsible(false)
@@ -826,7 +967,7 @@ impl WifiApp {
             .anchor(Align2::RIGHT_TOP, [-24.0, 150.0])
             .show(ctx, |ui| {
                 let p = pal(ui);
-                ui.label(RichText::new(t!("Ab welchem Signal welche Farbe gilt. Schwächer als die unterste Schwelle bleibt frei.", "Which colour applies from which signal. Weaker than the lowest threshold stays empty.")).size(12.0).color(p.weak));
+                ui.label(RichText::new(t!("Ab welchem Signal welche Farbe gilt. Schwächer als die unterste Schwelle gilt als „kein Signal“.", "Which colour applies from which signal. Weaker than the lowest threshold counts as \"no signal\".")).size(12.0).color(p.weak));
                 ui.add_space(6.0);
                 let mut remove = None;
                 egui::Grid::new("scale_grid").num_columns(4).spacing([10.0, 6.0]).show(ui, |ui| {
@@ -860,6 +1001,21 @@ impl WifiApp {
                         reset = true;
                     }
                 });
+                ui.add_space(8.0);
+                ui.label(RichText::new(tf!("Kein Signal (schwächer als {:.0} dBm oder kein Empfang):", "No signal (weaker than {:.0} dBm or no reception):", stops.iter().map(|s| s.0).fold(f64::MAX, f64::min))).color(p.text));
+                ui.horizontal(|ui| {
+                    let cur = heatmap::no_signal();
+                    if ui.radio(cur.is_some(), t!("Farbe", "Colour")).clicked() && cur.is_none() {
+                        nosig = Some(String::new());
+                    }
+                    let mut c = cur.unwrap_or(heatmap::DEFAULT_NO_SIGNAL);
+                    if ui.add_enabled_ui(cur.is_some(), |ui| ui.color_edit_button_srgb(&mut c)).inner.changed() {
+                        nosig = Some(format!("{:02x}{:02x}{:02x}", c[0], c[1], c[2]));
+                    }
+                    if ui.radio(cur.is_none(), t!("Durchsichtig (nicht einfärben)", "Transparent (no colour)")).clicked() {
+                        nosig = Some("none".into());
+                    }
+                });
                 ui.add_space(4.0);
                 // Vorschau
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 14.0), Sense::hover());
@@ -872,9 +1028,16 @@ impl WifiApp {
                     ui.painter().rect_filled(Rect::from_min_max(Pos2::new(x0, rect.min.y), Pos2::new(x0 + rect.width() / steps as f32 + 0.5, rect.max.y)), 0.0, Color32::from_rgb(r, g, b));
                 }
             });
+        if let Some(v) = nosig {
+            heatmap::set_no_signal(&v);
+            self.settings.heat_nosignal = v;
+            self.heat_tex = None;
+        }
         if reset {
             heatmap::set_scale(Vec::new());
+            heatmap::set_no_signal("");
             self.settings.heat_scale.clear();
+            self.settings.heat_nosignal.clear();
             self.heat_tex = None;
         } else if changed {
             heatmap::set_scale(stops);
@@ -1011,6 +1174,12 @@ fn legend(ui: &mut Ui) {
         ui.painter().rect_filled(r, 0.0, Color32::from_rgb(rr, g, b));
     }
     ui.label(RichText::new(format!("{lo:.0}")).small().color(p.weak));
+    if let Some([r, g, b]) = heatmap::no_signal() {
+        ui.add_space(6.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(r, g, b));
+        ui.label(RichText::new(t!("kein Signal", "no signal")).small().color(p.weak));
+    }
 }
 
 /// Kleiner, anklickbarer Grundriss im Messpunkt-Dialog

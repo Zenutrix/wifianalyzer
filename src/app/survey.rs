@@ -1065,6 +1065,9 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
             for (d, c) in &scale {
                 let _ = write!(plan, "<span><i style=\"display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;background:#{:02x}{:02x}{:02x}\"></i> ≥ {d:.0} dBm</span>", c[0], c[1], c[2]);
             }
+            if let Some(c) = crate::heatmap::no_signal() {
+                let _ = write!(plan, "<span><i style=\"display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;background:#{:02x}{:02x}{:02x}\"></i> {}</span>", c[0], c[1], c[2], t!("kein Signal", "no signal"));
+            }
             let _ = write!(plan, "</div>");
         }
         if m.plan_mode {
