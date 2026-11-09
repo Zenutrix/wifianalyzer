@@ -54,48 +54,68 @@ impl WifiApp {
         let mut band_pick: Option<Band> = None;
 
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            // Breite bestimmt das Raster: schmal (z. B. mit offener Detailansicht) = weniger Spalten
+            let avail = ui.available_width();
             // ---------- Kennzahlen ----------
-            ui.columns(6, |c| {
-                let w = (c[0].available_width() - 30.0).max(100.0);
-                if kpi_tile(&mut c[0], "\u{E150}", t!("Netzwerke", "Networks"), &ssids.len().to_string(), &tf!("+ {hidden} versteckte APs", "+ {hidden} hidden APs"), p.accent, w).clicked() {
-                    go = Some(Page::Networks);
+            let bands = format!("{}: {} · 5: {} · 6: {}", t!("2,4", "2.4"), per_band(Band::B24), per_band(Band::B5), per_band(Band::B6));
+            let (val, col, csub) = match &self.conn {
+                Some(c) => (c.rssi.map(|r| format!("{r} dBm")).unwrap_or("–".into()), c.rssi.map(signal_color).unwrap_or(p.success), c.ssid.clone()),
+                None => ("–".into(), p.weak, t!("nicht verbunden", "not connected").into()),
+            };
+            let (fv, fc) = if crit > 0 {
+                (crit.to_string(), p.danger)
+            } else if warn > 0 {
+                (warn.to_string(), p.warning)
+            } else {
+                ("0".into(), p.success)
+            };
+            let ch = |c: Option<u32>| c.map(|c| tf!("Kanal {c}", "Channel {c}")).unwrap_or("–".into());
+            // (Icon, Titel, Wert, Unterzeile, Farbe)
+            let tiles: [(&str, &str, String, String, egui::Color32); 6] = [
+                ("\u{E150}", t!("Netzwerke", "Networks"), ssids.len().to_string(), tf!("+ {hidden} versteckte APs", "+ {hidden} hidden APs"), p.accent),
+                ("\u{E4EA}", "Access Points", vis.len().to_string(), bands, p.purple),
+                ("\u{E2E2}", t!("Verbindung", "Connection"), val, csub, col),
+                ("\u{E4E0}", t!("Befunde", "Findings"), fv, tf!("{crit} kritisch · {warn} Warnungen", "{crit} critical · {warn} warnings"), fc),
+                ("\u{E67E}", t!("Empfehlung 2,4 GHz", "Best 2.4 GHz"), ch(best24), t!("aus 1 / 6 / 11", "of 1 / 6 / 11").into(), p.success),
+                ("\u{E67E}", t!("Empfehlung 5 GHz", "Best 5 GHz"), ch(best5), t!("ohne DFS", "non-DFS").into(), p.success),
+            ];
+            // eine Kachel braucht ca. 175 px, sonst werden Werte abgeschnitten; Raster 6 / 3 / 2
+            let fit = ((avail + 10.0) / 185.0).floor() as usize;
+            let per_row = if fit >= 6 { 6 } else if fit >= 3 { 3 } else { 2 };
+            let mut clicked_tile: Option<usize> = None;
+            for (r, chunk) in tiles.chunks(per_row).enumerate() {
+                if r > 0 {
+                    ui.add_space(10.0);
                 }
-                let bands = format!("{}: {} · 5: {} · 6: {}", t!("2,4", "2.4"), per_band(Band::B24), per_band(Band::B5), per_band(Band::B6));
-                if kpi_tile(&mut c[1], "\u{E4EA}", "Access Points", &vis.len().to_string(), &bands, p.purple, w).clicked() {
-                    go = Some(Page::Channels);
-                }
-                let (val, col, csub) = match &self.conn {
-                    Some(c) => (c.rssi.map(|r| format!("{r} dBm")).unwrap_or("–".into()), c.rssi.map(signal_color).unwrap_or(p.success), c.ssid.clone()),
-                    None => ("–".into(), p.weak, t!("nicht verbunden", "not connected").into()),
-                };
-                if kpi_tile(&mut c[2], "\u{E2E2}", t!("Verbindung", "Connection"), &val, &csub, col, w).clicked() {
-                    go = Some(Page::History);
-                }
-                let (fv, fc) = if crit > 0 {
-                    (crit.to_string(), p.danger)
-                } else if warn > 0 {
-                    (warn.to_string(), p.warning)
-                } else {
-                    ("0".into(), p.success)
-                };
-                if kpi_tile(&mut c[3], "\u{E4E0}", t!("Befunde", "Findings"), &fv, &tf!("{crit} kritisch · {warn} Warnungen", "{crit} critical · {warn} warnings"), fc, w).clicked() {
-                    go = Some(Page::Findings);
-                }
-                let ch = |c: Option<u32>| c.map(|c| tf!("Kanal {c}", "Channel {c}")).unwrap_or("–".into());
-                if kpi_tile(&mut c[4], "\u{E67E}", t!("Empfehlung 2,4 GHz", "Best 2.4 GHz"), &ch(best24), t!("aus 1 / 6 / 11", "of 1 / 6 / 11"), p.success, w).clicked() {
+                ui.columns(per_row, |c| {
+                    let w = (c[0].available_width() - 30.0).max(100.0);
+                    for (i, (icon, title, value, sub, color)) in chunk.iter().enumerate() {
+                        if kpi_tile(&mut c[i], icon, title, value, sub, *color, w).clicked() {
+                            clicked_tile = Some(r * per_row + i);
+                        }
+                    }
+                });
+            }
+            match clicked_tile {
+                Some(0) => go = Some(Page::Networks),
+                Some(1) => go = Some(Page::Channels),
+                Some(2) => go = Some(Page::History),
+                Some(3) => go = Some(Page::Findings),
+                Some(4) => {
                     band_pick = Some(Band::B24);
                     go = Some(Page::Rating);
                 }
-                if kpi_tile(&mut c[5], "\u{E67E}", t!("Empfehlung 5 GHz", "Best 5 GHz"), &ch(best5), t!("ohne DFS", "non-DFS"), p.success, w).clicked() {
+                Some(5) => {
                     band_pick = Some(Band::B5);
                     go = Some(Page::Rating);
                 }
-            });
+                _ => {}
+            }
             ui.add_space(12.0);
 
             // ---------- Verbindung · Bänder · Sicherheit ----------
-            ui.columns(3, |cols| {
-                card_full(&mut cols[0], Some(t!("Aktuelle Verbindung", "Current connection")), ROW1_H, |ui| {
+            let mut conn_card = |ui: &mut Ui, h: f32| {
+                card_full(ui, Some(t!("Aktuelle Verbindung", "Current connection")), h, |ui| {
                     match &self.conn {
                         Some(c) => {
                             ui.horizontal(|ui| {
@@ -134,8 +154,9 @@ impl WifiApp {
                         }
                     }
                 });
-
-                card_full(&mut cols[1], Some(t!("Frequenzbänder", "Frequency bands")), ROW1_H, |ui| {
+            };
+            let bands_card = |ui: &mut Ui, h: f32| {
+                card_full(ui, Some(t!("Frequenzbänder", "Frequency bands")), h, |ui| {
                     ui.add_space(8.0);
                     let segs = vec![
                         (t!("2,4 GHz", "2.4 GHz").to_string(), per_band(Band::B24), p.accent),
@@ -144,8 +165,9 @@ impl WifiApp {
                     ];
                     donut(ui, &segs, &vis.len().to_string(), "APs");
                 });
-
-                card_full(&mut cols[2], Some(t!("Sicherheit", "Security")), ROW1_H, |ui| {
+            };
+            let sec_card = |ui: &mut Ui, h: f32| {
+                card_full(ui, Some(t!("Sicherheit", "Security")), h, |ui| {
                     ui.add_space(8.0);
                     let lvl = |l: SecLevel| vis.iter().filter(|r| r.info.sec_level == l).count();
                     let segs = vec![
@@ -157,12 +179,34 @@ impl WifiApp {
                     let unsafe_n = lvl(SecLevel::Weak) + lvl(SecLevel::Open);
                     donut(ui, &segs, &unsafe_n.to_string(), t!("unsicher", "insecure"));
                 });
-            });
+            };
+            if avail >= 1080.0 {
+                ui.columns(3, |cols| {
+                    conn_card(&mut cols[0], ROW1_H);
+                    bands_card(&mut cols[1], ROW1_H);
+                    sec_card(&mut cols[2], ROW1_H);
+                });
+            } else {
+                // schmal: Verbindung über die ganze Breite, Diagramme darunter
+                conn_card(ui, 0.0);
+                ui.add_space(12.0);
+                if avail >= 760.0 {
+                    ui.columns(2, |cols| {
+                        bands_card(&mut cols[0], 200.0);
+                        sec_card(&mut cols[1], 200.0);
+                    });
+                } else {
+                    bands_card(ui, 0.0);
+                    ui.add_space(12.0);
+                    sec_card(ui, 0.0);
+                }
+            }
             ui.add_space(12.0);
 
             // ---------- Stärkste Netze · Befunde ----------
-            ui.columns(2, |cols| {
-                card_full(&mut cols[0], Some(t!("Stärkste Netze", "Strongest networks")), ROW_H, |ui| {
+            let two = avail >= 900.0;
+            let mut strongest = |ui: &mut Ui, h: f32| {
+                card_full(ui, Some(t!("Stärkste Netze", "Strongest networks")), h, |ui| {
                     if ssids.is_empty() {
                         ui.label(RichText::new(t!("Noch keine Netze gefunden", "No networks found yet")).color(p.weak));
                     }
@@ -193,8 +237,10 @@ impl WifiApp {
                         ui.add_space(2.0);
                     }
                 });
-
-                card_full(&mut cols[1], Some(t!("Wichtigste Befunde", "Top findings")), ROW_H, |ui| {
+            };
+            let mut go_findings = false;
+            let mut top_findings = |ui: &mut Ui, h: f32| {
+                card_full(ui, Some(t!("Wichtigste Befunde", "Top findings")), h, |ui| {
                     if findings.is_empty() {
                         ui.add_space(30.0);
                         ui.vertical_centered(|ui| {
@@ -219,16 +265,29 @@ impl WifiApp {
                     if !findings.is_empty() {
                         ui.add_space(4.0);
                         if ui.link(tf!("Alle {} Befunde mit Empfehlungen anzeigen »", "Show all {} findings with recommendations »", findings.len())).clicked() {
-                            go = Some(Page::Findings);
+                            go_findings = true;
                         }
                     }
                 });
-            });
+            };
+            if two {
+                ui.columns(2, |cols| {
+                    strongest(&mut cols[0], ROW_H);
+                    top_findings(&mut cols[1], ROW_H);
+                });
+            } else {
+                strongest(ui, 0.0);
+                ui.add_space(12.0);
+                top_findings(ui, 0.0);
+            }
+            if go_findings {
+                go = Some(Page::Findings);
+            }
             ui.add_space(12.0);
 
             // ---------- Standards · Hersteller ----------
-            ui.columns(2, |cols| {
-                card_full(&mut cols[0], Some(t!("WLAN-Standards", "Wi-Fi standards")), 0.0, |ui| {
+            let standards = |ui: &mut Ui| {
+                card_full(ui, Some(t!("WLAN-Standards", "Wi-Fi standards")), 0.0, |ui| {
                     for (k, n) in ranked(vis.iter().map(|r| r.info.standard.generation(r.info.band))) {
                         bar_row(ui, k, n, vis.len(), p.accent);
                     }
@@ -236,7 +295,9 @@ impl WifiApp {
                         ui.label(RichText::new("–").color(p.weak));
                     }
                 });
-                card_full(&mut cols[1], Some(t!("Hersteller", "Vendors")), 0.0, |ui| {
+            };
+            let vendors = |ui: &mut Ui| {
+                card_full(ui, Some(t!("Hersteller", "Vendors")), 0.0, |ui| {
                     let labels: Vec<String> = vis.iter().map(|r| Self::vendor_label(r)).collect();
                     for (k, n) in ranked(labels.iter().map(|s| s.as_str())).into_iter().take(6) {
                         bar_row(ui, k, n, vis.len(), p.purple);
@@ -245,7 +306,17 @@ impl WifiApp {
                         ui.label(RichText::new("–").color(p.weak));
                     }
                 });
-            });
+            };
+            if two {
+                ui.columns(2, |cols| {
+                    standards(&mut cols[0]);
+                    vendors(&mut cols[1]);
+                });
+            } else {
+                standards(ui);
+                ui.add_space(12.0);
+                vendors(ui);
+            }
             ui.add_space(12.0);
 
             card(ui, Some(t!("Letzte Ereignisse", "Recent events")), |ui| {
