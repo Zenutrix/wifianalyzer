@@ -261,7 +261,7 @@ impl WifiApp {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if let Some(v) = self.update.available().map(|r| r.version.clone()) {
-                        if primary_button(ui, &tf!("⬆ Update auf {v}", "⬆ Update to {v}"), p.accent).clicked() {
+                        if primary_button(ui, &tf!("\u{E030} Update auf {v}", "\u{E030} Update to {v}"), p.accent).clicked() {
                             update = true;
                         }
                     } else if ui.add_enabled(self.update.rx.is_none(), egui::Button::new(t!("Nach Updates suchen", "Check for updates"))).clicked() {

@@ -124,7 +124,7 @@ impl WifiApp {
                 let y = bar.bottom() + 24.0 + i as f32 * 23.0;
                 let sx = egui::pos2(bar.left() + 40.0, y);
                 if *ok {
-                    p.text(sx, Align2::CENTER_CENTER, "✔", FontId::proportional(14.0), Color32::from_rgb(63, 185, 80).gamma_multiply(fade));
+                    p.text(sx, Align2::CENTER_CENTER, "\u{E182}", FontId::proportional(14.0), Color32::from_rgb(63, 185, 80).gamma_multiply(fade));
                 } else {
                     let a0 = t * 6.0;
                     let pts: Vec<egui::Pos2> = (0..=16)
@@ -210,8 +210,8 @@ impl WifiApp {
                     for (state, text) in &checklist {
                         ui.horizontal(|ui| {
                             let (icon, col) = match state {
-                                Some(true) => ("✔", p.success),
-                                Some(false) => ("✖", p.danger),
+                                Some(true) => ("\u{E182}", p.success),
+                                Some(false) => ("\u{E4F6}", p.danger),
                                 None => ("?", p.weak),
                             };
                             ui.label(RichText::new(icon).strong().color(col));
@@ -235,10 +235,10 @@ impl WifiApp {
                 ui.label(t!("3.  Zurück zum WiFi Analyzer – die Änderung wird automatisch erkannt", "3.  Return to WiFi Analyzer – the change is detected automatically"));
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
-                    if primary_button(ui, t!("⚙  Standort-Einstellungen öffnen", "⚙  Open location settings"), p.accent).clicked() {
+                    if primary_button(ui, t!("\u{E270}  Standort-Einstellungen öffnen", "\u{E270}  Open location settings"), p.accent).clicked() {
                         open_settings = true;
                     }
-                    if ui.button(t!("⟳  Erneut anfragen", "⟳  Ask again")).clicked() {
+                    if ui.button(t!("\u{E094}  Erneut anfragen", "\u{E094}  Ask again")).clicked() {
                         recheck = true;
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

@@ -134,7 +134,7 @@ impl WifiApp {
             ui.add_space(60.0);
             ui.vertical_centered(|ui| {
                 if self.aps.is_empty() {
-                    ui.label(RichText::new("📡").size(40.0).color(p.weak));
+                    ui.label(RichText::new("\u{E4EA}").size(40.0).color(p.weak));
                     ui.label(RichText::new(t!("Suche WLAN-Netze …", "Searching for Wi-Fi networks …")).size(17.0).color(p.weak));
                 } else {
                     ui.label(RichText::new(t!("Kein Netz passt zum Filter", "No network matches the filter")).size(17.0).color(p.weak));
@@ -183,7 +183,7 @@ impl WifiApp {
                             for (col, label, hint) in headers() {
                                 h.col(|ui| {
                                     let txt = if self.sort_col == col {
-                                        format!("{label} {}", if self.sort_asc { "⏶" } else { "⏷" })
+                                        format!("{label} {}", if self.sort_asc { "\u{E13C}" } else { "\u{E136}" })
                                     } else {
                                         label.to_string()
                                     };
@@ -224,7 +224,7 @@ impl WifiApp {
                                     shade(ui);
                                     match kind {
                                         RowKind::Group { expanded, .. } => {
-                                            ui.label(RichText::new(if *expanded { "⏷" } else { "▶" }).color(p.accent));
+                                            ui.label(RichText::new(if *expanded { "\u{E136}" } else { "\u{E13A}" }).color(p.accent));
                                         }
                                         RowKind::Child => {
                                             ui.add_space(12.0);
@@ -248,7 +248,7 @@ impl WifiApp {
                                     let name = RichText::new(Self::display_ssid(r)).color(tc);
                                     ui.label(if i.hidden { name.italics() } else if is_child { name } else { name.strong() });
                                     if conn_bssid == Some(k) {
-                                        ui.label(RichText::new("🔗").color(p.success)).on_hover_text(t!("Verbunden", "Connected"));
+                                        ui.label(RichText::new("\u{E2E2}").color(p.success)).on_hover_text(t!("Verbunden", "Connected"));
                                     }
                                 });
                                 row.col(|ui| {
@@ -298,7 +298,7 @@ impl WifiApp {
                                 });
                                 row.col(|ui| {
                                     shade(ui);
-                                    let icon = if i.sec_level == SecLevel::Open { "🔓" } else { "🔒" };
+                                    let icon = if i.sec_level == SecLevel::Open { "\u{E30A}" } else { "\u{E308}" };
                                     let col = if stale { tc } else { sec_color(ui, i.sec_level) };
                                     ui.label(RichText::new(format!("{icon} {}", i.security)).color(col));
                                 });

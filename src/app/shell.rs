@@ -42,16 +42,16 @@ impl Page {
 
     fn icon(self) -> &'static str {
         match self {
-            Page::Overview => "🏠",
-            Page::Networks => "📋",
-            Page::Channels => "📶",
-            Page::Rating => "🏆",
-            Page::History => "📈",
-            Page::Findings => "⚠",
-            Page::Measure => "📏",
-            Page::PlanSurvey => "🗺",
-            Page::Finder => "🎯",
-            Page::Events => "📜",
+            Page::Overview => "\u{E2C2}",
+            Page::Networks => "\u{E2F2}",
+            Page::Channels => "\u{E150}",
+            Page::Rating => "\u{E67E}",
+            Page::History => "\u{E154}",
+            Page::Findings => "\u{E4E0}",
+            Page::Measure => "\u{E6B8}",
+            Page::PlanSurvey => "\u{E31A}",
+            Page::Finder => "\u{E1D6}",
+            Page::Events => "\u{E1A0}",
         }
     }
 }
@@ -59,7 +59,7 @@ impl Page {
 /// Navigationseintrag: Symbol, Text, optionales Zähler-Badge
 fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool, badge: Option<(String, Color32)>, hint: &str) -> Response {
     let p = pal(ui);
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
     let painter = ui.painter();
     let bg = if selected {
         p.accent_soft
@@ -76,7 +76,8 @@ fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool, badge: Option<
     }
     let fg = if selected { p.text } else { p.text.gamma_multiply(0.88) };
     painter.text(r.left_center() + Vec2::new(14.0, 0.0), Align2::LEFT_CENTER, icon, FontId::proportional(15.0), if selected { p.accent } else { p.weak });
-    painter.text(r.left_center() + Vec2::new(40.0, 0.0), Align2::LEFT_CENTER, label, FontId::proportional(14.0), fg);
+    let font = if selected { FontId::new(14.0, crate::theme::semibold()) } else { FontId::proportional(14.0) };
+    painter.text(r.left_center() + Vec2::new(40.0, 0.0), Align2::LEFT_CENTER, label, font, fg);
     if let Some((text, col)) = badge {
         let galley = painter.layout_no_wrap(text, FontId::proportional(11.0), col);
         let w = galley.size().x + 12.0;
@@ -89,9 +90,20 @@ fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool, badge: Option<
 
 fn section_label(ui: &mut Ui, text: &str) {
     let p = pal(ui);
-    ui.add_space(10.0);
-    ui.label(RichText::new(text).size(11.0).strong().color(p.weak));
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.add_space(6.0);
+        ui.label(RichText::new(text).family(crate::theme::semibold()).size(10.5).color(p.weak.gamma_multiply(0.85)));
+    });
     ui.add_space(2.0);
+}
+
+/// Kleines, flaches Abzeichen (fest 18 px hoch – unabhängig vom Layout)
+fn pill(ui: &mut Ui, text: &str, col: Color32) {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::new(10.5, crate::theme::semibold()), col);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(galley.size().x + 14.0, 18.0), Sense::hover());
+    ui.painter().rect(rect, 9.0, col.gamma_multiply(0.16), Stroke::new(1.0f32, col.gamma_multiply(0.55)));
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, col);
 }
 
 impl WifiApp {
@@ -105,10 +117,10 @@ impl WifiApp {
                     if let Some(tex) = &self.icon_tex {
                         ui.add(egui::Image::new((tex.id(), Vec2::splat(28.0))));
                     }
-                    ui.label(RichText::new("WiFi Analyzer").size(17.0).strong().color(p.text));
+                    ui.label(RichText::new("WiFi Analyzer").family(crate::theme::semibold()).size(17.0).color(p.text));
                     ui.label(RichText::new(format!("v{VERSION}")).size(11.5).color(p.weak));
                     if crate::demo::enabled() {
-                        crate::widgets::badge(ui, "DEMO", p.purple);
+                        pill(ui, "DEMO", p.purple);
                     }
                     ui.add_space(18.0);
 
@@ -122,7 +134,7 @@ impl WifiApp {
                     let mut pick = None;
                     egui::ComboBox::from_id_salt("iface")
                         .width(250.0)
-                        .selected_text(RichText::new(format!("📡  {cur}")).color(p.text))
+                        .selected_text(RichText::new(format!("\u{E4EA}  {cur}")).color(p.text))
                         .show_ui(ui, |ui| {
                             for i in &self.interfaces {
                                 if ui.selectable_label(Some(i.guid) == self.iface, format!("{} ({})", i.description, i.state)).clicked() {
@@ -138,49 +150,49 @@ impl WifiApp {
 
                     ui.add_space(6.0);
                     let (txt, hint) = if self.paused {
-                        (t!("▶ Fortsetzen", "▶ Resume"), t!("Scannen fortsetzen", "Resume scanning"))
+                        (t!("\u{E3D0} Fortsetzen", "\u{E3D0} Resume"), t!("Scannen fortsetzen", "Resume scanning"))
                     } else {
-                        (t!("⏸ Pause", "⏸ Pause"), t!("Scannen anhalten (Verbindung wird weiter gemessen)", "Pause scanning (connection is still measured)"))
+                        (t!("\u{E39E} Pause", "\u{E39E} Pause"), t!("Scannen anhalten (Verbindung wird weiter gemessen)", "Pause scanning (connection is still measured)"))
                     };
                     if ui.button(txt).on_hover_text(hint).clicked() {
                         self.set_paused(!self.paused);
                     }
-                    if ui.button(t!("⟳ Scannen", "⟳ Scan")).on_hover_text(t!("Sofort scannen (F5)", "Scan now (F5)")).clicked() {
+                    if ui.button(t!("\u{E094} Scannen", "\u{E094} Scan")).on_hover_text(t!("Sofort scannen (F5)", "Scan now (F5)")).clicked() {
                         self.scan_now();
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("ℹ").on_hover_text(t!("Über WiFi Analyzer", "About WiFi Analyzer")).clicked() {
+                        if ui.button("\u{E2CE}").on_hover_text(t!("Über WiFi Analyzer", "About WiFi Analyzer")).clicked() {
                             self.show_about = true;
                         }
-                        if ui.button(t!("⚙ Einstellungen", "⚙ Settings")).clicked() {
+                        if ui.button(t!("\u{E270} Einstellungen", "\u{E270} Settings")).clicked() {
                             self.show_settings = true;
                         }
                         // Update-Button: zeigt den Stand der GitHub-Prüfung
                         if let Some(v) = self.update.available().map(|r| r.version.clone()) {
-                            let b = egui::Button::new(RichText::new(tf!("⬆ Update auf {v}", "⬆ Update to {v}")).color(Color32::WHITE).strong()).fill(p.accent);
+                            let b = egui::Button::new(RichText::new(tf!("\u{E030} Update auf {v}", "\u{E030} Update to {v}")).color(Color32::WHITE).strong()).fill(p.accent);
                             if ui.add(b).on_hover_text(t!("Neue Version verfügbar – Details und Installation", "New version available – details and installation")).clicked() {
                                 self.show_update = true;
                             }
                         } else if self.update.rx.is_some() {
-                            ui.add_enabled(false, egui::Button::new(t!("⟳ Prüfe …", "⟳ Checking …")));
+                            ui.add_enabled(false, egui::Button::new(t!("\u{E094} Prüfe …", "\u{E094} Checking …")));
                         } else {
                             let hint = match (&self.update.latest, &self.update.error) {
                                 (Some(_), _) => tf!("v{VERSION} ist aktuell – klicken zum erneuten Prüfen", "v{VERSION} is up to date – click to check again"),
                                 (None, Some(e)) => tf!("Letzte Prüfung fehlgeschlagen: {e}", "Last check failed: {e}"),
                                 (None, None) => t!("Bei GitHub nach einer neuen Version suchen", "Check GitHub for a new version").into(),
                             };
-                            let label = if self.update.latest.is_some() { t!("✔ Aktuell", "✔ Up to date") } else { t!("⟳ Updates", "⟳ Updates") };
+                            let label = if self.update.latest.is_some() { t!("\u{E182} Aktuell", "\u{E182} Up to date") } else { t!("\u{E094} Updates", "\u{E094} Updates") };
                             if ui.button(label).on_hover_text(hint).clicked() {
                                 self.start_update_check(ctx, true);
                             }
                         }
-                        let theme_icon = if self.settings.dark { "☀" } else { "🌙" };
+                        let theme_icon = if self.settings.dark { "\u{E472}" } else { "\u{E330}" };
                         if ui.button(theme_icon).on_hover_text(t!("Hell / Dunkel", "Light / dark")).clicked() {
                             self.settings.dark = !self.settings.dark;
                             crate::theme::apply(ctx, self.settings.dark);
                         }
                         let has_meas = self.meas.is_some();
-                        ui.menu_button(t!("⬇ Export", "⬇ Export"), |ui| {
+                        ui.menu_button(t!("\u{E20C} Export", "\u{E20C} Export"), |ui| {
                             if ui.button(t!("Netzwerkliste als CSV …  (Strg+E)", "Network list as CSV …  (Ctrl+E)")).clicked() {
                                 ui.close_menu();
                                 self.export_networks();
@@ -241,8 +253,11 @@ impl WifiApp {
                         }
                     }
 
-                    section_label(ui, t!("FILTER", "FILTER"));
-                    self.filter_panel(ui);
+                    // Filter nur dort, wo sie wirken (Analyse-Seiten)
+                    if matches!(self.page, Page::Overview | Page::Networks | Page::Channels | Page::Rating | Page::History | Page::Findings) {
+                        section_label(ui, t!("FILTER", "FILTER"));
+                        self.filter_panel(ui);
+                    }
                 });
             });
     }
@@ -282,13 +297,13 @@ impl WifiApp {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⚠").size(20.0).color(p.danger));
+                    ui.label(RichText::new("\u{E4E0}").size(20.0).color(p.danger));
                     ui.vertical(|ui| {
                         ui.label(RichText::new(t!("Scan nicht möglich", "Scanning not possible")).strong().color(p.text));
                         ui.label(RichText::new(&err).color(p.text));
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button(t!("⟳ Erneut versuchen", "⟳ Retry")).clicked() {
+                        if ui.button(t!("\u{E094} Erneut versuchen", "\u{E094} Retry")).clicked() {
                             self.scan_now();
                         }
                         match code {
@@ -317,7 +332,7 @@ impl WifiApp {
         let p = pal(ui);
         let search = ui.add(
             egui::TextEdit::singleline(&mut self.f.text)
-                .hint_text(t!("🔍 Suchen (Strg+F)", "🔍 Search (Ctrl+F)"))
+                .hint_text(t!("\u{E30C} Suchen (Strg+F)", "\u{E30C} Search (Ctrl+F)"))
                 .desired_width(f32::INFINITY),
         );
         if self.focus_search {
@@ -331,21 +346,27 @@ impl WifiApp {
             ui.toggle_value(&mut self.f.b5, "5 GHz");
             ui.toggle_value(&mut self.f.b6, "6 GHz");
         });
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t!("Mindestsignal", "Min. signal")).color(p.weak));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(if self.f.min_rssi <= -100 { t!("alle", "all").to_string() } else { format!("{} dBm", self.f.min_rssi) }).color(p.text));
+        // seltener gebrauchte Filter eingeklappt, damit die Navigation Platz hat
+        egui::CollapsingHeader::new(RichText::new(t!("Weitere Filter", "More filters")).color(p.weak))
+            .id_salt("more_filters")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(t!("Mindestsignal", "Min. signal")).color(p.weak));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(if self.f.min_rssi <= -100 { t!("alle", "all").to_string() } else { format!("{} dBm", self.f.min_rssi) }).color(p.text));
+                    });
+                });
+                ui.spacing_mut().slider_width = ui.available_width() - 8.0;
+                ui.add(egui::Slider::new(&mut self.f.min_rssi, -100..=-30).show_value(false))
+                    .on_hover_text(t!("Schwächere Netze ausblenden", "Hide weaker networks"));
+                ui.checkbox(&mut self.f.show_hidden, t!("Versteckte SSIDs", "Hidden SSIDs"));
+                ui.checkbox(&mut self.f.only_pinned, t!("Nur markierte ★", "Pinned only ★"));
+                ui.checkbox(&mut self.f.only_open, t!("Nur offene Netze", "Open networks only"));
+                ui.checkbox(&mut self.f.hide_stale, t!("Veraltete ausblenden", "Hide stale"));
             });
-        });
-        ui.spacing_mut().slider_width = ui.available_width() - 8.0;
-        ui.add(egui::Slider::new(&mut self.f.min_rssi, -100..=-30).show_value(false))
-            .on_hover_text(t!("Schwächere Netze ausblenden", "Hide weaker networks"));
-        ui.checkbox(&mut self.f.show_hidden, t!("Versteckte SSIDs", "Hidden SSIDs"));
-        ui.checkbox(&mut self.f.only_pinned, t!("Nur markierte ★", "Pinned only ★"));
-        ui.checkbox(&mut self.f.only_open, t!("Nur offene Netze", "Open networks only"));
-        ui.checkbox(&mut self.f.hide_stale, t!("Veraltete ausblenden", "Hide stale"));
         let n = self.f.active_count();
-        if n > 0 && ui.button(tf!("✖ {n} Filter zurücksetzen", "✖ Reset {n} filters")).clicked() {
+        if n > 0 && ui.button(tf!("\u{E4F6} {n} Filter zurücksetzen", "\u{E4F6} Reset {n} filters")).clicked() {
             self.f = super::Filter::with_hidden(true);
         }
     }
@@ -362,20 +383,24 @@ impl WifiApp {
                 ui.set_width(ui.available_width());
                 match &self.conn {
                     Some(c) => {
+                        // kompakt: SSID, dann Signal · Kanal · Rate, dann AP
                         ui.horizontal(|ui| {
                             dot(ui, p.success, 4.0);
-                            ui.label(RichText::new(t!("Verbunden", "Connected")).size(12.0).color(p.success));
+                            ui.add(egui::Label::new(RichText::new(&c.ssid).family(crate::theme::semibold()).color(p.text)).truncate())
+                                .on_hover_text(t!("Verbunden", "Connected"));
                         });
-                        ui.label(RichText::new(&c.ssid).strong().color(p.text));
                         ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
                             if let Some(r) = c.rssi {
-                                ui.label(RichText::new(format!("{r} dBm")).strong().color(signal_color(r)));
+                                ui.label(RichText::new(format!("{r} dBm")).family(crate::theme::semibold()).color(signal_color(r)));
                             }
+                            let mut rest = Vec::new();
                             if let Some(ch) = c.channel {
-                                ui.label(RichText::new(tf!("Kanal {ch}", "Ch {ch}")).color(p.weak));
+                                rest.push(tf!("Kanal {ch}", "Ch {ch}"));
                             }
+                            rest.push(format!("{:.0} Mbit/s", c.tx_mbps));
+                            ui.add(egui::Label::new(RichText::new(rest.join(" · ")).size(12.0).color(p.weak)).truncate());
                         });
-                        ui.label(RichText::new(format!("{:.0} Mbit/s · {}", c.tx_mbps, c.phy)).size(12.0).color(p.weak));
                         let vendor = self.aps.get(&c.bssid).map(Self::vendor_label).unwrap_or_default();
                         let r = ui
                             .add(egui::Label::new(RichText::new(format!("{} {vendor}", fmt_mac(&c.bssid))).size(11.5).monospace().color(p.weak)).sense(Sense::click()))

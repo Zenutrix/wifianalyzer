@@ -270,6 +270,7 @@ impl WifiApp {
         let ctx = &cc.egui_ctx;
         let settings = Settings::load();
         i18n::set(settings.lang);
+        crate::theme::install_fonts(ctx);
         crate::theme::apply(ctx, settings.dark);
         crate::heatmap::set_scale(crate::heatmap::scale_from_string(&settings.heat_scale));
 

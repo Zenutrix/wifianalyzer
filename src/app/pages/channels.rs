@@ -289,7 +289,7 @@ impl WifiApp {
             .collect();
 
         // ---------- Empfehlung ----------
-        card(ui, Some(t!("💡 Empfehlung", "💡 Recommendation")), |ui| {
+        card(ui, Some(t!("\u{E2DC} Empfehlung", "\u{E2DC} Recommendation")), |ui| {
             ui.set_width(ui.available_width());
             let line = |ui: &mut Ui, title: &str, r: Option<(u32, f64, usize)>| {
                 if let Some((c, s, n)) = r {

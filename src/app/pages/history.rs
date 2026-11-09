@@ -42,7 +42,7 @@ impl WifiApp {
         if recs.is_empty() && !show_conn {
             ui.add_space(50.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("📈").size(40.0).color(p.weak));
+                ui.label(RichText::new("\u{E154}").size(40.0).color(p.weak));
                 ui.label(RichText::new(t!("Noch nichts zum Anzeigen", "Nothing to show yet")).size(17.0).color(p.text));
                 ui.label(
                     RichText::new(t!(

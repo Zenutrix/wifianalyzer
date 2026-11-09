@@ -54,43 +54,43 @@ impl WifiApp {
             },
             |ui| {
                 if has_meas {
-                    ui.menu_button(t!("⬇ Export", "⬇ Export"), |ui| {
-                        if ui.button(t!("📄 Bericht für Kunden als PDF", "📄 Customer report as PDF")).clicked() {
+                    ui.menu_button(t!("\u{E20C} Export", "\u{E20C} Export"), |ui| {
+                        if ui.button(t!("\u{E702} Bericht für Kunden als PDF", "\u{E702} Customer report as PDF")).clicked() {
                             export_pdf = true;
                             ui.close_menu();
                         }
-                        if ui.button(t!("🌐 Bericht als Webseite (HTML)", "🌐 Report as web page (HTML)")).clicked() {
+                        if ui.button(t!("\u{E288} Bericht als Webseite (HTML)", "\u{E288} Report as web page (HTML)")).clicked() {
                             export_report = true;
                             ui.close_menu();
                         }
-                        if ui.button(t!("📋 Messpunkte als Liste (CSV / Excel)", "📋 Points as list (CSV / Excel)")).clicked() {
+                        if ui.button(t!("\u{E198} Messpunkte als Liste (CSV / Excel)", "\u{E198} Points as list (CSV / Excel)")).clicked() {
                             export_points = true;
                             ui.close_menu();
                         }
-                        if ui.button(t!("📈 Alle Messwerte (CSV / Excel)", "📈 All samples (CSV / Excel)")).clicked() {
+                        if ui.button(t!("\u{E154} Alle Messwerte (CSV / Excel)", "\u{E154} All samples (CSV / Excel)")).clicked() {
                             export_all = true;
                             ui.close_menu();
                         }
                     });
-                    if ui.button(t!("💾 Speichern unter …", "💾 Save as …")).on_hover_text(t!("Wird ohnehin automatisch gespeichert", "Saved automatically anyway")).clicked() {
+                    if ui.button(t!("\u{E248} Speichern unter …", "\u{E248} Save as …")).on_hover_text(t!("Wird ohnehin automatisch gespeichert", "Saved automatically anyway")).clicked() {
                         save_as = true;
                     }
                 }
-                if !running && ui.button(t!("📂 Öffnen", "📂 Open")).on_hover_text(t!("Gespeicherte Messung öffnen", "Open a saved survey")).clicked() {
+                if !running && ui.button(t!("\u{E256} Öffnen", "\u{E256} Open")).on_hover_text(t!("Gespeicherte Messung öffnen", "Open a saved survey")).clicked() {
                     open = true;
                 }
                 if !running && has_meas {
-                    let label = if confirm { t!("🗑 Wirklich schließen?", "🗑 Really close?") } else { t!("✖ Schließen", "✖ Close") };
+                    let label = if confirm { t!("\u{E4A6} Wirklich schließen?", "\u{E4A6} Really close?") } else { t!("\u{E4F6} Schließen", "\u{E4F6} Close") };
                     if ui.button(label).on_hover_text(t!("Die Messung bleibt gespeichert", "The survey stays saved")).clicked() {
                         discard = true;
                     }
                 }
                 if running {
-                    if primary_button(ui, t!("⏹ Messung stoppen", "⏹ Stop survey"), p.danger).clicked() {
+                    if primary_button(ui, t!("\u{E46C} Messung stoppen", "\u{E46C} Stop survey"), p.danger).clicked() {
                         stop = true;
                     }
                 } else if ui
-                    .add_enabled(!ssid.is_empty(), egui::Button::new(RichText::new(t!("▶ Messung starten", "▶ Start survey")).color(Color32::WHITE).strong()).fill(p.success))
+                    .add_enabled(!ssid.is_empty(), egui::Button::new(RichText::new(t!("\u{E3D0} Messung starten", "\u{E3D0} Start survey")).color(Color32::WHITE).strong()).fill(p.success))
                     .clicked()
                 {
                     start = true;
@@ -101,7 +101,7 @@ impl WifiApp {
                         .selected_text(if ssid.is_empty() { "–" } else { ssid.as_str() })
                         .show_ui(ui, |ui| {
                             for (s, r) in &choices {
-                                let tag = if connected_ssid.as_deref() == Some(s.as_str()) { "  🔗" } else { "" };
+                                let tag = if connected_ssid.as_deref() == Some(s.as_str()) { "  \u{E2E2}" } else { "" };
                                 if ui.selectable_label(*s == ssid, format!("{s}  ({r} dBm){tag}")).clicked() {
                                     new_ssid = Some(s.clone());
                                 }
@@ -117,7 +117,7 @@ impl WifiApp {
 
         // Messpunkte
         ui.horizontal(|ui| {
-            let btn = egui::Button::new(RichText::new(t!("📍 Messpunkt erfassen", "📍 Add measurement point")).strong().color(if running { Color32::WHITE } else { p.weak }))
+            let btn = egui::Button::new(RichText::new(t!("\u{E316} Messpunkt erfassen", "\u{E316} Add measurement point")).strong().color(if running { Color32::WHITE } else { p.weak }))
                 .fill(if running { p.purple } else { p.surface2 })
                 .min_size(egui::Vec2::new(0.0, 28.0));
             if ui.add_enabled(running, btn).clicked() {
@@ -148,9 +148,9 @@ impl WifiApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let name = f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                     let (txt, col) = match (&self.meas_save_error, self.meas_dirty_since.is_some()) {
-                        (Some(_), _) => (tf!("⚠ {name} – nicht gespeichert", "⚠ {name} – not saved"), p.danger),
-                        (None, true) => (tf!("💾 {name} …", "💾 {name} …"), p.weak),
-                        (None, false) => (tf!("✔ {name}", "✔ {name}"), p.weak),
+                        (Some(_), _) => (tf!("\u{E4E0} {name} – nicht gespeichert", "\u{E4E0} {name} – not saved"), p.danger),
+                        (None, true) => (tf!("\u{E248} {name} …", "\u{E248} {name} …"), p.weak),
+                        (None, false) => (tf!("\u{E182} {name}", "\u{E182} {name}"), p.weak),
                     };
                     if ui.link(RichText::new(txt).small().color(col)).on_hover_text(f.display().to_string()).clicked() {
                         if let Some(dir) = f.parent() {
@@ -240,7 +240,7 @@ impl WifiApp {
                                 let col = if d >= 10 { p.danger } else if d >= 5 { p.warning } else { p.weak };
                                 ui.label(RichText::new(tf!("Bester AP: {} {} dBm ({:+} dB)", "Best AP: {} {} dBm ({:+} dB)", fmt_mac(&b.info.bssid), b.info.rssi, d)).color(col));
                             } else {
-                                ui.label(RichText::new(t!("✔ Verbunden mit dem stärksten AP", "✔ Connected to the strongest AP")).color(p.success));
+                                ui.label(RichText::new(t!("\u{E182} Verbunden mit dem stärksten AP", "\u{E182} Connected to the strongest AP")).color(p.success));
                             }
                         }
                     }
@@ -257,7 +257,7 @@ impl WifiApp {
                     }
                 }
                 if self.meas.as_ref().is_some_and(|m| m.running && m.is_sticky()) {
-                    ui.label(RichText::new(t!("⚠ Sticky Client: besserer AP verfügbar", "⚠ Sticky client: a better AP is available")).strong().color(p.danger));
+                    ui.label(RichText::new(t!("\u{E4E0} Sticky Client: besserer AP verfügbar", "\u{E4E0} Sticky client: a better AP is available")).strong().color(p.danger));
                 }
             });
             ui.add_space(6.0);
@@ -296,7 +296,7 @@ impl WifiApp {
                 None => {
                     card(ui, Some(t!("So funktioniert die Messung", "How the survey works")), |ui| {
                         ui.set_max_width(640.0);
-                        ui.label(t!("1.  SSID wählen – am besten die, mit der der Laptop verbunden ist (🔗)", "1.  Choose the SSID – ideally the one the laptop is connected to (🔗)"));
+                        ui.label(t!("1.  SSID wählen – am besten die, mit der der Laptop verbunden ist (\u{E2E2})", "1.  Choose the SSID – ideally the one the laptop is connected to (\u{E2E2})"));
                         ui.label(t!("2.  „Messung starten“ und mit dem Laptop die Räume ablaufen", "2.  Click \"Start survey\" and walk through the rooms with the laptop"));
                         ui.label(t!("3.  In jedem Raum Enter drücken, Raum eingeben, Enter – das ist ein Messpunkt", "3.  In each room press Enter, type the room, Enter – that's a measurement point"));
                         ui.label(t!("4.  Stoppen – alles wird automatisch gespeichert; Export als Bericht (PDF) oder Liste (Excel)", "4.  Stop – everything is saved automatically; export as report (PDF) or list (Excel)"));
@@ -423,7 +423,7 @@ impl WifiApp {
                     EventKind::Disconnect { .. } => (t!("Abbruch", "Disconnect").to_string(), p.danger),
                     EventKind::Connect { .. } => (t!("Verbunden", "Connected").to_string(), p.success),
                     EventKind::Sticky { .. } => ("Sticky".to_string(), p.warning),
-                    EventKind::Marker(t) => (format!("📍 {t}"), p.purple),
+                    EventKind::Marker(t) => (format!("\u{E316} {t}"), p.purple),
                     EventKind::Start | EventKind::Stop => return None,
                 };
                 Some((e.t, label, col))

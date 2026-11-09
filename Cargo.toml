@@ -24,6 +24,8 @@ serde_json = "1"
 # Grundriss laden (PNG/JPEG) und Heatmap-Bild für Bericht/PDF
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 base64 = "0.22"
+# einheitliche Linien-Icons statt bunter Emojis
+egui-phosphor = "0.7"
 
 [dependencies.windows]
 version = "0.58"

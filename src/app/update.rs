@@ -350,7 +350,7 @@ impl WifiApp {
         let mut install = false;
         let mut later = false;
         let installing = self.update.install_rx.is_some();
-        egui::Window::new(RichText::new(t!("⬆ Update verfügbar", "⬆ Update available")).strong())
+        egui::Window::new(RichText::new(t!("\u{E030} Update verfügbar", "\u{E030} Update available")).strong())
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -383,7 +383,7 @@ impl WifiApp {
                 });
                 ui.add_space(8.0);
                 if let Some(e) = &self.update.install_error {
-                    ui.label(RichText::new(tf!("⚠ Update fehlgeschlagen: {e}", "⚠ Update failed: {e}")).color(p.danger));
+                    ui.label(RichText::new(tf!("\u{E4E0} Update fehlgeschlagen: {e}", "\u{E4E0} Update failed: {e}")).color(p.danger));
                     ui.label(RichText::new(t!("Du kannst die neue Version auch manuell von GitHub laden.", "You can also download the new version manually from GitHub.")).color(p.weak));
                 }
                 if installing {
@@ -396,7 +396,7 @@ impl WifiApp {
                 ui.horizontal(|ui| {
                     let can = (rel.exe_url.is_some() || (rel.setup_url.is_some() && is_installed())) && !installing;
                     ui.add_enabled_ui(can, |ui| {
-                        if primary_button(ui, t!("⬆ Jetzt aktualisieren", "⬆ Update now"), p.accent).clicked() {
+                        if primary_button(ui, t!("\u{E030} Jetzt aktualisieren", "\u{E030} Update now"), p.accent).clicked() {
                             install = true;
                         }
                     });

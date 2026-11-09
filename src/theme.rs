@@ -114,6 +114,60 @@ fn visuals(p: &Palette, dark: bool) -> egui::Visuals {
     v
 }
 
+/// Schriftfamilie für Überschriften und Kennzahlen (Segoe UI Semibold)
+pub fn semibold() -> egui::FontFamily {
+    egui::FontFamily::Name("semibold".into())
+}
+
+/// Windows-Systemschriften (Segoe UI, Consolas) + Phosphor-Icons laden.
+/// Die Schriften werden zur Laufzeit aus dem Windows-Ordner gelesen (nicht mitgeliefert);
+/// fehlen sie, bleiben die eingebauten egui-Schriften.
+pub fn install_fonts(ctx: &egui::Context) {
+    use egui::{FontData, FontDefinitions, FontFamily};
+    let mut fonts = FontDefinitions::default();
+    let dir = std::path::PathBuf::from(std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into())).join("Fonts");
+    let mut load = |key: &str, file: &str| -> bool {
+        match std::fs::read(dir.join(file)) {
+            Ok(b) => {
+                fonts.font_data.insert(key.to_string(), FontData::from_owned(b));
+                true
+            }
+            Err(_) => false,
+        }
+    };
+    let ui_font = load("segoe", "segoeui.ttf");
+    let semi = load("segoe-sb", "seguisb.ttf");
+    let sym = load("segoe-sym", "seguisym.ttf");
+    let defaults = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    {
+        let prop = fonts.families.entry(FontFamily::Proportional).or_default();
+        if ui_font {
+            prop.insert(0, "segoe".into());
+        }
+        if sym {
+            prop.push("segoe-sym".into());
+        }
+    }
+    // Semibold: eigene Familie, Rest wie Proportional (Fallbacks)
+    let mut sb: Vec<String> = Vec::new();
+    if semi {
+        sb.push("segoe-sb".into());
+    } else if ui_font {
+        sb.push("segoe".into());
+    }
+    sb.extend(defaults);
+    if sym {
+        sb.push("segoe-sym".into());
+    }
+    fonts.families.insert(semibold(), sb);
+    // Icons: Phosphor direkt hinter der Hauptschrift (Proportional) bzw. in Semibold
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    if let Some(f) = fonts.families.get_mut(&semibold()) {
+        f.insert(1.min(f.len()), "phosphor".into());
+    }
+    ctx.set_fonts(fonts);
+}
+
 pub fn apply(ctx: &egui::Context, dark: bool) {
     ctx.set_visuals_of(Theme::Dark, visuals(&DARK, true));
     ctx.set_visuals_of(Theme::Light, visuals(&LIGHT, false));

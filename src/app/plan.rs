@@ -229,7 +229,7 @@ impl WifiApp {
             ui.painter().rect(rect, 12.0, p.surface, Stroke::new(1.0f32, p.border));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(20.0)).layout(egui::Layout::top_down(egui::Align::Center)));
             child.add_space((height / 2.0 - 90.0).max(10.0));
-            child.label(RichText::new("🗺").size(38.0).color(p.weak));
+            child.label(RichText::new("\u{E31A}").size(38.0).color(p.weak));
             child.label(RichText::new(t!("Noch kein Grundriss", "No floor plan yet")).size(18.0).strong().color(p.text));
             child.label(
                 RichText::new(t!(
@@ -239,7 +239,7 @@ impl WifiApp {
                 .color(p.weak),
             );
             child.add_space(10.0);
-            if primary_button(&mut child, t!("🗺 Grundriss laden", "🗺 Load floor plan"), p.accent).clicked() {
+            if primary_button(&mut child, t!("\u{E31A} Grundriss laden", "\u{E31A} Load floor plan"), p.accent).clicked() {
                 self.load_plan();
             }
             return;
@@ -262,17 +262,17 @@ impl WifiApp {
             let opts_ref: Vec<(Layer, &str)> = opts.iter().map(|(l, s)| (*l, s.as_str())).collect();
             crate::widgets::segmented(ui, &mut layer, &opts_ref);
             ui.separator();
-            let scale_btn = ui.button(t!("📏 Maßstab", "📏 Scale")).on_hover_text(t!(
+            let scale_btn = ui.button(t!("\u{E6B8} Maßstab", "\u{E6B8} Scale")).on_hover_text(t!(
                 "Zwei Punkte einer bekannten Strecke anklicken (z. B. eine Wand) und die Länge in Metern eingeben",
                 "Click two points of a known distance (e.g. a wall) and enter its length in metres"
             ));
             if scale_btn.clicked() {
                 start_scale = true;
             }
-            if ui.button(t!("🎨 Farbskala", "🎨 Colour scale")).on_hover_text(t!("dBm-Schwellen und Farben der Heatmap einstellen", "Set the dBm thresholds and colours of the heatmap")).clicked() {
+            if ui.button(t!("\u{E6C8} Farbskala", "\u{E6C8} Colour scale")).on_hover_text(t!("dBm-Schwellen und Farben der Heatmap einstellen", "Set the dBm thresholds and colours of the heatmap")).clicked() {
                 self.show_scale_editor = !self.show_scale_editor;
             }
-            if ui.button(t!("🗺 Anderer Grundriss …", "🗺 Other floor plan …")).clicked() {
+            if ui.button(t!("\u{E31A} Anderer Grundriss …", "\u{E31A} Other floor plan …")).clicked() {
                 change = true;
             }
             if ui.button(t!("Entfernen", "Remove")).on_hover_text(t!("Grundriss aus dieser Messung entfernen", "Remove the floor plan from this survey")).clicked() {
@@ -293,7 +293,7 @@ impl WifiApp {
         let mut cancel_scale = false;
         ui.horizontal(|ui| {
             if let Some(sd) = self.plan_scale.as_mut() {
-                ui.label(RichText::new("📏").color(p.accent));
+                ui.label(RichText::new("\u{E6B8}").color(p.accent));
                 match (sd.a, sd.b) {
                     (None, _) => {
                         ui.label(RichText::new(t!("Maßstab: auf den Anfang einer bekannten Strecke klicken (z. B. Wandlänge, Türbreite)", "Scale: click the start of a known distance (e.g. wall length, door width)")).color(p.accent));
@@ -322,10 +322,10 @@ impl WifiApp {
                 match width_m {
                     Some(wm) => {
                         let hm = plan_px.map(|s| wm * s[1] as f32 / s[0].max(1) as f32).unwrap_or(0.0);
-                        ui.label(RichText::new(tf!("📏 Maßstab: Plan {wm:.1} × {hm:.1} m", "📏 Scale: plan {wm:.1} × {hm:.1} m")).color(p.weak));
+                        ui.label(RichText::new(tf!("\u{E6B8} Maßstab: Plan {wm:.1} × {hm:.1} m", "\u{E6B8} Scale: plan {wm:.1} × {hm:.1} m")).color(p.weak));
                     }
                     None => {
-                        ui.label(RichText::new(t!("📏 Kein Maßstab gesetzt – angenommen 40 m Breite. Für eine genaue Heatmap „Maßstab“ setzen.", "📏 No scale set – assuming 40 m width. Set the \"Scale\" for an accurate heatmap.")).color(p.warning));
+                        ui.label(RichText::new(t!("\u{E6B8} Kein Maßstab gesetzt – angenommen 40 m Breite. Für eine genaue Heatmap „Maßstab“ setzen.", "\u{E6B8} No scale set – assuming 40 m width. Set the \"Scale\" for an accurate heatmap.")).color(p.warning));
                     }
                 }
                 ui.separator();
@@ -527,7 +527,7 @@ impl WifiApp {
         let mut stops = heatmap::scale();
         let mut changed = false;
         let mut reset = false;
-        egui::Window::new(RichText::new(t!("🎨 Farbskala der Heatmap", "🎨 Heatmap colour scale")).strong())
+        egui::Window::new(RichText::new(t!("\u{E6C8} Farbskala der Heatmap", "\u{E6C8} Heatmap colour scale")).strong())
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -548,7 +548,7 @@ impl WifiApp {
                         if ui.color_edit_button_srgb(c).changed() {
                             changed = true;
                         }
-                        if ui.add_enabled(n > 2, egui::Button::new("🗑").small()).clicked() {
+                        if ui.add_enabled(n > 2, egui::Button::new("\u{E4A6}").small()).clicked() {
                             remove = Some(i);
                         }
                         ui.end_row();

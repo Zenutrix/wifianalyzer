@@ -29,7 +29,7 @@ impl WifiApp {
             t!("AP-Finder", "AP finder"),
             t!("Mit dem Laptop herumgehen: je stärker das Signal, desto näher der Access Point", "Walk around with the laptop: the stronger the signal, the closer the access point"),
             |ui| {
-                ui.checkbox(&mut beep, t!("🔊 Piepton", "🔊 Beep")).on_hover_text(t!(
+                ui.checkbox(&mut beep, t!("\u{E44A} Piepton", "\u{E44A} Beep")).on_hover_text(t!(
                     "Geigerzähler-Ton: höher und schneller bei stärkerem Signal",
                     "Geiger counter tone: higher and faster with a stronger signal"
                 ));
@@ -60,7 +60,7 @@ impl WifiApp {
             self.beeper.set(false, -100);
             ui.add_space(60.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("🎯").size(40.0).color(p.weak));
+                ui.label(RichText::new("\u{E1D6}").size(40.0).color(p.weak));
                 ui.label(RichText::new(t!("Wähle oben einen Access Point aus.", "Choose an access point above.")).size(17.0).color(p.weak));
                 ui.label(
                     RichText::new(t!("Tipp: In der Netzwerkliste per Doppelklick direkt hierher.", "Tip: double-click a row in the network list to jump here."))

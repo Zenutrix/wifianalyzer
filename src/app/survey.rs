@@ -239,7 +239,7 @@ pub(super) fn net_summary(n: &NetTest) -> String {
     if parts.is_empty() {
         return n.note.clone().unwrap_or_else(|| t!("keine Netzwerkwerte", "no network values").into());
     }
-    format!("✔ {}", parts.join(" · "))
+    format!("\u{E182} {}", parts.join(" · "))
 }
 
 /// Farbe für eine Latenz in ms
@@ -287,7 +287,7 @@ fn net_cells(ui: &mut Ui, p: &Palette, net: Option<&NetTest>, pending: bool) {
                 }
             }
             let lossy = gw.is_some_and(|g| g.loss > 0.0);
-            let txt = if lossy { format!("{ms:.0} ms ⚠") } else { format!("{ms:.0} ms") };
+            let txt = if lossy { format!("{ms:.0} ms \u{E4E0}") } else { format!("{ms:.0} ms") };
             ui.label(RichText::new(txt).monospace().color(latency_color(p, ms))).on_hover_text(tip);
         }
         None => {
@@ -399,7 +399,7 @@ impl WifiApp {
         let next_no = m.points.len() + 1;
 
         let (mut save, mut cancel) = (false, false);
-        egui::Window::new(RichText::new(t!("📍 Messpunkt erfassen", "📍 Add measurement point")).strong())
+        egui::Window::new(RichText::new(t!("\u{E316} Messpunkt erfassen", "\u{E316} Add measurement point")).strong())
             .collapsible(false)
             .resizable(false)
             .min_width(470.0)
@@ -466,7 +466,7 @@ impl WifiApp {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(t!("Position im Grundriss", "Position on the floor plan")).strong());
-                        ui.label(RichText::new(if d.pos.is_some() { t!("✔ gesetzt", "✔ set") } else { t!("– hineinklicken (optional)", "– click into it (optional)") }).color(if d.pos.is_some() { p.success } else { p.weak }));
+                        ui.label(RichText::new(if d.pos.is_some() { t!("\u{E182} gesetzt", "\u{E182} set") } else { t!("– hineinklicken (optional)", "– click into it (optional)") }).color(if d.pos.is_some() { p.success } else { p.weak }));
                     });
                     crate::app::plan::plan_picker(ui, tex, size, &mut d.pos, &others, next_no);
                 }
@@ -508,7 +508,7 @@ impl WifiApp {
                 );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if primary_button(ui, t!("📍 Speichern  (Enter)", "📍 Save  (Enter)"), p.accent).clicked() {
+                    if primary_button(ui, t!("\u{E316} Speichern  (Enter)", "\u{E316} Save  (Enter)"), p.accent).clicked() {
                         save = true;
                     }
                     if ui.button(t!("Abbrechen  (Esc)", "Cancel  (Esc)")).clicked() {
@@ -676,7 +676,7 @@ impl WifiApp {
                     }
                     if has_plan {
                         let (txt, tip) = if pt.pos.is_some() {
-                            ("📍", t!("Position gesetzt – klicken, um sie im Grundriss neu zu setzen", "Position set – click to place it again on the floor plan"))
+                            ("\u{E316}", t!("Position gesetzt – klicken, um sie im Grundriss neu zu setzen", "Position set – click to place it again on the floor plan"))
                         } else {
                             (t!("setzen", "place"), t!("Im Grundriss platzieren", "Place on the floor plan"))
                         };
@@ -688,7 +688,7 @@ impl WifiApp {
                     changed |= ui
                         .add_sized([180.0, 20.0], egui::TextEdit::singleline(&mut pt.note).frame(false).hint_text(RichText::new("…").color(p.weak)))
                         .changed();
-                    if ui.small_button("🗑").on_hover_text(t!("Messpunkt löschen", "Delete point")).clicked() {
+                    if ui.small_button("\u{E4A6}").on_hover_text(t!("Messpunkt löschen", "Delete point")).clicked() {
                         remove = Some(i);
                     }
                     ui.end_row();
@@ -841,7 +841,7 @@ impl WifiApp {
                     .strong()
                     .color(p.text),
             );
-            if ui.small_button(t!("📂 Ordner", "📂 Folder")).on_hover_text(survey_dir().display().to_string()).clicked() {
+            if ui.small_button(t!("\u{E256} Ordner", "\u{E256} Folder")).on_hover_text(survey_dir().display().to_string()).clicked() {
                 let _ = std::fs::create_dir_all(survey_dir());
                 open_path(&survey_dir());
             }
@@ -860,7 +860,7 @@ impl WifiApp {
             let name = r.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let when: chrono::DateTime<chrono::Local> = r.modified.into();
             ui.horizontal(|ui| {
-                if ui.link(RichText::new(format!("📄 {name}"))).clicked() {
+                if ui.link(RichText::new(format!("\u{E702} {name}"))).clicked() {
                     open = Some(r.path.clone());
                 }
                 ui.label(RichText::new(tf!("geändert {}", "modified {}", when.format("%d.%m.%Y %H:%M"))).small().color(p.weak));

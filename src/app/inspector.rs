@@ -40,7 +40,7 @@ impl WifiApp {
                     crate::widgets::dot(ui, ap_color(&sel), 5.0);
                     ui.label(RichText::new(Self::display_ssid(r)).size(19.0).strong().color(p.text));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("✖").on_hover_text(t!("Schließen (Esc)", "Close (Esc)")).clicked() {
+                        if ui.button("\u{E4F6}").on_hover_text(t!("Schließen (Esc)", "Close (Esc)")).clicked() {
                             close = true;
                         }
                     });
@@ -51,13 +51,13 @@ impl WifiApp {
                     if ui.button(if pinned { t!("★ Markiert", "★ Pinned") } else { t!("☆ Markieren", "☆ Pin") }).clicked() {
                         pin = true;
                     }
-                    if ui.button(t!("🎯 Orten", "🎯 Locate")).on_hover_text(t!("Im AP-Finder öffnen", "Open in AP finder")).clicked() {
+                    if ui.button(t!("\u{E1D6} Orten", "\u{E1D6} Locate")).on_hover_text(t!("Im AP-Finder öffnen", "Open in AP finder")).clicked() {
                         finder = true;
                     }
-                    if !i.hidden && ui.button(t!("📏 Messen", "📏 Survey")).on_hover_text(t!("Messung für diese SSID starten", "Start a survey for this SSID")).clicked() {
+                    if !i.hidden && ui.button(t!("\u{E6B8} Messen", "\u{E6B8} Survey")).on_hover_text(t!("Messung für diese SSID starten", "Start a survey for this SSID")).clicked() {
                         measure = true;
                     }
-                    if ui.button("📋 BSSID").on_hover_text(t!("BSSID kopieren", "Copy BSSID")).clicked() {
+                    if ui.button("\u{E198} BSSID").on_hover_text(t!("BSSID kopieren", "Copy BSSID")).clicked() {
                         ui.ctx().copy_text(fmt_mac(&sel));
                     }
                 });

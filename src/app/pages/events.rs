@@ -16,7 +16,7 @@ impl WifiApp {
             if ui.button(t!("Leeren", "Clear")).clicked() {
                 clear = true;
             }
-            if ui.button(t!("📋 Kopieren", "📋 Copy")).on_hover_text(t!("Protokoll in die Zwischenablage", "Copy log to clipboard")).clicked() {
+            if ui.button(t!("\u{E198} Kopieren", "\u{E198} Copy")).on_hover_text(t!("Protokoll in die Zwischenablage", "Copy log to clipboard")).clicked() {
                 copy = true;
             }
         });

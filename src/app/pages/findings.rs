@@ -295,7 +295,7 @@ impl WifiApp {
         if shown.is_empty() {
             ui.add_space(40.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("✔").size(40.0).color(p.success));
+                ui.label(RichText::new("\u{E182}").size(40.0).color(p.success));
                 ui.label(RichText::new(t!("Keine Befunde", "No findings")).size(18.0).color(p.text));
                 ui.label(RichText::new(t!("Alle sichtbaren Netze sind unauffällig.", "All visible networks look fine.")).color(p.weak));
             });
@@ -327,7 +327,7 @@ impl WifiApp {
                                 });
                                 ui.label(RichText::new(&f.title).strong().color(p.text));
                                 ui.label(RichText::new(&f.detail).size(12.5).color(p.weak));
-                                ui.label(RichText::new(format!("💡 {}", f.advice)).size(12.5).color(p.text.gamma_multiply(0.9)));
+                                ui.label(RichText::new(format!("\u{E2DC} {}", f.advice)).size(12.5).color(p.text.gamma_multiply(0.9)));
                             });
                         });
                     })

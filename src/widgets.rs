@@ -18,7 +18,7 @@ pub fn card<R>(ui: &mut Ui, title: Option<&str>, add: impl FnOnce(&mut Ui) -> R)
             // Inhalt immer untereinander, egal in welchem Layout die Karte steht
             ui.vertical(|ui| {
                 if let Some(t) = title {
-                    ui.label(RichText::new(t).strong().size(14.5).color(p.text));
+                    ui.label(RichText::new(t).family(crate::theme::semibold()).size(14.5).color(p.text));
                     ui.add_space(6.0);
                 }
                 add(ui)
@@ -44,7 +44,7 @@ pub fn page_header(ui: &mut Ui, title: &str, subtitle: &str, actions: impl FnOnc
     let p = pal(ui);
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.label(RichText::new(title).size(22.0).strong().color(p.text));
+            ui.label(RichText::new(title).family(crate::theme::semibold()).size(23.0).color(p.text));
             if !subtitle.is_empty() {
                 ui.label(RichText::new(subtitle).color(p.weak));
             }
@@ -66,7 +66,7 @@ pub fn kpi(ui: &mut Ui, title: &str, value: &str, sub: &str, color: Color32, wid
             ui.set_width(width);
             ui.vertical(|ui| {
                 ui.add(egui::Label::new(RichText::new(title).size(12.0).color(p.weak)).truncate());
-                ui.add(egui::Label::new(RichText::new(value).size(22.0).strong().color(color)).truncate());
+                ui.add(egui::Label::new(RichText::new(value).family(crate::theme::semibold()).size(22.0).color(color)).truncate());
                 // Unterzeile immer belegen, damit alle Kacheln einer Reihe gleich hoch sind
                 ui.add(egui::Label::new(RichText::new(if sub.is_empty() { " " } else { sub }).size(11.5).color(p.weak)).truncate());
             });
@@ -94,7 +94,7 @@ pub fn kpi_tile(ui: &mut Ui, icon: &str, title: &str, value: &str, sub: &str, co
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.add(egui::Label::new(RichText::new(title).size(12.0).color(p.weak)).truncate());
-                    ui.add(egui::Label::new(RichText::new(value).size(23.0).strong().color(p.text)).truncate());
+                    ui.add(egui::Label::new(RichText::new(value).family(crate::theme::semibold()).size(23.0).color(p.text)).truncate());
                     ui.add(egui::Label::new(RichText::new(sub).size(11.5).color(p.weak)).truncate());
                 });
             });
@@ -272,7 +272,7 @@ pub fn kv(ui: &mut Ui, k: &str, v: impl Into<egui::WidgetText>) {
 
 pub fn yes_no(b: bool) -> String {
     if b {
-        format!("✔ {}", crate::t!("ja", "yes"))
+        format!("\u{E182} {}", crate::t!("ja", "yes"))
     } else {
         format!("– {}", crate::t!("nein", "no"))
     }

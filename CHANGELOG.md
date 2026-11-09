@@ -66,6 +66,8 @@ Erste öffentliche Version.
 - Export als **Bericht für Kunden** (HTML, im Browser als PDF druckbar) mit Zusammenfassung, Verlauf, Tabelle und Hinweisen, als **Liste der Messpunkte** (CSV/Excel) oder mit allen Messwerten.
 
 ### Oberfläche
+- Professionellerer Look: Windows-Schrift Segoe UI (Semibold für Überschriften und Kennzahlen) und ein einheitliches Linien-Icon-Set (Phosphor) statt bunter Emojis.
+- Seitenleiste aufgeräumt: Filter nur auf Analyse-Seiten, seltene Filter eingeklappt, kompakte Verbindungskarte.
 - Diagramme mit ruhigem Hintergrund und dezentem Gitter, Achsen auch bei hoher Bildschirmskalierung beschriftet.
 - Einheitlich hohe Kacheln, AP-Anzahl als Abzeichen in der Netzwerkliste, Schnellauswahl im AP-Finder.
 - Heller Modus: besser lesbare AP-Farben.

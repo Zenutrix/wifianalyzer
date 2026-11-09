@@ -57,18 +57,18 @@ impl WifiApp {
             // ---------- Kennzahlen ----------
             ui.columns(6, |c| {
                 let w = (c[0].available_width() - 30.0).max(100.0);
-                if kpi_tile(&mut c[0], "📶", t!("Netzwerke", "Networks"), &ssids.len().to_string(), &tf!("+ {hidden} versteckte APs", "+ {hidden} hidden APs"), p.accent, w).clicked() {
+                if kpi_tile(&mut c[0], "\u{E150}", t!("Netzwerke", "Networks"), &ssids.len().to_string(), &tf!("+ {hidden} versteckte APs", "+ {hidden} hidden APs"), p.accent, w).clicked() {
                     go = Some(Page::Networks);
                 }
                 let bands = format!("{}: {} · 5: {} · 6: {}", t!("2,4", "2.4"), per_band(Band::B24), per_band(Band::B5), per_band(Band::B6));
-                if kpi_tile(&mut c[1], "📡", "Access Points", &vis.len().to_string(), &bands, p.purple, w).clicked() {
+                if kpi_tile(&mut c[1], "\u{E4EA}", "Access Points", &vis.len().to_string(), &bands, p.purple, w).clicked() {
                     go = Some(Page::Channels);
                 }
                 let (val, col, csub) = match &self.conn {
                     Some(c) => (c.rssi.map(|r| format!("{r} dBm")).unwrap_or("–".into()), c.rssi.map(signal_color).unwrap_or(p.success), c.ssid.clone()),
                     None => ("–".into(), p.weak, t!("nicht verbunden", "not connected").into()),
                 };
-                if kpi_tile(&mut c[2], "🔗", t!("Verbindung", "Connection"), &val, &csub, col, w).clicked() {
+                if kpi_tile(&mut c[2], "\u{E2E2}", t!("Verbindung", "Connection"), &val, &csub, col, w).clicked() {
                     go = Some(Page::History);
                 }
                 let (fv, fc) = if crit > 0 {
@@ -78,15 +78,15 @@ impl WifiApp {
                 } else {
                     ("0".into(), p.success)
                 };
-                if kpi_tile(&mut c[3], "⚠", t!("Befunde", "Findings"), &fv, &tf!("{crit} kritisch · {warn} Warnungen", "{crit} critical · {warn} warnings"), fc, w).clicked() {
+                if kpi_tile(&mut c[3], "\u{E4E0}", t!("Befunde", "Findings"), &fv, &tf!("{crit} kritisch · {warn} Warnungen", "{crit} critical · {warn} warnings"), fc, w).clicked() {
                     go = Some(Page::Findings);
                 }
                 let ch = |c: Option<u32>| c.map(|c| tf!("Kanal {c}", "Channel {c}")).unwrap_or("–".into());
-                if kpi_tile(&mut c[4], "🏆", t!("Empfehlung 2,4 GHz", "Best 2.4 GHz"), &ch(best24), t!("aus 1 / 6 / 11", "of 1 / 6 / 11"), p.success, w).clicked() {
+                if kpi_tile(&mut c[4], "\u{E67E}", t!("Empfehlung 2,4 GHz", "Best 2.4 GHz"), &ch(best24), t!("aus 1 / 6 / 11", "of 1 / 6 / 11"), p.success, w).clicked() {
                     band_pick = Some(Band::B24);
                     go = Some(Page::Rating);
                 }
-                if kpi_tile(&mut c[5], "🏆", t!("Empfehlung 5 GHz", "Best 5 GHz"), &ch(best5), t!("ohne DFS", "non-DFS"), p.success, w).clicked() {
+                if kpi_tile(&mut c[5], "\u{E67E}", t!("Empfehlung 5 GHz", "Best 5 GHz"), &ch(best5), t!("ohne DFS", "non-DFS"), p.success, w).clicked() {
                     band_pick = Some(Band::B5);
                     go = Some(Page::Rating);
                 }
@@ -120,14 +120,14 @@ impl WifiApp {
                                 k(ui, t!("Sicherheit", "Security"), format!("{} · {}", c.auth, c.cipher));
                             });
                             ui.add_space(4.0);
-                            if ui.button(t!("📏 Messung starten", "📏 Start survey")).clicked() {
+                            if ui.button(t!("\u{E6B8} Messung starten", "\u{E6B8} Start survey")).clicked() {
                                 measure = Some(c.ssid.clone());
                             }
                         }
                         None => {
                             ui.add_space(40.0);
                             ui.vertical_centered(|ui| {
-                                ui.label(RichText::new("📡").size(38.0).color(p.weak));
+                                ui.label(RichText::new("\u{E4EA}").size(38.0).color(p.weak));
                                 ui.label(RichText::new(t!("Nicht mit einem WLAN verbunden", "Not connected to a Wi-Fi network")).color(p.text));
                                 ui.label(RichText::new(t!("Die Analyse der Umgebung funktioniert trotzdem.", "Analysing the environment still works.")).size(12.0).color(p.weak));
                             });
@@ -198,7 +198,7 @@ impl WifiApp {
                     if findings.is_empty() {
                         ui.add_space(30.0);
                         ui.vertical_centered(|ui| {
-                            ui.label(RichText::new("✔").size(34.0).color(p.success));
+                            ui.label(RichText::new("\u{E182}").size(34.0).color(p.success));
                             ui.label(RichText::new(t!("Keine Auffälligkeiten", "Nothing unusual")).color(p.text));
                         });
                     }
