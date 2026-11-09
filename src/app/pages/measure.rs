@@ -11,9 +11,17 @@ use crate::widgets::{card, fmt_mmss, kpi, page_header, primary_button, signal_ga
 use crate::{t, tf};
 
 impl WifiApp {
-    pub(crate) fn page_measure(&mut self, ui: &mut Ui) {
+    /// Messungs-Seite: `plan_mode = false` Rundgang (Verlauf), `true` Grundriss-Messung (Heatmap)
+    pub(crate) fn page_measure(&mut self, ui: &mut Ui, plan_mode: bool) {
         let p = pal(ui);
         let t_now = self.now_t();
+        // Es ist immer nur eine Messung offen – gehört sie zur anderen Seite, dorthin verweisen
+        if let Some(other) = self.meas.as_ref().filter(|m| m.plan_mode != plan_mode) {
+            let other_running = other.running;
+            let other_name = other.ssid.clone();
+            self.other_survey_notice(ui, plan_mode, other_running, &other_name);
+            return;
+        }
         let running = self.meas.as_ref().is_some_and(|m| m.running);
         let choices = self.ssid_choices();
         if self.meas_ssid.is_none() {
@@ -24,27 +32,34 @@ impl WifiApp {
         let connected_ssid = self.conn.as_ref().map(|c| c.ssid.clone());
 
         // Enter = Messpunkt erfassen (solange nicht gerade in ein Feld getippt wird)
-        if running && self.meas_point.is_none() && !ui.ctx().wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if running && self.meas_point.is_none() && self.plan_sel.is_none() && !ui.ctx().wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             self.open_point_dialog();
         }
 
         let (mut start, mut stop, mut discard, mut add_point) = (false, false, false, false);
         let (mut export_all, mut export_points, mut export_report, mut save_as, mut open) = (false, false, false, false, false);
+        let mut export_pdf = false;
         let mut new_ssid = None;
         let mut follow = self.meas_follow;
+        let (mut ping_on, mut speed_on) = (self.settings.point_ping, self.settings.point_speed);
         let has_meas = self.meas.is_some();
         let confirm = self.meas_discard_confirm;
         page_header(
             ui,
-            t!("Messung", "Survey"),
-            t!(
-                "Walk-Survey mit Messpunkten pro Raum: Signal, Roams, Abbrüche – Bericht für Kunden",
-                "Walk survey with points per room: signal, roams, disconnects – report for customers"
-            ),
+            if plan_mode { t!("Grundriss-Messung", "Floor plan survey") } else { t!("Messung", "Survey") },
+            if plan_mode {
+                t!("In den Plan klicken, wo du stehst – die Heatmap entsteht live", "Click where you stand on the plan – the heatmap builds up live")
+            } else {
+                t!("Rundgang mit Verlauf, Roaming und Messpunkten pro Raum", "Walk survey with timeline, roaming and points per room")
+            },
             |ui| {
                 if has_meas {
                     ui.menu_button(t!("⬇ Export", "⬇ Export"), |ui| {
-                        if ui.button(t!("📄 Bericht für Kunden (HTML / PDF)", "📄 Customer report (HTML / PDF)")).clicked() {
+                        if ui.button(t!("📄 Bericht für Kunden als PDF", "📄 Customer report as PDF")).clicked() {
+                            export_pdf = true;
+                            ui.close_menu();
+                        }
+                        if ui.button(t!("🌐 Bericht als Webseite (HTML)", "🌐 Report as web page (HTML)")).clicked() {
                             export_report = true;
                             ui.close_menu();
                         }
@@ -109,7 +124,9 @@ impl WifiApp {
                 add_point = true;
             }
             ui.label(
-                RichText::new(if running {
+                RichText::new(if running && plan_mode {
+                    t!("oder einfach an deiner Position in den Plan klicken", "or simply click your position on the plan")
+                } else if running {
                     t!("oder Enter drücken – Raum eingeben – Enter", "or press Enter – type the room – Enter")
                 } else {
                     t!("Messpunkte lassen sich während einer laufenden Messung erfassen", "Points can be added while a survey is running")
@@ -117,7 +134,16 @@ impl WifiApp {
                 .color(p.weak),
             );
             ui.separator();
-            ui.checkbox(&mut follow, t!("Nur letzte 5 min", "Last 5 min only"));
+            if !plan_mode {
+                ui.checkbox(&mut follow, t!("Nur letzte 5 min", "Last 5 min only"));
+                ui.separator();
+            }
+            ui.checkbox(&mut ping_on, t!("Latenz", "Latency"))
+                .on_hover_text(t!("Pro Messpunkt: Ping zum Router und ins Internet (1.1.1.1), ca. 3 s", "Per point: ping to the router and to the internet (1.1.1.1), approx. 3 s"));
+            ui.checkbox(&mut speed_on, t!("Speedtest", "Speed test")).on_hover_text(t!(
+                "Pro Messpunkt: Download/Upload über das Internet (speed.cloudflare.com), ca. 12 s und bis zu 70 MB – nur mit Verbindung zur gemessenen SSID",
+                "Per point: download/upload via the internet (speed.cloudflare.com), approx. 12 s and up to 70 MB – only when connected to the surveyed SSID"
+            ));
             if let Some(f) = &self.meas_file {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let name = f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
@@ -135,12 +161,14 @@ impl WifiApp {
             }
         });
         self.meas_follow = follow;
+        self.settings.point_ping = ping_on;
+        self.settings.point_speed = speed_on;
         if !discard {
             self.meas_discard_confirm = false;
         }
 
         if start {
-            self.start_measurement(ssid.clone());
+            self.start_survey(ssid.clone(), plan_mode);
         }
         if stop {
             self.stop_measurement();
@@ -167,6 +195,9 @@ impl WifiApp {
         if export_points {
             self.export_points_csv();
         }
+        if export_pdf {
+            self.export_pdf();
+        }
         if export_report {
             self.export_report();
         }
@@ -182,6 +213,9 @@ impl WifiApp {
         let conn_here = self.conn.as_ref().filter(|c| c.ssid == ssid);
         let best = self.best_ap_of(&ssid);
         let live_rssi = conn_here.and_then(|c| c.rssi).or(best.map(|b| b.info.rssi));
+        if plan_mode {
+            self.plan_live_strip(ui, live_rssi, conn_here.is_some());
+        } else {
         ui.horizontal(|ui| {
             card(ui, None, |ui| {
                 ui.set_width(300.0);
@@ -258,6 +292,7 @@ impl WifiApp {
                         });
                     });
                 }
+                None if plan_mode => {}
                 None => {
                     card(ui, Some(t!("So funktioniert die Messung", "How the survey works")), |ui| {
                         ui.set_max_width(640.0);
@@ -278,17 +313,49 @@ impl WifiApp {
                 }
             }
         });
+        }
 
         if self.meas.is_none() {
             ui.add_space(10.0);
             card(ui, None, |ui| {
                 ui.set_max_width(640.0);
-                self.recent_surveys_ui(ui);
+                self.recent_surveys_ui(ui, plan_mode);
             });
             return;
         }
+        ui.add_space(6.0);
+        if plan_mode {
+            // Tabelle darunter soll mindestens ~4 Zeilen zeigen
+            let avail = ui.available_height();
+            let h = (avail - 190.0).clamp(240.0, (avail * 0.70).max(240.0));
+            self.plan_view(ui, h);
+        } else {
+            self.meas_chart(ui);
+        }
+
+        // ---------- Messpunkte | Ereignisse ----------
+        ui.add_space(6.0);
+        let h = ui.available_height();
+        let w = ui.available_width();
+        let left_w = (w * 0.62).max(420.0).min(w - 260.0);
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(egui::Vec2::new(left_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_min_size(egui::Vec2::new(left_w, h));
+                self.points_table(ui);
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.set_min_height(h);
+                self.survey_events(ui);
+            });
+        });
+    }
+
+    /// Signalverlauf der Messung (Diagramm mit Roams, Messpunkten, Live-Kopf)
+    fn meas_chart(&mut self, ui: &mut Ui) {
+        let p = pal(ui);
+        let t_now = self.now_t();
         let Some(m) = &self.meas else { return };
-        ui.add_space(8.0);
 
         // ---------- Verlauf ----------
         let elapsed = m.elapsed(t_now);
@@ -428,23 +495,6 @@ impl WifiApp {
                 }
             });
         crate::widgets::plot_style(ui, false);
-
-        // ---------- Messpunkte | Ereignisse ----------
-        ui.add_space(6.0);
-        let h = ui.available_height();
-        let w = ui.available_width();
-        let left_w = (w * 0.62).max(420.0).min(w - 260.0);
-        ui.horizontal_top(|ui| {
-            ui.allocate_ui_with_layout(egui::Vec2::new(left_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.set_min_size(egui::Vec2::new(left_w, h));
-                self.points_table(ui);
-            });
-            ui.separator();
-            ui.vertical(|ui| {
-                ui.set_min_height(h);
-                self.survey_events(ui);
-            });
-        });
     }
 
     fn survey_events(&self, ui: &mut Ui) {

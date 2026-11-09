@@ -4,12 +4,14 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui::{self, Align2, Color32, Margin, RichText, Ui};
 
 use crate::app::{Sev, WifiApp};
 use crate::measure::{MeasPoint, Measurement, Quality, ScanContext};
+use crate::nettest::NetTest;
 use crate::model::fmt_mac;
 use crate::theme::{pal, Palette};
 use crate::widgets::{badge, fmt_mmss, primary_button};
@@ -27,6 +29,11 @@ pub(crate) struct PointDraft {
     focus: bool,
     /// erster Frame: das Enter, das den Dialog geöffnet hat, noch ignorieren
     fresh: bool,
+    /// Position im Grundriss (optional, per Klick im Dialog)
+    pos: Option<[f32; 2]>,
+    /// läuft schon während der Eingabe: Latenz/Durchsatz an dieser Stelle
+    net_rx: Option<Receiver<NetTest>>,
+    net: Option<NetTest>,
 }
 
 /// Eintrag der Liste „Gespeicherte Messungen“
@@ -34,6 +41,17 @@ pub(crate) struct PointDraft {
 pub(crate) struct RecentSurvey {
     pub path: PathBuf,
     pub modified: SystemTime,
+    /// Grundriss-Messung (sonst Rundgang)
+    pub plan: bool,
+}
+
+/// Art einer gespeicherten Messung anhand der ersten Bytes erkennen (ohne den Grundriss zu lesen)
+fn is_plan_survey(path: &Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 512];
+    let n = std::fs::File::open(path).and_then(|mut f| f.read(&mut buf)).unwrap_or(0);
+    let head = String::from_utf8_lossy(&buf[..n]);
+    head.contains("\"plan_mode\": true") || head.contains("\"plan_mode\":true")
 }
 
 pub(super) fn quality_color(p: &Palette, q: Quality) -> Color32 {
@@ -83,7 +101,7 @@ fn safe_name(s: &str) -> String {
 }
 
 /// „2026-11-06 14-30 Firmen-WLAN“
-fn base_name(m: &Measurement) -> String {
+pub(super) fn base_name(m: &Measurement) -> String {
     format!("{} {}", m.started_wall.format("%Y-%m-%d %H-%M"), safe_name(&m.ssid))
 }
 
@@ -101,16 +119,194 @@ fn recent_surveys() -> Vec<RecentSurvey> {
     let mut v: Vec<RecentSurvey> = rd
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case(EXT)))
-        .filter_map(|e| Some(RecentSurvey { path: e.path(), modified: e.metadata().ok()?.modified().ok()? }))
+        .filter_map(|e| Some(RecentSurvey { plan: is_plan_survey(&e.path()), path: e.path(), modified: e.metadata().ok()?.modified().ok()? }))
         .collect();
     v.sort_by(|a, b| b.modified.cmp(&a.modified));
-    v.truncate(12);
+    v.truncate(40);
     v
 }
 
 /// Datei/Ordner mit dem Standardprogramm öffnen (Bericht im Browser, Ordner im Explorer)
 pub(super) fn open_path(path: &Path) {
     let _ = std::process::Command::new("explorer").arg(path).spawn();
+}
+
+/// Hinweise für den Bericht (HTML und PDF): (Raum fett, Text)
+pub(super) fn report_notes(m: &Measurement, s: &crate::measure::Stats) -> Vec<(Option<String>, String)> {
+    let pts = &m.points;
+    let mut out: Vec<(Option<String>, String)> = Vec::new();
+    let weak: Vec<&MeasPoint> = pts.iter().filter(|p| p.quality() == Some(Quality::Weak)).collect();
+    let fair: Vec<&MeasPoint> = pts.iter().filter(|p| p.quality() == Some(Quality::Fair)).collect();
+    if pts.is_empty() {
+        out.push((None, t!("Für eine raumweise Bewertung bei der nächsten Messung Messpunkte setzen.", "Add measurement points next time for a room-by-room assessment.").into()));
+    } else if weak.is_empty() && fair.is_empty() {
+        out.push((None, t!("An allen Messpunkten ist der Empfang gut – keine Maßnahmen nötig.", "Reception is good at all points – no action needed.").into()));
+    }
+    for p in &weak {
+        out.push((
+            Some(p.name.clone()),
+            tf!(
+                "schwacher Empfang ({:.0} dBm). Empfohlen: zusätzlicher Access Point oder bessere Position des nächstgelegenen APs.",
+                "weak reception ({:.0} dBm). Recommended: an additional access point or a better position for the nearest AP.",
+                p.rssi.unwrap_or_default()
+            ),
+        ));
+    }
+    for p in &fair {
+        out.push((
+            Some(p.name.clone()),
+            tf!("ausreichend ({:.0} dBm) – für Telefonie und Video ggf. verbessern.", "fair ({:.0} dBm) – consider improving for voice and video.", p.rssi.unwrap_or_default()),
+        ));
+    }
+    // Latenz/Paketverlust zum Router: Hinweis auf Störungen oder Überlast
+    for p in pts {
+        let Some(g) = p.net.as_ref().and_then(|n| n.gw.as_ref()) else { continue };
+        if g.loss > 0.0 {
+            out.push((Some(p.name.clone()), tf!("{:.0} % Paketverlust zum Router – Funkstörungen oder Überlast prüfen.", "{:.0} % packet loss to the router – check for interference or overload.", g.loss * 100.0)));
+        } else if let Some(ms) = g.avg_ms.filter(|ms| *ms >= 30.0) {
+            out.push((Some(p.name.clone()), tf!("hohe Latenz zum Router ({ms:.0} ms) – Kanalauslastung und Störungen prüfen.", "high latency to the router ({ms:.0} ms) – check channel load and interference.")));
+        }
+    }
+    if s.disconnects > 0 {
+        out.push((None, tf!("Während der Messung gab es {} Verbindungsabbrüche.", "There were {} disconnects during the survey.", s.disconnects)));
+    }
+    if s.sticky > 0 {
+        out.push((
+            None,
+            t!(
+                "Das Gerät blieb zeitweise an einem schwächeren AP („Sticky Client“). 802.11k/v und eine Mindest-Signalstärke am AP können helfen.",
+                "The device stayed on a weaker AP at times (\"sticky client\"). 802.11k/v and a minimum RSSI on the AP can help."
+            )
+            .into(),
+        ));
+    }
+    out
+}
+
+/// Grundriss + Heatmap für den HTML-Bericht: ein SVG mit eingebettetem JPEG und nummerierten Punkten
+fn plan_svg(m: &Measurement) -> Option<String> {
+    use base64::Engine;
+    let plan = m.plan.as_ref()?;
+    let img = crate::heatmap::decode_plan(&plan.data).ok()?;
+    let pts: Vec<([f32; 2], f64)> = m.points.iter().filter_map(|p| Some((p.pos?, p.rssi?))).collect();
+    let comp = crate::heatmap::composite(&img, &pts, 1600);
+    let (w, h) = comp.dimensions();
+    let b64 = base64::engine::general_purpose::STANDARD.encode(crate::heatmap::to_jpeg(&comp));
+    let mut s = format!(
+        r#"<svg viewBox="0 0 {w} {h}" width="100%" xmlns="http://www.w3.org/2000/svg" style="border:1px solid #d1d9e0;border-radius:8px;background:#fff"><image href="data:image/jpeg;base64,{b64}" x="0" y="0" width="{w}" height="{h}"/>"#
+    );
+    let r = (w.max(h) as f32 / 70.0).clamp(10.0, 22.0);
+    for (i, p) in m.points.iter().enumerate() {
+        let Some(pos) = p.pos else { continue };
+        let [cr, cg, cb] = p.rssi.map(crate::heatmap::color).unwrap_or([120, 120, 120]);
+        let (x, y) = (pos[0] * w as f32, pos[1] * h as f32);
+        let _ = write!(
+            s,
+            r##"<circle cx="{x:.1}" cy="{y:.1}" r="{r:.1}" fill="rgb({cr},{cg},{cb})" stroke="#fff" stroke-width="{:.1}"/><text x="{x:.1}" y="{:.1}" font-size="{:.1}" font-weight="700" fill="#fff" text-anchor="middle" font-family="Segoe UI, sans-serif">{}</text>"##,
+            r * 0.22,
+            y + r * 0.38,
+            r * 1.05,
+            i + 1
+        );
+    }
+    s.push_str("</svg>");
+    let missing = m.points.iter().filter(|p| p.pos.is_none()).count();
+    if missing > 0 {
+        let _ = write!(
+            s,
+            r#"<p class="weak" style="font-size:12px">{}</p>"#,
+            tf!("{missing} Messpunkte ohne Position im Grundriss.", "{missing} points without a position on the floor plan.")
+        );
+    }
+    Some(s)
+}
+
+/// Kurztext der Netzwerkwerte (Dialog)
+pub(super) fn net_summary(n: &NetTest) -> String {
+    let mut parts = Vec::new();
+    if let Some(ms) = n.gw.as_ref().and_then(|g| g.avg_ms) {
+        parts.push(tf!("Router {ms:.0} ms", "Router {ms:.0} ms"));
+    }
+    if let Some(ms) = n.inet.as_ref().and_then(|g| g.avg_ms) {
+        parts.push(tf!("Internet {ms:.0} ms", "Internet {ms:.0} ms"));
+    }
+    if let Some(d) = n.down_mbps {
+        parts.push(format!("Down {d:.0} Mbit/s"));
+    }
+    if let Some(u) = n.up_mbps {
+        parts.push(format!("Up {u:.0} Mbit/s"));
+    }
+    if parts.is_empty() {
+        return n.note.clone().unwrap_or_else(|| t!("keine Netzwerkwerte", "no network values").into());
+    }
+    format!("✔ {}", parts.join(" · "))
+}
+
+/// Farbe für eine Latenz in ms
+pub(super) fn latency_color(p: &Palette, ms: f64) -> Color32 {
+    if ms < 15.0 {
+        p.success
+    } else if ms < 40.0 {
+        p.warning
+    } else {
+        p.danger
+    }
+}
+
+/// Zellen „Ping“ und „Down / Up“ der Messpunkt-Tabelle
+fn net_cells(ui: &mut Ui, p: &Palette, net: Option<&NetTest>, pending: bool) {
+    let Some(n) = net else {
+        if pending {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new().size(12.0));
+            });
+            ui.label(RichText::new(t!("misst …", "measuring …")).small().color(p.weak));
+        } else {
+            ui.label(RichText::new("–").color(p.weak));
+            ui.label(RichText::new("–").color(p.weak));
+        }
+        return;
+    };
+    let gw = n.gw.as_ref();
+    match gw.and_then(|g| g.avg_ms) {
+        Some(ms) => {
+            let mut tip = tf!("Router {}: Ø {ms:.1} ms", "Router {}: avg {ms:.1} ms", n.gateway.as_deref().unwrap_or("?"));
+            if let Some(g) = gw {
+                if let (Some(a), Some(b)) = (g.min_ms, g.max_ms) {
+                    tip.push_str(&format!(" ({a:.0}–{b:.0})"));
+                }
+                if let Some(j) = g.jitter_ms {
+                    tip.push_str(&tf!(", Jitter {j:.1} ms", ", jitter {j:.1} ms"));
+                }
+                tip.push_str(&tf!(", Verlust {:.0} %", ", loss {:.0} %", g.loss * 100.0));
+            }
+            if let Some(i) = n.inet.as_ref() {
+                match i.avg_ms {
+                    Some(v) => tip.push_str(&tf!("\nInternet (1.1.1.1): Ø {v:.0} ms, Verlust {:.0} %", "\nInternet (1.1.1.1): avg {v:.0} ms, loss {:.0} %", i.loss * 100.0)),
+                    None => tip.push_str(t!("\nInternet: keine Antwort", "\nInternet: no reply")),
+                }
+            }
+            let lossy = gw.is_some_and(|g| g.loss > 0.0);
+            let txt = if lossy { format!("{ms:.0} ms ⚠") } else { format!("{ms:.0} ms") };
+            ui.label(RichText::new(txt).monospace().color(latency_color(p, ms))).on_hover_text(tip);
+        }
+        None => {
+            let tip = n.note.clone().unwrap_or_else(|| t!("Router antwortet nicht auf Ping", "Router does not answer ping").into());
+            ui.label(RichText::new("–").color(p.weak)).on_hover_text(tip);
+        }
+    }
+    match (n.down_mbps, n.up_mbps) {
+        (None, None) => {
+            let r = ui.label(RichText::new("–").color(p.weak));
+            if let Some(note) = &n.note {
+                r.on_hover_text(note);
+            }
+        }
+        (d, u) => {
+            let f = |v: Option<f64>| v.map(|x| format!("{x:.0}")).unwrap_or("–".into());
+            ui.label(RichText::new(format!("{} / {}", f(d), f(u))).monospace()).on_hover_text(t!("Durchsatz Download / Upload in Mbit/s (Internet, speed.cloudflare.com)", "Throughput download / upload in Mbit/s (internet, speed.cloudflare.com)"));
+        }
+    }
 }
 
 /// CSV-Feld für Excel: Trennzeichen/Anführungszeichen maskieren und Formeln entschärfen
@@ -140,14 +336,40 @@ impl WifiApp {
     }
 
     pub(super) fn open_point_dialog(&mut self) {
+        self.open_point_dialog_at(None);
+    }
+
+    /// Dialog öffnen; `pos` = bereits im Grundriss angeklickte Stelle
+    pub(super) fn open_point_dialog_at(&mut self, pos: Option<[f32; 2]>) {
         if self.meas.as_ref().is_some_and(|m| m.running) && self.meas_point.is_none() {
-            self.meas_point = Some(PointDraft { name: String::new(), note: String::new(), since_t: self.now_t(), focus: true, fresh: true });
+            let net_rx = self.spawn_net_test();
+            self.meas_point = Some(PointDraft {
+                name: String::new(),
+                note: String::new(),
+                since_t: self.now_t(),
+                focus: true,
+                fresh: true,
+                pos,
+                net_rx,
+                net: None,
+            });
         }
     }
 
     pub(super) fn point_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut d) = self.meas_point.take() else { return };
-        let Some(m) = self.meas.as_ref().filter(|m| m.running) else { return };
+        if self.meas.as_ref().is_none_or(|m| !m.running) {
+            return;
+        }
+        // Grundriss im Dialog nur bei der Grundriss-Messung
+        let plan = if self.meas.as_ref().is_some_and(|m| m.plan_mode) { self.plan_texture(ctx) } else { None };
+        if let Some(r) = d.net_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            d.net = Some(r);
+            d.net_rx = None;
+        }
+        let Some(m) = self.meas.as_ref() else { return };
+        let others: Vec<([f32; 2], Option<f64>, usize)> = m.points.iter().enumerate().filter_map(|(i, p)| Some((p.pos?, p.rssi, i + 1))).collect();
+        let (ping_on, speed_on) = (self.settings.point_ping, self.settings.point_speed);
         let t_now = self.now_t();
         let ssid = m.ssid.clone();
         let connected = self.conn.as_ref().is_some_and(|c| c.ssid == ssid);
@@ -224,6 +446,42 @@ impl WifiApp {
                 if escape {
                     cancel = true;
                 }
+                // Position im Grundriss
+                if let Some((tex, size)) = plan {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(t!("Position im Grundriss", "Position on the floor plan")).strong());
+                        ui.label(RichText::new(if d.pos.is_some() { t!("✔ gesetzt", "✔ set") } else { t!("– hineinklicken (optional)", "– click into it (optional)") }).color(if d.pos.is_some() { p.success } else { p.weak }));
+                    });
+                    crate::app::plan::plan_picker(ui, tex, size, &mut d.pos, &others, next_no);
+                }
+                // Netzwerktest
+                if connected && (ping_on || speed_on) {
+                    ui.add_space(8.0);
+                    match (&d.net, d.net_rx.is_some()) {
+                        (Some(n), _) => {
+                            ui.label(RichText::new(net_summary(n)).color(p.text));
+                        }
+                        (None, true) => {
+                            ui.horizontal(|ui| {
+                                ui.add(egui::Spinner::new().size(14.0));
+                                ui.label(
+                                    RichText::new(if speed_on {
+                                        t!("Messe Latenz und Durchsatz … (läuft auch nach dem Speichern weiter)", "Measuring latency and throughput … (continues after saving)")
+                                    } else {
+                                        t!("Messe Latenz …", "Measuring latency …")
+                                    })
+                                    .color(p.weak),
+                                );
+                            });
+                            ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+                        }
+                        (None, false) => {}
+                    }
+                } else if !connected && (ping_on || speed_on) {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(t!("Latenz/Durchsatz: nur wenn der Laptop mit dieser SSID verbunden ist", "Latency/throughput: only when connected to this SSID")).size(11.5).color(p.weak));
+                }
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(t!(
@@ -246,15 +504,41 @@ impl WifiApp {
 
         if save {
             let scan = self.survey_scan_ctx(&ssid);
-            let msg = self.meas.as_mut().map(|m| {
-                let p = m.add_point(t_now, d.since_t, &d.name, &d.note, &scan);
-                match (p.rssi, p.quality()) {
+            let has_plan = self.meas.as_ref().is_some_and(|m| m.plan.is_some());
+            let res = self.meas.as_mut().map(|m| {
+                let p = m.add_point(t_now, d.since_t, &d.name, &d.note, d.pos, &scan);
+                if let (true, Some(pos)) = (crate::demo::enabled(), d.pos) {
+                    // Demo: realistische Ausleuchtung je nach Position im Plan
+                    let v = crate::demo::rssi_at(pos) as f64;
+                    let id = p.id;
+                    if let Some(pt) = m.point_mut(id) {
+                        pt.rssi = Some(v);
+                        pt.min = Some(v as i32 - 2);
+                        pt.max = Some(v as i32 + 2);
+                    }
+                }
+                let p = m.points.last().expect("eben gespeichert");
+                let msg = match (p.rssi, p.quality()) {
                     (Some(v), Some(q)) => tf!("„{}“ gespeichert: {v:.0} dBm – {}", "\"{}\" saved: {v:.0} dBm – {}", p.name, q.label()),
                     _ => tf!("„{}“ gespeichert (kein Messwert)", "\"{}\" saved (no value)", p.name),
-                }
+                };
+                (p.id, msg)
             });
-            if let Some(msg) = msg {
+            if let Some((id, msg)) = res {
                 self.toast(Sev::Info, msg);
+                // Netzwerkwerte: schon da -> übernehmen, sonst nachreichen
+                match (d.net.take(), d.net_rx.take()) {
+                    (Some(n), _) => {
+                        if let Some(pt) = self.meas.as_mut().and_then(|m| m.point_mut(id)) {
+                            pt.net = Some(n);
+                        }
+                    }
+                    (None, Some(rx)) => self.net_jobs.push(crate::app::plan::NetJob { id, rx }),
+                    _ => {}
+                }
+                if has_plan && d.pos.is_none() {
+                    self.plan_sel = Some(id);
+                }
             }
             self.survey_changed();
         } else if !cancel {
@@ -271,13 +555,19 @@ impl WifiApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new(tf!("Messpunkte ({})", "Measurement points ({})", m.points.len())).strong().color(p.text));
             if running {
-                ui.label(RichText::new(t!("· Enter = neuer Messpunkt", "· Enter = new point")).color(p.weak));
+                let hint = if m.plan_mode { t!("· Klick in den Plan = neuer Messpunkt", "· click into the plan = new point") } else { t!("· Enter = neuer Messpunkt", "· Enter = new point") };
+                ui.label(RichText::new(hint).color(p.weak));
             }
         });
         if m.points.is_empty() {
             ui.add_space(6.0);
             ui.label(
-                RichText::new(if running {
+                RichText::new(if running && m.plan_mode {
+                    t!(
+                        "Noch keine Messpunkte. An deiner Position in den Grundriss klicken, Raum eingeben (optional), Enter.",
+                        "No points yet. Click your position on the floor plan, enter the room (optional), Enter."
+                    )
+                } else if running {
                     t!(
                         "Noch keine Messpunkte. In jedem Raum Enter drücken, Namen eingeben, Enter – der Wert dieser Stelle landet in der Liste.",
                         "No points yet. In each room press Enter, type the name, Enter – the value of that spot is added to the list."
@@ -295,16 +585,31 @@ impl WifiApp {
         let mut remove = None;
         let mut changed = false;
         let mut renamed: Vec<usize> = Vec::new();
+        let pending: Vec<u64> = self.net_jobs.iter().map(|j| j.id).collect();
+        let has_plan = m.plan_mode && m.plan.is_some();
+        let show_net = !pending.is_empty() || m.points.iter().any(|pt| pt.net.is_some());
+        let plan_sel = self.plan_sel;
+        let mut pick_for_plan: Option<u64> = None;
         let Some(m) = self.meas.as_mut() else { return };
         egui::ScrollArea::vertical().id_salt("meas_points").auto_shrink(false).show(ui, |ui| {
-            egui::Grid::new("meas_points_grid").num_columns(9).striped(true).spacing([12.0, 5.0]).show(ui, |ui| {
-                for h in ["#", t!("Raum / Ort", "Room / location"), t!("Signal", "Signal"), t!("Bewertung", "Rating"), "AP", t!("Kanal", "Channel"), t!("Rate", "Rate"), t!("Notiz", "Note"), ""] {
+            let cols = 9 + if show_net { 2 } else { 0 } + if has_plan { 1 } else { 0 };
+            egui::Grid::new("meas_points_grid").num_columns(cols).striped(true).spacing([12.0, 5.0]).show(ui, |ui| {
+                let mut heads = vec!["#", t!("Raum / Ort", "Room / location"), t!("Signal", "Signal"), t!("Bewertung", "Rating"), "AP", t!("Kanal", "Channel"), t!("Rate", "Rate")];
+                if show_net {
+                    heads.extend([t!("Ping", "Ping"), "Down / Up"]);
+                }
+                if has_plan {
+                    heads.push(t!("Plan", "Plan"));
+                }
+                heads.extend([t!("Notiz", "Note"), ""]);
+                for h in heads {
                     ui.label(RichText::new(h).small().strong().color(p.weak));
                 }
                 ui.end_row();
                 for (i, pt) in m.points.iter_mut().enumerate() {
                     let wall = (started + chrono::Duration::milliseconds((pt.t * 1000.0) as i64)).format("%H:%M").to_string();
-                    ui.label(RichText::new(format!("{}", i + 1)).monospace().color(p.weak)).on_hover_text(wall);
+                    let selected = plan_sel == Some(pt.id);
+                    ui.label(RichText::new(format!("{}", i + 1)).monospace().color(if selected { p.accent } else { p.weak })).on_hover_text(wall);
                     if ui.add_sized([170.0, 20.0], egui::TextEdit::singleline(&mut pt.name).frame(false)).changed() {
                         changed = true;
                         renamed.push(i);
@@ -344,6 +649,20 @@ impl WifiApp {
                     ap_resp.on_hover_text(tip);
                     ui.label(if pt.channel > 0 { pt.channel.to_string() } else { "–".into() });
                     ui.label(if pt.tx_mbps > 0.0 { format!("{:.0} Mbit/s", pt.tx_mbps) } else { "–".into() });
+                    if show_net {
+                        net_cells(ui, &p, pt.net.as_ref(), pending.contains(&pt.id));
+                    }
+                    if has_plan {
+                        let (txt, tip) = if pt.pos.is_some() {
+                            ("📍", t!("Position gesetzt – klicken, um sie im Grundriss neu zu setzen", "Position set – click to place it again on the floor plan"))
+                        } else {
+                            (t!("setzen", "place"), t!("Im Grundriss platzieren", "Place on the floor plan"))
+                        };
+                        let b = egui::Button::new(RichText::new(txt).small().color(if selected { Color32::WHITE } else { p.text })).fill(if selected { p.accent } else { p.surface2 });
+                        if ui.add(b).on_hover_text(tip).clicked() {
+                            pick_for_plan = Some(pt.id);
+                        }
+                    }
                     changed |= ui
                         .add_sized([180.0, 20.0], egui::TextEdit::singleline(&mut pt.note).frame(false).hint_text(RichText::new("…").color(p.weak)))
                         .changed();
@@ -357,6 +676,10 @@ impl WifiApp {
         for i in renamed {
             m.sync_point_marker(i);
         }
+        if let Some(id) = pick_for_plan {
+            self.plan_sel = Some(id);
+        }
+        let Some(m) = self.meas.as_mut() else { return };
         if let Some(i) = remove {
             m.remove_point(i);
             changed = true;
@@ -367,7 +690,7 @@ impl WifiApp {
     }
 
     /// Herstellername zu einer BSSID (aus der AP-Liste oder direkt aus der OUI-Datenbank)
-    fn vendor_of_mac(&self, b: &[u8; 6]) -> String {
+    pub(super) fn vendor_of_mac(&self, b: &[u8; 6]) -> String {
         if let Some(r) = self.aps.get(b) {
             if !r.vendor.is_empty() {
                 return r.vendor.clone();
@@ -462,11 +785,15 @@ impl WifiApp {
                 let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 self.toast(Sev::Info, tf!("Messung geöffnet: {name} ({} Messpunkte)", "Survey opened: {name} ({} points)", m.points.len()));
                 self.meas_ssid = Some(m.ssid.clone());
+                if let Some(pl) = m.plan.clone() {
+                    self.last_plan = Some(pl);
+                }
+                self.page = if m.plan_mode { super::Page::PlanSurvey } else { super::Page::Measure };
                 self.meas = Some(m);
                 self.meas_file = Some(path.to_path_buf());
                 self.meas_dirty_since = None;
                 self.meas_point = None;
-                self.page = super::Page::Measure;
+
             }
             Err(e) => self.toast(Sev::Critical, tf!("Datei kann nicht geöffnet werden: {e}", "Cannot open file: {e}")),
         }
@@ -482,12 +809,16 @@ impl WifiApp {
     }
 
     /// Liste „Gespeicherte Messungen“ (auf der leeren Messungs-Seite)
-    pub(super) fn recent_surveys_ui(&mut self, ui: &mut Ui) {
+    pub(super) fn recent_surveys_ui(&mut self, ui: &mut Ui, plan_mode: bool) {
         let p = pal(ui);
-        let list = self.recent_surveys();
+        let list: Vec<RecentSurvey> = self.recent_surveys().into_iter().filter(|r| r.plan == plan_mode).take(12).collect();
         let mut open = None;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(t!("Gespeicherte Messungen", "Saved surveys")).strong().color(p.text));
+            ui.label(
+                RichText::new(if plan_mode { t!("Gespeicherte Grundriss-Messungen", "Saved floor plan surveys") } else { t!("Gespeicherte Messungen", "Saved surveys") })
+                    .strong()
+                    .color(p.text),
+            );
             if ui.small_button(t!("📂 Ordner", "📂 Folder")).on_hover_text(survey_dir().display().to_string()).clicked() {
                 let _ = std::fs::create_dir_all(survey_dir());
                 open_path(&survey_dir());
@@ -520,7 +851,7 @@ impl WifiApp {
 
     // ---------------------------------------------------------------- Export
 
-    fn export_dialog(&self, default_name: &str, filter: &str, ext: &str) -> Option<PathBuf> {
+    pub(super) fn export_dialog(&self, default_name: &str, filter: &str, ext: &str) -> Option<PathBuf> {
         let dir = survey_dir();
         let _ = std::fs::create_dir_all(&dir);
         rfd::FileDialog::new().set_directory(&dir).set_file_name(default_name).add_filter(filter, &[ext]).save_file()
@@ -539,8 +870,8 @@ impl WifiApp {
 
     fn points_csv(&self, m: &Measurement) -> String {
         let header = t!(
-            "Nr;Raum / Ort;Uhrzeit;Signal Ø (dBm);Bewertung;Min (dBm);Max (dBm);Messwerte;Quelle;AP (BSSID);Hersteller;Kanal;Datenrate (Mbit/s);Stärkster AP;Stärkster AP (dBm);APs sichtbar;Notiz",
-            "No;Room / location;Time;Signal avg (dBm);Rating;Min (dBm);Max (dBm);Samples;Source;AP (BSSID);Vendor;Channel;Data rate (Mbit/s);Strongest AP;Strongest AP (dBm);APs visible;Note"
+            "Nr;Raum / Ort;Uhrzeit;Signal Ø (dBm);Bewertung;Min (dBm);Max (dBm);Messwerte;Quelle;AP (BSSID);Hersteller;Kanal;Datenrate (Mbit/s);Stärkster AP;Stärkster AP (dBm);APs sichtbar;Ping Router Ø (ms);Verlust Router (%);Jitter Router (ms);Ping Internet Ø (ms);Download (Mbit/s);Upload (Mbit/s);Position X (%);Position Y (%);Notiz",
+            "No;Room / location;Time;Signal avg (dBm);Rating;Min (dBm);Max (dBm);Samples;Source;AP (BSSID);Vendor;Channel;Data rate (Mbit/s);Strongest AP;Strongest AP (dBm);APs visible;Ping router avg (ms);Loss router (%);Jitter router (ms);Ping internet avg (ms);Download (Mbit/s);Upload (Mbit/s);Position X (%);Position Y (%);Note"
         );
         let mut s = tf!(
             "\u{feff}# WLAN-Messung SSID \"{}\" vom {} (WiFi Analyzer {})\n{header}\n",
@@ -552,6 +883,9 @@ impl WifiApp {
         for (i, pt) in m.points.iter().enumerate() {
             let wall = (m.started_wall + chrono::Duration::milliseconds((pt.t * 1000.0) as i64)).format("%H:%M:%S").to_string();
             let opt = |v: Option<i32>| v.map(|x| x.to_string()).unwrap_or_default();
+            let dec = |v: Option<f64>| v.map(|x| format!("{x:.1}").replace('.', ",")).unwrap_or_default();
+            let gw = pt.net.as_ref().and_then(|n| n.gw.as_ref());
+            let inet = pt.net.as_ref().and_then(|n| n.inet.as_ref());
             let row = [
                 (i + 1).to_string(),
                 pt.name.clone(),
@@ -569,6 +903,14 @@ impl WifiApp {
                 pt.best_bssid.map(|b| fmt_mac(&b)).unwrap_or_default(),
                 opt(pt.best_rssi),
                 pt.aps_visible.to_string(),
+                dec(gw.and_then(|g| g.avg_ms)),
+                gw.map(|g| format!("{:.0}", g.loss * 100.0)).unwrap_or_default(),
+                dec(gw.and_then(|g| g.jitter_ms)),
+                dec(inet.and_then(|g| g.avg_ms)),
+                dec(pt.net.as_ref().and_then(|n| n.down_mbps)),
+                dec(pt.net.as_ref().and_then(|n| n.up_mbps)),
+                dec(pt.pos.map(|p| p[0] as f64 * 100.0)),
+                dec(pt.pos.map(|p| p[1] as f64 * 100.0)),
                 pt.note.clone(),
             ];
             s.push_str(&row.iter().map(|c| esc_csv(c)).collect::<Vec<_>>().join(";"));
@@ -599,7 +941,6 @@ impl WifiApp {
         let rated: Vec<Quality> = pts.iter().filter_map(|p| p.quality()).collect();
         let ok = rated.iter().filter(|q| matches!(q, Quality::Excellent | Quality::Good)).count();
         let weak: Vec<&MeasPoint> = pts.iter().filter(|p| p.quality() == Some(Quality::Weak)).collect();
-        let fair: Vec<&MeasPoint> = pts.iter().filter(|p| p.quality() == Some(Quality::Fair)).collect();
         let avg_pts = {
             let v: Vec<f64> = pts.iter().filter_map(|p| p.rssi).collect();
             (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
@@ -665,14 +1006,23 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
             t!("Roams / Verbindungsabbrüche", "Roams / disconnects"),
         );
 
-        // Verlauf
-        h.push_str(&format!("<h2>{}</h2>", t!("Signalverlauf", "Signal over time")));
-        h.push_str(&self.report_svg(m));
+        // Verlauf und Grundriss (Grundriss-Messung: Plan zuerst)
+        let chart = format!("<h2>{}</h2>{}", t!("Signalverlauf", "Signal over time"), self.report_svg(m));
+        let plan = plan_svg(m).map(|svg| format!("<h2>{}</h2>{svg}", t!("Ausleuchtung im Grundriss", "Coverage on the floor plan"))).unwrap_or_default();
+        if m.plan_mode {
+            h.push_str(&plan);
+            h.push_str(&chart);
+        } else {
+            h.push_str(&chart);
+            h.push_str(&plan);
+        }
 
         // Tabelle
+        let show_net = pts.iter().any(|p| p.net.as_ref().is_some_and(|n| !n.is_empty()));
+        let net_heads = if show_net { format!("<th>{}</th><th>Down / Up</th>", t!("Latenz (Router)", "Latency (router)")) } else { String::new() };
         let _ = write!(
             h,
-            "<h2>{}</h2><div class=\"tablewrap\"><table><thead><tr><th>#</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>",
+            "<h2>{}</h2><div class=\"tablewrap\"><table><thead><tr><th>#</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th>{net_heads}<th>{}</th></tr></thead><tbody>",
             t!("Ergebnisse je Messpunkt", "Results per point"),
             t!("Raum / Ort", "Room / location"),
             t!("Signal", "Signal"),
@@ -683,7 +1033,7 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
             t!("Notiz", "Note"),
         );
         if pts.is_empty() {
-            let _ = write!(h, r#"<tr><td colspan="8" class="weak">{}</td></tr>"#, t!("Keine Messpunkte erfasst.", "No measurement points recorded."));
+            let _ = write!(h, r#"<tr><td colspan="10" class="weak">{}</td></tr>"#, t!("Keine Messpunkte erfasst.", "No measurement points recorded."));
         }
         for (i, p) in pts.iter().enumerate() {
             let (sig, pill) = match (p.rssi, p.quality()) {
@@ -704,9 +1054,26 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
                 })
                 .unwrap_or("–".into());
             let src = if p.from_scan { format!("<br><span class=\"weak\">{}</span>", t!("(nicht verbunden, Scan)", "(not connected, scan)")) } else { String::new() };
+            let net = if show_net {
+                let n = p.net.as_ref();
+                let lat = n.and_then(|n| n.gw.as_ref()).and_then(|g| g.avg_ms.map(|ms| (ms, g.loss)));
+                let lat = match lat {
+                    Some((ms, loss)) if loss > 0.0 => tf!("{ms:.0} ms<br><span class=\"weak\">{:.0} % Verlust</span>", "{ms:.0} ms<br><span class=\"weak\">{:.0} % loss</span>", loss * 100.0),
+                    Some((ms, _)) => format!("{ms:.0} ms"),
+                    None => "–".into(),
+                };
+                let f = |v: Option<f64>| v.map(|x| format!("{x:.0}")).unwrap_or("–".into());
+                let du = match n.map(|n| (n.down_mbps, n.up_mbps)) {
+                    Some((None, None)) | None => "–".into(),
+                    Some((d, u)) => format!("{} / {} Mbit/s", f(d), f(u)),
+                };
+                format!("<td>{lat}</td><td>{du}</td>")
+            } else {
+                String::new()
+            };
             let _ = write!(
                 h,
-                "<tr><td>{}</td><td><b>{}</b></td><td>{sig}</td><td>{pill}</td><td>{ap}{src}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                "<tr><td>{}</td><td><b>{}</b></td><td>{sig}</td><td>{pill}</td><td>{ap}{src}</td><td>{}</td><td>{}</td>{net}<td>{}</td></tr>",
                 i + 1,
                 esc_html(&p.name),
                 if p.channel > 0 { p.channel.to_string() } else { "–".into() },
@@ -725,55 +1092,15 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
 
         // Hinweise
         let _ = write!(h, "<h2>{}</h2><ul class=\"rec\">", t!("Hinweise", "Notes"));
-        if pts.is_empty() {
-            let _ = write!(h, "<li>{}</li>", t!("Für eine raumweise Bewertung bei der nächsten Messung Messpunkte setzen.", "Add measurement points next time for a room-by-room assessment."));
-        } else if weak.is_empty() && fair.is_empty() {
-            let _ = write!(h, "<li>{}</li>", t!("An allen Messpunkten ist der Empfang gut – keine Maßnahmen nötig.", "Reception is good at all points – no action needed."));
-        }
-        for p in &weak {
-            let _ = write!(
-                h,
-                "<li>{}</li>",
-                tf!(
-                    "<b>{}</b>: schwacher Empfang ({:.0} dBm). Empfohlen: zusätzlicher Access Point oder bessere Position des nächstgelegenen APs.",
-                    "<b>{}</b>: weak reception ({:.0} dBm). Recommended: an additional access point or a better position for the nearest AP.",
-                    esc_html(&p.name),
-                    p.rssi.unwrap_or_default()
-                )
-            );
-        }
-        for p in &fair {
-            let _ = write!(
-                h,
-                "<li>{}</li>",
-                tf!(
-                    "<b>{}</b>: ausreichend ({:.0} dBm) – für Telefonie und Video ggf. verbessern.",
-                    "<b>{}</b>: fair ({:.0} dBm) – consider improving for voice and video.",
-                    esc_html(&p.name),
-                    p.rssi.unwrap_or_default()
-                )
-            );
-        }
-        if s.disconnects > 0 {
-            let _ = write!(
-                h,
-                "<li>{}</li>",
-                tf!(
-                    "Während der Messung gab es {} Verbindungsabbrüche.",
-                    "There were {} disconnects during the survey.",
-                    s.disconnects
-                )
-            );
-        }
-        if s.sticky > 0 {
-            let _ = write!(
-                h,
-                "<li>{}</li>",
-                t!(
-                    "Das Gerät blieb zeitweise an einem schwächeren AP („Sticky Client“). 802.11k/v und eine Mindest-Signalstärke am AP können helfen.",
-                    "The device stayed on a weaker AP at times (\"sticky client\"). 802.11k/v and a minimum RSSI on the AP can help."
-                )
-            );
+        for (name, text) in report_notes(m, &s) {
+            match name {
+                Some(n) => {
+                    let _ = write!(h, "<li><b>{}</b>: {}</li>", esc_html(&n), esc_html(&text));
+                }
+                None => {
+                    let _ = write!(h, "<li>{}</li>", esc_html(&text));
+                }
+            }
         }
         h.push_str("</ul>");
 

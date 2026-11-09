@@ -21,6 +21,9 @@ chrono = "0.4"
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Grundriss laden (PNG/JPEG) und Heatmap-Bild für Bericht/PDF
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+base64 = "0.22"
 
 [dependencies.windows]
 version = "0.58"
@@ -41,6 +44,9 @@ features = [
     "Win32_Globalization",
     "Win32_UI_Shell",
     "Win32_System_Com",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_Networking_WinHttp",
 ]
 
 [build-dependencies]

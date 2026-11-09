@@ -18,6 +18,10 @@ pub struct Settings {
     pub pinned: Vec<[u8; 6]>,
     /// zuletzt gestartete Version (für den Dialog "Was ist neu")
     pub last_version: String,
+    /// pro Messpunkt Latenz messen (Ping zu Router und Internet)
+    pub point_ping: bool,
+    /// pro Messpunkt Durchsatz messen (Speedtest, kontaktiert speed.cloudflare.com)
+    pub point_speed: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +37,8 @@ impl Default for Settings {
             check_updates: true,
             pinned: Vec::new(),
             last_version: String::new(),
+            point_ping: true,
+            point_speed: false,
         }
     }
 }
@@ -69,6 +75,8 @@ impl Settings {
                 "show_hidden" => s.show_hidden = b,
                 "check_updates" => s.check_updates = b,
                 "last_version" => s.last_version = v.to_string(),
+                "point_ping" => s.point_ping = b,
+                "point_speed" => s.point_speed = b,
                 "pinned" => s.pinned = v.split(',').filter_map(|m| parse_mac(m.trim())).collect(),
                 _ => {}
             }
@@ -79,7 +87,7 @@ impl Settings {
     pub fn save(&self) {
         let pinned: Vec<String> = self.pinned.iter().map(fmt_mac).collect();
         let text = format!(
-            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\n",
+            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\npoint_ping={}\npoint_speed={}\n",
             self.lang.code(),
             self.dark as u8,
             self.interval,
@@ -89,7 +97,9 @@ impl Settings {
             self.show_hidden as u8,
             self.check_updates as u8,
             pinned.join(","),
-            self.last_version
+            self.last_version,
+            self.point_ping as u8,
+            self.point_speed as u8
         );
         let _ = std::fs::create_dir_all(app_dir());
         // erst in eine temporäre Datei, dann umbenennen – nie eine halb geschriebene settings.ini

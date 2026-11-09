@@ -3,6 +3,8 @@
 mod dialogs;
 mod inspector;
 mod pages;
+mod plan;
+mod report_pdf;
 mod settings_ui;
 mod shell;
 mod survey;
@@ -43,6 +45,7 @@ pub(crate) enum Page {
     History,
     Findings,
     Measure,
+    PlanSurvey,
     Finder,
     Events,
 }
@@ -221,6 +224,16 @@ pub struct WifiApp {
     meas_save_error: Option<String>,
     meas_discard_confirm: bool,
     survey_recent: Option<(Instant, Vec<survey::RecentSurvey>)>,
+    /// laufende Netzwerktests, deren Ergebnis noch einem Messpunkt zugeordnet wird
+    net_jobs: Vec<plan::NetJob>,
+    plan_tex: Option<plan::PlanTex>,
+    heat_tex: Option<(u64, egui::TextureHandle)>,
+    /// Messpunkt, der mit dem nächsten Klick in den Grundriss gesetzt wird
+    plan_sel: Option<u64>,
+    plan_drag: Option<u64>,
+    plan_heat: bool,
+    /// zuletzt verwendeter Grundriss (für die nächste Grundriss-Messung)
+    last_plan: Option<crate::measure::FloorPlan>,
     meas_follow: bool,
 
     splash_done: bool,
@@ -298,6 +311,13 @@ impl WifiApp {
             meas_save_error: None,
             meas_discard_confirm: false,
             survey_recent: None,
+            net_jobs: Vec::new(),
+            plan_tex: None,
+            heat_tex: None,
+            plan_sel: None,
+            plan_drag: None,
+            plan_heat: true,
+            last_plan: None,
             meas_follow: false,
             splash_done: false,
             splash_progress: 0.0,
@@ -741,7 +761,13 @@ impl WifiApp {
         self.page = Page::Finder;
     }
 
+    /// Rundgang-Messung starten (Verlauf, Messpunkte per Enter)
     fn start_measurement(&mut self, ssid: String) {
+        self.start_survey(ssid, false);
+    }
+
+    /// Messung starten; `plan_mode` = Grundriss-Messung
+    fn start_survey(&mut self, ssid: String, plan_mode: bool) {
         // vorherige Messung sichern, dann neu beginnen (eigene Datei)
         self.autosave_survey(true);
         self.meas_file = None;
@@ -749,9 +775,16 @@ impl WifiApp {
         self.meas_last_save = None;
         self.meas_point = None;
         self.meas_ssid = Some(ssid.clone());
-        self.meas = Some(Measurement::new(ssid.clone(), self.now_t()));
+        // Grundriss-Messung: Plan der vorherigen Grundriss-Messung übernehmen (gleiches Gebäude)
+        let plan = if plan_mode { self.meas.as_ref().filter(|m| m.plan_mode).and_then(|m| m.plan.clone()).or_else(|| self.last_plan.clone()) } else { None };
+        let mut m = Measurement::new(ssid.clone(), self.now_t());
+        m.plan = plan;
+        m.plan_mode = plan_mode;
+        self.meas = Some(m);
+        self.net_jobs.clear();
+        self.plan_sel = None;
         self.add_log(Sev::Info, tf!("Messung gestartet: {ssid}", "Measurement started: {ssid}"));
-        self.page = Page::Measure;
+        self.page = if plan_mode { Page::PlanSurvey } else { Page::Measure };
         self.apply_scan_interval();
         self.scan_now(); // ersten Wert nicht erst nach dem nächsten Intervall holen
     }
@@ -917,7 +950,7 @@ impl WifiApp {
             self.focus_search = true;
         }
         if ctrl_e {
-            if self.page == Page::Measure && self.meas.is_some() {
+            if matches!(self.page, Page::Measure | Page::PlanSurvey) && self.meas.is_some() {
                 self.export_measurement();
             } else {
                 self.export_networks();
@@ -979,6 +1012,10 @@ impl eframe::App for WifiApp {
         self.update_window(ctx);
         self.whats_new_window(ctx);
         self.point_dialog(ctx);
+        self.poll_net_jobs();
+        if !self.net_jobs.is_empty() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
         self.autosave_survey(false);
         self.poll_install(ctx);
         self.toasts(ctx);
@@ -1002,7 +1039,8 @@ impl WifiApp {
             Page::Rating => self.page_rating(ui),
             Page::History => self.page_history(ui),
             Page::Findings => self.page_findings(ui),
-            Page::Measure => self.page_measure(ui),
+            Page::Measure => self.page_measure(ui, false),
+            Page::PlanSurvey => self.page_measure(ui, true),
             Page::Finder => self.page_finder(ui),
             Page::Events => self.page_events(ui),
         }

@@ -297,7 +297,7 @@
       <div class="grid-bg" aria-hidden="true"></div>
       <div class="rings" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="wrap">
-        <a class="pill" href="#survey"><b><span data-de>Neu</span><span data-en>New</span></b><span data-de>Messpunkte pro Raum &amp; Kundenbericht</span><span data-en>Points per room &amp; customer report</span> ›</a>
+        <a class="pill" href="#plan"><b><span data-de>Neu</span><span data-en>New</span></b><span data-de>Grundriss-Heatmap, Speedtest &amp; PDF-Bericht</span><span data-en>Floor plan heatmap, speed test &amp; PDF report</span> ›</a>
         <h1><span data-de>WLAN-Analyse,<br><span class="grad">die Techniker lieben.</span></span><span data-en>Wi-Fi analysis<br><span class="grad">technicians love.</span></span></h1>
         <p class="lead">
           <span data-de>Netzwerke, Kanäle und Sicherheit auf einen Blick. Ausleuchtung Raum für Raum messen, Access Points orten und dem Kunden einen sauberen Bericht übergeben – kostenlos und Open Source für Windows.</span>
@@ -370,8 +370,8 @@
           </div>
           <div class="card span2 reveal">
             <div class="ico g"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg></div>
-            <h3><span data-de>Walk-Survey &amp; Roaming</span><span data-en>Walk survey &amp; roaming</span></h3>
-            <p><span data-de>Signal jede Sekunde, Roams, Abbrüche und „Sticky Clients“ erkennen – live im Verlauf.</span><span data-en>Signal every second, detect roams, drop-outs and sticky clients – live in the timeline.</span></p>
+            <h3><span data-de>Grundriss &amp; Heatmap</span><span data-en>Floor plan &amp; heatmap</span></h3>
+            <p><span data-de>Plan laden, in den Plan klicken, wo du stehst – die Ausleuchtung wird live eingefärbt. Pro Punkt auch Latenz und Speedtest.</span><span data-en>Load a plan, click where you stand – the coverage is coloured live. Per point also latency and speed test.</span></p>
           </div>
           <div class="card span2 reveal">
             <div class="ico o"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></div>
@@ -380,8 +380,8 @@
           </div>
           <div class="card span3 reveal">
             <div class="ico c"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></div>
-            <h3><span data-de>Bericht für den Kunden</span><span data-en>Report for your customer</span></h3>
-            <p><span data-de>Ergebnisse pro Raum mit Ampel-Bewertung, Verlauf und Hinweisen – im Browser als PDF gespeichert. Dazu CSV-Export für Excel.</span><span data-en>Results per room with traffic-light rating, timeline and notes – saved as PDF from the browser. Plus CSV export for Excel.</span></p>
+            <h3><span data-de>PDF-Bericht für den Kunden</span><span data-en>PDF report for your customer</span></h3>
+            <p><span data-de>Direkt aus der App: Grundriss mit Heatmap, Ergebnisse pro Raum mit Ampel-Bewertung, Latenz, Durchsatz und Hinweise. Dazu HTML und CSV für Excel.</span><span data-en>Straight from the app: floor plan with heatmap, results per room with traffic-light rating, latency, throughput and notes. Plus HTML and CSV for Excel.</span></p>
           </div>
           <div class="card span3 reveal">
             <div class="ico v"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
@@ -393,8 +393,22 @@
     </section>
 
     <!-- ================= DETAILS ================= -->
-    <section style="padding-top:40px">
+    <section style="padding-top:40px" id="plan">
       <div class="wrap">
+        <div class="feature rev reveal">
+          <div class="text">
+            <div class="ico g"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></div>
+            <h3><span data-de>Grundriss-Messung mit Heatmap.</span><span data-en>Floor plan survey with heatmap.</span></h3>
+            <p><span data-de>Fluchtplan abfotografieren, als Grundriss laden und losgehen. Ein Klick in den Plan an deiner Position genügt – die App misst dort und färbt die Ausleuchtung zwischen den Punkten ein.</span><span data-en>Take a photo of the evacuation plan, load it as the floor plan and start walking. One click on your position is enough – the app measures there and colours the coverage between the points.</span></p>
+            <ul class="checks">
+              <li><span data-de><b>Klick = Messpunkt</b> – Raum eingeben ist optional</span><span data-en><b>Click = point</b> – entering the room is optional</span></li>
+              <li><span data-de><b>Latenz &amp; Speedtest</b> pro Punkt: Ping zu Router und Internet, Download/Upload</span><span data-en><b>Latency &amp; speed test</b> per point: ping to router and internet, download/upload</span></li>
+              <li><span data-de><b>Schwache Stellen</b> sofort sichtbar – ideal, um AP-Positionen zu planen</span><span data-en><b>Weak spots</b> visible at once – ideal for planning AP positions</span></li>
+            </ul>
+          </div>
+          <div class="shot-wrap"><div class="glow" aria-hidden="true" style="opacity:.32"></div><div class="window"><div class="bar"><i></i><i></i><i></i><span data-de>Grundriss-Messung</span><span data-en>Floor plan survey</span></div><img src="img/plan.webp" srcset="img/plan.webp 1600w, img/plan-2400.webp 2400w" sizes="(max-width: 980px) 100vw, 640px" width="1600" height="923" alt="Grundriss-Messung mit Heatmap und Messpunkten" loading="lazy" data-full="img/plan-2400.webp"></div></div>
+        </div>
+
         <div class="feature reveal">
           <div class="text">
             <div class="ico v"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 20h18M6 16V9M10 16V5M14 16v-6M18 16v-9"/></svg></div>
@@ -472,6 +486,7 @@
           <button role="tab" aria-selected="false" data-img="channels"><span data-de>Kanäle</span><span data-en>Channels</span></button>
           <button role="tab" aria-selected="false" data-img="rating"><span data-de>Kanalbewertung</span><span data-en>Channel rating</span></button>
           <button role="tab" aria-selected="false" data-img="findings"><span data-de>Befunde</span><span data-en>Findings</span></button>
+          <button role="tab" aria-selected="false" data-img="plan"><span data-de>Grundriss</span><span data-en>Floor plan</span></button>
           <button role="tab" aria-selected="false" data-img="measure"><span data-de>Messung</span><span data-en>Survey</span></button>
           <button role="tab" aria-selected="false" data-img="finder">AP-Finder</button>
         </div>
@@ -496,7 +511,7 @@
           <ol class="steps">
             <li><div class="n">1</div><div><b><span data-de>Messung starten</span><span data-en>Start the survey</span></b><span data-de>SSID wählen – die App misst jede Sekunde und erkennt Roams.</span><span data-en>Pick the SSID – the app measures every second and detects roams.</span></div></li>
             <li><div class="n">2</div><div><b><span data-de><kbd>Enter</kbd> – Raum eingeben – <kbd>Enter</kbd></span><span data-en><kbd>Enter</kbd> – type the room – <kbd>Enter</kbd></span></b><span data-de>Der Wert an der Stelle wird gemittelt und bewertet: Sehr gut, Gut, Ausreichend, Schwach.</span><span data-en>The value at the spot is averaged and rated: excellent, good, fair, weak.</span></div></li>
-            <li><div class="n">3</div><div><b><span data-de>Bericht übergeben</span><span data-en>Hand over the report</span></b><span data-de>Als PDF mit Verlauf, Tabelle und Empfehlungen – oder als Liste für Excel. Alles wird automatisch gespeichert.</span><span data-en>As a PDF with timeline, table and recommendations – or as a list for Excel. Everything is saved automatically.</span></div></li>
+            <li><div class="n">3</div><div><b><span data-de>Bericht übergeben</span><span data-en>Hand over the report</span></b><span data-de>Als PDF direkt aus der App – mit Verlauf, Tabelle und Empfehlungen – oder als Liste für Excel. Alles wird automatisch gespeichert.</span><span data-en>As a PDF straight from the app – with timeline, table and recommendations – or as a list for Excel. Everything is saved automatically.</span></div></li>
           </ol>
         </div>
         <div class="stack reveal">
@@ -561,7 +576,11 @@
           <div><small>Roaming</small><b>802.11k · r · v</b></div>
           <div><small><span data-de>AP-Details</span><span data-en>AP details</span></small><b><span data-de>Clients, Auslastung, WPS, AP-Name</span><span data-en>Clients, load, WPS, AP name</span></b></div>
           <div><small><span data-de>Hersteller</span><span data-en>Vendors</span></small><b><span data-de>IEEE/Wireshark-Datenbank</span><span data-en>IEEE/Wireshark database</span></b></div>
-          <div><small>Export</small><b><span data-de>CSV · HTML-Bericht · PDF</span><span data-en>CSV · HTML report · PDF</span></b></div>
+          <div><small>Export</small><b><span data-de>PDF direkt · HTML · CSV</span><span data-en>PDF built in · HTML · CSV</span></b></div>
+          <div><small><span data-de>Messarten</span><span data-en>Survey types</span></small><b><span data-de>Rundgang · Grundriss</span><span data-en>Walk · floor plan</span></b></div>
+          <div><small><span data-de>Grundriss</span><span data-en>Floor plan</span></small><b><span data-de>PNG/JPG, Heatmap</span><span data-en>PNG/JPG, heatmap</span></b></div>
+          <div><small><span data-de>Netzwerktest</span><span data-en>Network test</span></small><b><span data-de>Ping, Jitter, Verlust, Speedtest</span><span data-en>Ping, jitter, loss, speed test</span></b></div>
+          <div><small><span data-de>Demo</span><span data-en>Demo</span></small><b><span data-de>Demo-Modus für Präsentationen</span><span data-en>Demo mode for presentations</span></b></div>
           <div><small><span data-de>Messungen</span><span data-en>Surveys</span></small><b><span data-de>Autospeichern, wieder öffnen</span><span data-en>Autosave, reopen</span></b></div>
           <div><small><span data-de>Sprachen</span><span data-en>Languages</span></small><b><span data-de>Deutsch, Englisch</span><span data-en>German, English</span></b></div>
           <div><small><span data-de>System</span><span data-en>System</span></small><b><span data-de>Windows 10 / 11, 64 Bit</span><span data-en>Windows 10 / 11, 64-bit</span></b></div>
@@ -642,8 +661,12 @@
             <p><span data-de>Automatisch im Ordner „Dokumente\WiFi Analyzer“. Auf der Seite „Messung“ lassen sie sich jederzeit wieder öffnen, ergänzen und exportieren.</span><span data-en>Automatically in the folder “Documents\WiFi Analyzer”. On the “Survey” page you can reopen, extend and export them at any time.</span></p>
           </details>
           <details class="reveal">
+            <summary><span data-de>Was misst der Speedtest – und wie viele Daten braucht er?</span><span data-en>What does the speed test measure – and how much data does it use?</span></summary>
+            <p><span data-de>Pro Messpunkt misst die App den Ping zum Router und ins Internet. Der Speedtest ist optional: Er lädt bis zu etwa 6 Sekunden über speed.cloudflare.com herunter und hoch (bis ca. 70 MB) und zeigt damit die tatsächliche Internet-Geschwindigkeit an dieser Stelle. Er läuft nur, wenn der Laptop mit dem gemessenen Netz verbunden ist.</span><span data-en>At every point the app measures the ping to the router and to the internet. The speed test is optional: it downloads and uploads for up to about 6 seconds via speed.cloudflare.com (up to approx. 70 MB) and shows the real internet speed at that spot. It only runs while the laptop is connected to the surveyed network.</span></p>
+          </details>
+          <details class="reveal">
             <summary><span data-de>Welche Daten werden übertragen?</span><span data-en>Which data is transmitted?</span></summary>
-            <p><span data-de>Keine Messdaten. Einmalig wird die öffentliche Hersteller-Datenbank (Wireshark/IEEE) geladen, und – abschaltbar – prüft die App bei GitHub, ob es eine neue Version gibt.</span><span data-en>No measurement data. The public vendor database (Wireshark/IEEE) is downloaded once and – optionally – the app checks GitHub for a new version.</span></p>
+            <p><span data-de>Keine Messdaten. Einmalig wird die öffentliche Hersteller-Datenbank (Wireshark/IEEE) geladen; abschaltbar prüft die App bei GitHub, ob es eine neue Version gibt. Der optionale Speedtest nutzt speed.cloudflare.com, der Ping 1.1.1.1.</span><span data-en>No measurement data. The public vendor database (Wireshark/IEEE) is downloaded once; optionally the app checks GitHub for a new version. The optional speed test uses speed.cloudflare.com, the ping 1.1.1.1.</span></p>
           </details>
           <details class="reveal">
             <summary><span data-de>Was kostet der WiFi Analyzer?</span><span data-en>How much does it cost?</span></summary>
@@ -704,7 +727,8 @@
         channels: ['Kanalbelegung als Spektrum: Wer stört wen? Klick auf eine Kurve zeigt Details.', 'Channel usage as a spectrum: who interferes with whom? Click a curve for details.'],
         rating: ['Störpegel pro Kanal und eine klare Empfehlung für den besten Kanal.', 'Interference per channel and a clear recommendation for the best channel.'],
         findings: ['Automatische Prüfung mit konkreten Empfehlungen – nach Schweregrad sortiert.', 'Automatic checks with concrete recommendations – sorted by severity.'],
-        measure: ['Walk-Survey mit Messpunkten pro Raum, Roaming-Erkennung und Live-Verlauf.', 'Walk survey with points per room, roaming detection and live timeline.'],
+        plan: ['Grundriss-Messung: in den Plan klicken, die Heatmap zeigt die Ausleuchtung – inkl. Latenz und Speedtest pro Punkt.', 'Floor plan survey: click into the plan, the heatmap shows the coverage – incl. latency and speed test per point.'],
+        measure: ['Rundgang mit Messpunkten pro Raum, Roaming-Erkennung und Live-Verlauf.', 'Walk survey with points per room, roaming detection and live timeline.'],
         finder: ['Access Point orten: je stärker das Signal, desto näher – optional mit Piepton.', 'Locate an access point: the stronger the signal, the closer – optionally with a beep.']
       };
       var current = 'overview', img = document.getElementById('tabImg'), cap = document.getElementById('caption');

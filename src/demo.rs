@@ -12,6 +12,21 @@ use eframe::egui;
 use crate::ie::{build_bss, BssInfo};
 use crate::wlan::{ConnInfo, IfaceInfo, ScanCmd, ScanEvent, ScanMsg, ScannerHandle};
 
+/// Demo: Signalstärke an einer Stelle im Grundriss (0..1), zwei virtuelle Access Points
+pub fn rssi_at(pos: [f32; 2]) -> i32 {
+    const APS: [([f32; 2], f32); 2] = [([0.24, 0.30], -36.0), ([0.70, 0.28], -38.0)];
+    APS.iter()
+        .map(|(ap, tx)| {
+            let (dx, dy) = ((pos[0] - ap[0]) * 1.6, pos[1] - ap[1]);
+            let d = (dx * dx + dy * dy).sqrt();
+            // Freiraumdämpfung + Wände (grob)
+            (tx - 40.0 * (1.0 + d * 9.0).log10() - if pos[1] > 0.6 { 8.0 } else { 0.0 }) as i32
+        })
+        .max()
+        .unwrap_or(-80)
+        .clamp(-92, -30)
+}
+
 pub fn enabled() -> bool {
     std::env::args().any(|a| a == "--demo") || std::env::var_os("WIFIANALYZER_DEMO").is_some()
 }

@@ -41,6 +41,20 @@ Erste öffentliche Version.
 - Updates laufen bei installierter App über den Installer (still, mit Neustart).
 - Die portable `WiFiAnalyzer.exe` gibt es weiterhin.
 
+### Grundriss-Messung (neu)
+- Eigene Seite **Grundriss-Messung**, getrennt von der normalen Messung (Rundgang): Grundriss laden (PNG/JPG), an der eigenen Position in den Plan klicken – dort wird gemessen.
+- **Heatmap** der Ausleuchtung zwischen den Messpunkten; Punkte lassen sich verschieben, schwache Stellen sind sofort sichtbar.
+- Der Grundriss wird in der Messungsdatei gespeichert und für die nächste Grundriss-Messung übernommen.
+- Gespeicherte Messungen erscheinen jeweils bei ihrer Messart.
+
+### Latenz und Durchsatz pro Messpunkt
+- Ping zum Router und ins Internet (Ø, Min/Max, Jitter, Verlust) – läuft schon, während der Raumname eingegeben wird.
+- Optionaler **Speedtest** (Download/Upload über speed.cloudflare.com), nur bei Verbindung mit der gemessenen SSID.
+
+### PDF-Bericht direkt aus der App
+- Eigener PDF-Erzeuger ohne Fremdbibliothek: Kennzahlen, Grundriss mit Heatmap, Signalverlauf, Tabelle mit Bewertung, Latenz und Durchsatz, Legende, Hinweise, Seitenzahlen.
+- HTML-Bericht und CSV enthalten ebenfalls Grundriss bzw. Netzwerkwerte.
+
 ### Messpunkte pro Raum
 - Während einer Messung **Enter** drücken, Raum/Ort (und optional eine Notiz) eingeben, Enter. Der Wert dieser Stelle wird gemittelt, solange das Fenster offen ist, und als Messpunkt mit Bewertung (Sehr gut / Gut / Ausreichend / Schwach) gespeichert.
 - Liste der Messpunkte unter dem Verlauf: Signal, Bewertung, AP, Kanal, Datenrate, Notiz. Name und Notiz lassen sich nachträglich ändern.

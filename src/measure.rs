@@ -8,6 +8,8 @@ use std::collections::HashSet;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
+use crate::nettest::NetTest;
+
 use crate::ie::BssInfo;
 use crate::model::fmt_mac;
 use crate::wlan::ConnInfo;
@@ -165,6 +167,38 @@ pub struct MeasPoint {
     pub best_rssi: Option<i32>,
     /// Anzahl APs der SSID, die an dieser Stelle zu sehen sind
     pub aps_visible: usize,
+    /// eindeutige Nummer innerhalb der Messung (für nachträglich eintreffende Netzwerkwerte)
+    #[serde(default)]
+    pub id: u64,
+    /// Position im Grundriss (0..1 relativ zu Breite/Höhe des Plans)
+    #[serde(default)]
+    pub pos: Option<[f32; 2]>,
+    /// Latenz/Durchsatz an dieser Stelle
+    #[serde(default)]
+    pub net: Option<NetTest>,
+}
+
+/// Grundriss (Bilddatei) einer Messung – wird in der Messungsdatei mitgespeichert
+#[derive(Clone, Serialize, Deserialize)]
+pub struct FloorPlan {
+    pub name: String,
+    #[serde(with = "b64")]
+    pub data: Vec<u8>,
+}
+
+/// Bilddaten als Base64 in der JSON-Datei
+mod b64 {
+    use base64::Engine;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&base64::engine::general_purpose::STANDARD.encode(v))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let s = String::deserialize(d)?;
+        base64::engine::general_purpose::STANDARD.decode(s.as_bytes()).map_err(serde::de::Error::custom)
+    }
 }
 
 impl MeasPoint {
@@ -184,6 +218,10 @@ pub struct ScanContext {
 struct SurveyFile {
     app: String,
     format: u32,
+    /// Grundriss-Messung (sonst Rundgang) – steht bewusst weit vorne, damit die Dateiliste
+    /// die Art anhand der ersten Bytes erkennt, ohne den ganzen Grundriss zu lesen
+    #[serde(default)]
+    plan_mode: bool,
     app_version: String,
     ssid: String,
     /// RFC 3339
@@ -194,6 +232,8 @@ struct SurveyFile {
     events: Vec<Event>,
     #[serde(default)]
     points: Vec<MeasPoint>,
+    #[serde(default)]
+    plan: Option<FloorPlan>,
 }
 
 #[derive(Default)]
@@ -226,6 +266,9 @@ pub struct Measurement {
     pub best: Vec<BestSample>,
     pub events: Vec<Event>,
     pub points: Vec<MeasPoint>,
+    pub plan: Option<FloorPlan>,
+    /// Grundriss-Messung (Klick in den Plan = Messpunkt) statt Rundgang mit Verlauf
+    pub plan_mode: bool,
     connected: bool,
     last: Option<ConnSample>,
     sticky_since: Option<f64>,
@@ -244,6 +287,8 @@ impl Measurement {
             best: Vec::new(),
             events: vec![Event { t: 0.0, kind: EventKind::Start }],
             points: Vec::new(),
+            plan: None,
+            plan_mode: false,
             connected: false,
             last: None,
             sticky_since: None,
@@ -278,7 +323,7 @@ impl Measurement {
     /// Messpunkt speichern. `since_t` = Programmzeit, seit der der Benutzer an der Stelle steht
     /// (Dialog geöffnet). Gemittelt werden die Werte ab kurz davor; waren es zu wenige,
     /// die letzten paar Werte.
-    pub fn add_point(&mut self, now_t: f64, since_t: f64, name: &str, note: &str, scan: &ScanContext) -> &MeasPoint {
+    pub fn add_point(&mut self, now_t: f64, since_t: f64, name: &str, note: &str, pos: Option<[f32; 2]>, scan: &ScanContext) -> &MeasPoint {
         let t = self.rel(now_t);
         let since = self.rel(since_t) - 1.0;
         let name = name.trim();
@@ -298,6 +343,9 @@ impl Measurement {
             best_bssid: scan.best.map(|b| b.0),
             best_rssi: scan.best.map(|b| b.1),
             aps_visible: scan.aps_visible,
+            id: self.points.iter().map(|p| p.id).max().unwrap_or(0) + 1,
+            pos,
+            net: None,
         };
 
         let recent_conn: Vec<&ConnSample> = self.conn.iter().filter(|c| t - c.t < 30.0).collect();
@@ -352,6 +400,23 @@ impl Measurement {
         }
     }
 
+    pub fn point_mut(&mut self, id: u64) -> Option<&mut MeasPoint> {
+        self.points.iter_mut().find(|p| p.id == id)
+    }
+
+    /// Ältere Dateien ohne Nummern: eindeutige Nummern vergeben
+    fn ensure_point_ids(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        let mut next = self.points.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+        for p in &mut self.points {
+            if p.id == 0 || !seen.insert(p.id) {
+                p.id = next;
+                seen.insert(next);
+                next += 1;
+            }
+        }
+    }
+
     /// Markierung eines Messpunkts im Verlauf (gleicher Zeitpunkt)
     fn marker_index(&self, t: f64) -> Option<usize> {
         self.events.iter().position(|e| e.t == t && matches!(e.kind, EventKind::Marker(_)))
@@ -371,6 +436,7 @@ impl Measurement {
         let f = SurveyFile {
             app: "WiFi Analyzer".into(),
             format: 1,
+            plan_mode: self.plan_mode,
             app_version: env!("CARGO_PKG_VERSION").into(),
             ssid: self.ssid.clone(),
             started: self.started_wall.to_rfc3339(),
@@ -379,6 +445,7 @@ impl Measurement {
             best: self.best.clone(),
             events: self.events.clone(),
             points: self.points.clone(),
+            plan: self.plan.clone(),
         };
         serde_json::to_string_pretty(&f).unwrap_or_default()
     }
@@ -390,7 +457,7 @@ impl Measurement {
             return Err(crate::t!("Keine WiFi-Analyzer-Messung", "Not a WiFi Analyzer survey").into());
         }
         let started = DateTime::parse_from_rfc3339(&f.started).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now());
-        Ok(Self {
+        let mut m = Self {
             ssid: f.ssid,
             running: false,
             started_wall: started,
@@ -400,11 +467,15 @@ impl Measurement {
             best: f.best,
             events: f.events,
             points: f.points,
+            plan_mode: f.plan_mode || f.plan.is_some(),
+            plan: f.plan,
             connected: false,
             last: None,
             sticky_since: None,
             sticky_reported: false,
-        })
+        };
+        m.ensure_point_ids();
+        Ok(m)
     }
 
     #[cfg(test)]
@@ -682,7 +753,7 @@ mod tests {
         for t in 10..=14 {
             m.on_conn(t as f64, Some(&conn("Net", A, -60)));
         }
-        let p = m.add_point(14.0, 10.0, " Büro 1.03 ", "", &ctx).clone();
+        let p = m.add_point(14.0, 10.0, " Büro 1.03 ", "", Some([0.25, 0.5]), &ctx).clone();
         assert_eq!(p.name, "Büro 1.03");
         assert!(!p.from_scan);
         // Werte ab 9 s (1 s Vorlauf): einmal -80, dann 5× -60
@@ -699,6 +770,8 @@ mod tests {
         assert_eq!(back.conn.len(), m.conn.len());
         assert!(!back.running);
         assert_eq!(back.elapsed(999.0), 20.0);
+        assert_eq!(back.points[0].pos, Some([0.25, 0.5]));
+        assert_eq!(back.points[0].id, 1);
 
         m.remove_point(0);
         assert!(m.points.is_empty());
@@ -711,7 +784,7 @@ mod tests {
         let mut m = Measurement::new("Net".into(), 0.0);
         m.on_conn(1.5, Some(&conn("Net", A, -60)));
         let ctx = ScanContext { best: None, aps_visible: 1 };
-        m.add_point(2.0, 1.0, "Raum A", "", &ctx);
+        m.add_point(2.0, 1.0, "Raum A", "", None, &ctx);
         let csv = m.to_csv();
         // Zeit (s);Uhrzeit;Typ;... – Dezimalkomma, Typ in Spalte 3
         let row = csv.lines().find(|l| l.contains("Verbindung")).unwrap();
@@ -735,7 +808,7 @@ mod tests {
         m.on_scan(2.0, &[bss("Net", A, -70)]);
         m.on_scan(4.0, &[bss("Net", A, -72)]);
         let ctx = ScanContext { best: Some((A, -72, 36)), aps_visible: 1 };
-        let p = m.add_point(5.0, 4.5, "", "", &ctx).clone();
+        let p = m.add_point(5.0, 4.5, "", "", None, &ctx).clone();
         assert!(p.from_scan);
         assert_eq!(p.name, "Messpunkt 1");
         assert_eq!(p.rssi, Some(-72.0));

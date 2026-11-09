@@ -11,7 +11,7 @@ use crate::widgets::dot;
 use crate::{t, tf};
 
 /// Reihenfolge der Seiten (auch für Strg+1 … Strg+9)
-pub const NAV_ORDER: [Page; 9] = [
+pub const NAV_ORDER: [Page; 10] = [
     Page::Overview,
     Page::Networks,
     Page::Channels,
@@ -19,6 +19,7 @@ pub const NAV_ORDER: [Page; 9] = [
     Page::History,
     Page::Findings,
     Page::Measure,
+    Page::PlanSurvey,
     Page::Finder,
     Page::Events,
 ];
@@ -33,6 +34,7 @@ impl Page {
             Page::History => t!("Signalverlauf", "Signal history"),
             Page::Findings => t!("Befunde", "Findings"),
             Page::Measure => t!("Messung", "Survey"),
+            Page::PlanSurvey => t!("Grundriss-Messung", "Floor plan survey"),
             Page::Finder => t!("AP-Finder", "AP finder"),
             Page::Events => t!("Ereignisse", "Events"),
         }
@@ -47,6 +49,7 @@ impl Page {
             Page::History => "📈",
             Page::Findings => "⚠",
             Page::Measure => "📏",
+            Page::PlanSurvey => "🗺",
             Page::Finder => "🎯",
             Page::Events => "📜",
         }
@@ -225,9 +228,11 @@ impl WifiApp {
                         }
                     }
                     section_label(ui, t!("WERKZEUGE", "TOOLS"));
-                    for page in [Page::Measure, Page::Finder, Page::Events] {
+                    for page in [Page::Measure, Page::PlanSurvey, Page::Finder, Page::Events] {
+                        let plan_running = self.meas.as_ref().is_some_and(|m| m.plan_mode);
                         let badge = match page {
-                            Page::Measure if running => Some(("REC".to_string(), p.danger)),
+                            Page::Measure if running && !plan_running => Some(("REC".to_string(), p.danger)),
+                            Page::PlanSurvey if running && plan_running => Some(("REC".to_string(), p.danger)),
                             _ => None,
                         };
                         let hint = self.nav_hint(page);
@@ -251,11 +256,16 @@ impl WifiApp {
             Page::Rating => t!("Störpegel je Kanal und Kanalempfehlung", "Interference per channel and channel recommendation"),
             Page::History => t!("Signalstärke über die Zeit", "Signal strength over time"),
             Page::Findings => t!("Sicherheits- und Konfigurationsprobleme mit Empfehlungen", "Security and configuration issues with recommendations"),
-            Page::Measure => t!("Walk-Survey mit Roaming-Erkennung", "Walk survey with roaming detection"),
+            Page::Measure => t!("Rundgang: Verlauf, Roaming und Messpunkte pro Raum", "Walk survey: timeline, roaming and points per room"),
+            Page::PlanSurvey => t!("Grundriss laden, in den Plan klicken – Heatmap der Ausleuchtung", "Load a floor plan, click into it – coverage heatmap"),
             Page::Finder => t!("Access Point über die Signalstärke orten", "Locate an access point by signal strength"),
             Page::Events => t!("Protokoll: neue Netze, Roaming, Fehler", "Log: new networks, roaming, errors"),
         };
-        tf!("{what}  (Strg+{n})", "{what}  (Ctrl+{n})")
+        if n <= 9 {
+            tf!("{what}  (Strg+{n})", "{what}  (Ctrl+{n})")
+        } else {
+            what.to_string()
+        }
     }
 
     /// Hinweis-Banner oben auf jeder Seite, wenn der Scan nicht funktioniert – mit passender Aktion
