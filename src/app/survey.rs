@@ -184,11 +184,11 @@ pub(super) fn report_notes(m: &Measurement, s: &crate::measure::Stats) -> Vec<(O
 }
 
 /// Grundriss + Heatmap für den HTML-Bericht: ein SVG mit eingebettetem JPEG und nummerierten Punkten
-fn plan_svg(m: &Measurement, layer: crate::measure::Layer) -> Option<String> {
+fn plan_svg(m: &Measurement, floor: usize, layer: crate::measure::Layer) -> Option<String> {
     use base64::Engine;
-    let plan = m.plan.as_ref()?;
+    let plan = m.plans.get(floor)?;
     let img = crate::heatmap::decode_plan(&plan.data).ok()?;
-    let pts = m.heat_points(layer);
+    let pts = m.heat_points(floor, layer);
     let comp = crate::heatmap::composite(&img, &pts, 1600, plan.width_m);
     let (w, h) = comp.dimensions();
     let b64 = base64::engine::general_purpose::STANDARD.encode(crate::heatmap::to_jpeg(&comp));
@@ -197,7 +197,7 @@ fn plan_svg(m: &Measurement, layer: crate::measure::Layer) -> Option<String> {
     );
     let r = (w.max(h) as f32 / 70.0).clamp(10.0, 22.0);
     for (i, p) in m.points.iter().enumerate() {
-        let Some(pos) = p.pos else { continue };
+        let Some(pos) = p.pos.filter(|_| p.floor == floor) else { continue };
         let [cr, cg, cb] = p.value_for(layer).map(crate::heatmap::color).unwrap_or([120, 120, 120]);
         let (x, y) = (pos[0] * w as f32, pos[1] * h as f32);
         let _ = write!(
@@ -211,7 +211,7 @@ fn plan_svg(m: &Measurement, layer: crate::measure::Layer) -> Option<String> {
     }
     s.push_str("</svg>");
     let missing = m.points.iter().filter(|p| p.pos.is_none()).count();
-    if missing > 0 {
+    if missing > 0 && floor == 0 && layer == crate::measure::Layer::Measured {
         let _ = write!(
             s,
             r#"<p class="weak" style="font-size:12px">{}</p>"#,
@@ -372,7 +372,7 @@ impl WifiApp {
             d.net_rx = None;
         }
         let Some(m) = self.meas.as_ref() else { return };
-        let others: Vec<([f32; 2], Option<f64>, usize)> = m.points.iter().enumerate().filter_map(|(i, p)| Some((p.pos?, p.rssi, i + 1))).collect();
+        let others: Vec<([f32; 2], Option<f64>, usize)> = m.points.iter().enumerate().filter(|(_, p)| p.floor == m.floor).filter_map(|(i, p)| Some((p.pos?, p.rssi, i + 1))).collect();
         let (ping_on, speed_on) = (self.settings.point_ping, self.settings.point_speed);
         let band_now = {
             let ctx_b = self.survey_scan_ctx(&m.ssid).bands;
@@ -519,12 +519,13 @@ impl WifiApp {
 
         if save {
             let scan = self.survey_scan_ctx(&ssid);
-            let has_plan = self.meas.as_ref().is_some_and(|m| m.plan.is_some());
+            let has_plan = self.meas.as_ref().is_some_and(|m| !m.plans.is_empty());
             let res = self.meas.as_mut().map(|m| {
+                let floor = m.floor;
                 let p = m.add_point(t_now, d.since_t, &d.name, &d.note, d.pos, &scan);
                 if let (true, Some(pos)) = (crate::demo::enabled(), d.pos) {
-                    // Demo: realistische Ausleuchtung je nach Position im Plan
-                    let v = crate::demo::rssi_at(pos) as f64;
+                    // Demo: realistische Ausleuchtung je nach Position im Plan (höhere Stockwerke schwächer)
+                    let v = crate::demo::rssi_at(pos) as f64 - 7.0 * floor as f64;
                     let id = p.id;
                     if let Some(pt) = m.point_mut(id) {
                         pt.rssi = Some(v);
@@ -602,10 +603,11 @@ impl WifiApp {
         let mut changed = false;
         let mut renamed: Vec<usize> = Vec::new();
         let pending: Vec<u64> = self.net_jobs.iter().map(|j| j.id).collect();
-        let has_plan = m.plan_mode && m.plan.is_some();
+        let has_plan = m.plan_mode && !m.plans.is_empty();
+        let floor_names: Vec<String> = if m.plans.len() > 1 { m.plans.iter().map(|f| f.title().to_string()).collect() } else { Vec::new() };
         let show_net = !pending.is_empty() || m.points.iter().any(|pt| pt.net.is_some());
         let plan_sel = self.plan_sel;
-        let mut pick_for_plan: Option<u64> = None;
+        let mut pick_for_plan: Option<(u64, Option<usize>)> = None;
         let Some(m) = self.meas.as_mut() else { return };
         egui::ScrollArea::vertical().id_salt("meas_points").auto_shrink(false).show(ui, |ui| {
             let cols = 9 + if show_net { 2 } else { 0 } + if has_plan { 2 } else { 0 };
@@ -675,14 +677,14 @@ impl WifiApp {
                             .on_hover_text(t!("Stärkster AP der SSID je Band an dieser Stelle (dBm)", "Strongest AP of the SSID per band at this spot (dBm)"));
                     }
                     if has_plan {
-                        let (txt, tip) = if pt.pos.is_some() {
-                            ("\u{E316}", t!("Position gesetzt – klicken, um sie im Grundriss neu zu setzen", "Position set – click to place it again on the floor plan"))
-                        } else {
-                            (t!("setzen", "place"), t!("Im Grundriss platzieren", "Place on the floor plan"))
+                        let (txt, tip) = match (pt.pos.is_some(), floor_names.get(pt.floor)) {
+                            (true, Some(f)) => (format!("\u{E316} {f}"), t!("Position gesetzt – klicken, um das Stockwerk zu zeigen und den Punkt neu zu setzen", "Position set – click to show its floor and place it again")),
+                            (true, None) => ("\u{E316}".to_string(), t!("Position gesetzt – klicken, um sie im Grundriss neu zu setzen", "Position set – click to place it again on the floor plan")),
+                            _ => (t!("setzen", "place").to_string(), t!("Im Grundriss platzieren", "Place on the floor plan")),
                         };
                         let b = egui::Button::new(RichText::new(txt).small().color(if selected { Color32::WHITE } else { p.text })).fill(if selected { p.accent } else { p.surface2 });
                         if ui.add(b).on_hover_text(tip).clicked() {
-                            pick_for_plan = Some(pt.id);
+                            pick_for_plan = Some((pt.id, pt.pos.map(|_| pt.floor)));
                         }
                     }
                     changed |= ui
@@ -698,8 +700,15 @@ impl WifiApp {
         for i in renamed {
             m.sync_point_marker(i);
         }
-        if let Some(id) = pick_for_plan {
+        if let Some((id, floor)) = pick_for_plan {
             self.plan_sel = Some(id);
+            if let (Some(f), Some(m)) = (floor, self.meas.as_mut()) {
+                if m.floor != f {
+                    m.floor = f;
+                    self.heat_tex = None;
+                    self.plan_scale = None;
+                }
+            }
         }
         let Some(m) = self.meas.as_mut() else { return };
         if let Some(i) = remove {
@@ -807,8 +816,8 @@ impl WifiApp {
                 let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 self.toast(Sev::Info, tf!("Messung geöffnet: {name} ({} Messpunkte)", "Survey opened: {name} ({} points)", m.points.len()));
                 self.meas_ssid = Some(m.ssid.clone());
-                if let Some(pl) = m.plan.clone() {
-                    self.last_plan = Some(pl);
+                if !m.plans.is_empty() {
+                    self.last_plans = m.plans.clone();
                 }
                 self.page = if m.plan_mode { super::Page::PlanSurvey } else { super::Page::Measure };
                 self.meas = Some(m);
@@ -892,8 +901,8 @@ impl WifiApp {
 
     fn points_csv(&self, m: &Measurement) -> String {
         let header = t!(
-            "Nr;Raum / Ort;Uhrzeit;Signal Ø (dBm);Bewertung;Min (dBm);Max (dBm);Messwerte;Quelle;AP (BSSID);Hersteller;Kanal;Datenrate (Mbit/s);Stärkster AP;Stärkster AP (dBm);APs sichtbar;Ping Router Ø (ms);Verlust Router (%);Jitter Router (ms);Ping Internet Ø (ms);Download (Mbit/s);Upload (Mbit/s);2,4 GHz (dBm);5 GHz (dBm);6 GHz (dBm);Position X (%);Position Y (%);Notiz",
-            "No;Room / location;Time;Signal avg (dBm);Rating;Min (dBm);Max (dBm);Samples;Source;AP (BSSID);Vendor;Channel;Data rate (Mbit/s);Strongest AP;Strongest AP (dBm);APs visible;Ping router avg (ms);Loss router (%);Jitter router (ms);Ping internet avg (ms);Download (Mbit/s);Upload (Mbit/s);2.4 GHz (dBm);5 GHz (dBm);6 GHz (dBm);Position X (%);Position Y (%);Note"
+            "Nr;Raum / Ort;Uhrzeit;Signal Ø (dBm);Bewertung;Min (dBm);Max (dBm);Messwerte;Quelle;AP (BSSID);Hersteller;Kanal;Datenrate (Mbit/s);Stärkster AP;Stärkster AP (dBm);APs sichtbar;Ping Router Ø (ms);Verlust Router (%);Jitter Router (ms);Ping Internet Ø (ms);Download (Mbit/s);Upload (Mbit/s);2,4 GHz (dBm);5 GHz (dBm);6 GHz (dBm);Stockwerk;Position X (%);Position Y (%);Notiz",
+            "No;Room / location;Time;Signal avg (dBm);Rating;Min (dBm);Max (dBm);Samples;Source;AP (BSSID);Vendor;Channel;Data rate (Mbit/s);Strongest AP;Strongest AP (dBm);APs visible;Ping router avg (ms);Loss router (%);Jitter router (ms);Ping internet avg (ms);Download (Mbit/s);Upload (Mbit/s);2.4 GHz (dBm);5 GHz (dBm);6 GHz (dBm);Floor;Position X (%);Position Y (%);Note"
         );
         let mut s = tf!(
             "\u{feff}# WLAN-Messung SSID \"{}\" vom {} (WiFi Analyzer {})\n{header}\n",
@@ -934,6 +943,7 @@ impl WifiApp {
                 opt(pt.bands.b24),
                 opt(pt.bands.b5),
                 opt(pt.bands.b6),
+                m.plans.get(pt.floor).filter(|_| pt.pos.is_some()).map(|f| f.title().to_string()).unwrap_or_default(),
                 dec(pt.pos.map(|p| p[0] as f64 * 100.0)),
                 dec(pt.pos.map(|p| p[1] as f64 * 100.0)),
                 pt.note.clone(),
@@ -1034,13 +1044,19 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
         // Verlauf und Grundriss (Grundriss-Messung: Plan zuerst)
         let chart = format!("<h2>{}</h2>{}", t!("Signalverlauf", "Signal over time"), self.report_svg(m));
         let mut plan = String::new();
-        for layer in m.layers_with_data() {
-            if let Some(svg) = plan_svg(m, layer) {
-                let title = match layer {
-                    crate::measure::Layer::Measured => t!("Ausleuchtung im Grundriss", "Coverage on the floor plan").to_string(),
-                    l => tf!("Ausleuchtung {}", "Coverage {}", l.label()),
-                };
-                let _ = write!(plan, "<h2>{title}</h2>{svg}");
+        let multi = m.plans.len() > 1;
+        for (fi, fp) in m.plans.iter().enumerate() {
+            for layer in m.layers_with_data(fi) {
+                if let Some(svg) = plan_svg(m, fi, layer) {
+                    let mut title = match layer {
+                        crate::measure::Layer::Measured => t!("Ausleuchtung im Grundriss", "Coverage on the floor plan").to_string(),
+                        l => tf!("Ausleuchtung {}", "Coverage {}", l.label()),
+                    };
+                    if multi {
+                        title = format!("{} – {title}", esc_html(fp.title()));
+                    }
+                    let _ = write!(plan, "<h2>{title}</h2>{svg}");
+                }
             }
         }
         if !plan.is_empty() {

@@ -326,17 +326,30 @@ impl WifiApp {
 
     /// Grundriss mit Heatmap – je Ebene mit Daten eine Karte (Messwert, 2,4 / 5 / 6 GHz)
     fn pdf_plan_maps(&self, pdf: &mut Pdf, m: &Measurement, y: &mut f32) {
-        let Some(fp) = m.plan.as_ref() else { return };
-        let Ok(plan) = heatmap::decode_plan(&fp.data) else { return };
-        let layers = m.layers_with_data();
+        let multi = m.plans.len() > 1;
+        let mut any = false;
+        for fi in 0..m.plans.len() {
+            any |= self.pdf_floor_maps(pdf, m, fi, multi, y);
+        }
+        if any && m.plans.iter().any(|f| f.width_m.is_none()) {
+            pdf.text(M, *y, 7.2, false, WEAK, t!("Ohne Maßstab: Heatmap mit angenommener Planbreite von 40 m berechnet.", "Without scale: heatmap computed assuming a plan width of 40 m."));
+            *y += 10.0;
+        }
+    }
+
+    /// Karten eines Stockwerks; true, wenn etwas gezeichnet wurde
+    fn pdf_floor_maps(&self, pdf: &mut Pdf, m: &Measurement, fi: usize, multi: bool, y: &mut f32) -> bool {
+        let Some(fp) = m.plans.get(fi) else { return false };
+        let Ok(plan) = heatmap::decode_plan(&fp.data) else { return false };
+        let layers = m.layers_with_data(fi);
         for (li, layer) in layers.iter().enumerate() {
-            let placed = m.heat_points(*layer);
+            let placed = m.heat_points(fi, *layer);
             let comp = heatmap::composite(&plan, &placed, 1600, fp.width_m);
             let (iw, ih) = comp.dimensions();
             let mut w = CW;
             let mut h = w * ih as f32 / iw as f32;
             // erste Karte der Grundriss-Messung so groß wie möglich, weitere kompakter
-            let max_h = if li == 0 && m.plan_mode { (BOTTOM - *y - 60.0).clamp(260.0, 470.0) } else if li == 0 { 430.0 } else { 330.0 };
+            let max_h = if li == 0 && fi == 0 && m.plan_mode { (BOTTOM - *y - 60.0).clamp(260.0, 470.0) } else if li == 0 { 430.0 } else { 330.0 };
             if h > max_h {
                 h = max_h;
                 w = h * iw as f32 / ih as f32;
@@ -345,17 +358,20 @@ impl WifiApp {
                 pdf.new_page();
                 *y = M;
             }
-            let title = match layer {
+            let mut title = match layer {
                 Layer::Measured => t!("Ausleuchtung im Grundriss", "Coverage on the floor plan").to_string(),
                 l => tf!("Ausleuchtung {}", "Coverage {}", l.label()),
             };
+            if multi {
+                title = format!("{} – {title}", fp.title());
+            }
             heading(pdf, y, &title);
             let idx = pdf.add_jpeg(heatmap::to_jpeg(&comp), iw, ih);
             let x0 = M + (CW - w) / 2.0;
             pdf.image(idx, x0, *y, w, h);
             pdf.rect_stroke(x0, *y, w, h, BORDER, 0.6);
             for (i, p) in m.points.iter().enumerate() {
-                let (Some(pos), Some(v)) = (p.pos, p.value_for(*layer)) else { continue };
+                let (Some(pos), Some(v)) = (p.pos.filter(|_| p.floor == fi), p.value_for(*layer)) else { continue };
                 let (cx, cy) = (x0 + pos[0] * w, *y + pos[1] * h);
                 pdf.circle(cx, cy, 7.5, heatmap::color(v), Some((WHITE, 1.4)));
                 pdf.text_center(cx, cy + 2.8, 7.5, true, WHITE, &(i + 1).to_string());
@@ -384,15 +400,12 @@ impl WifiApp {
             }
             pdf.text(lx, *y + 6.5, 7.2, false, WEAK, "dBm");
             let missing = m.points.iter().filter(|p| p.pos.is_none()).count();
-            if missing > 0 && li == 0 {
+            if missing > 0 && li == 0 && fi == 0 {
                 pdf.text_right(M + CW, *y + 6.5, 7.5, false, WEAK, &tf!("{missing} Messpunkte ohne Position", "{missing} points without position"));
             }
             *y += 16.0;
         }
-        if fp.width_m.is_none() && !layers.is_empty() {
-            pdf.text(M, *y, 7.2, false, WEAK, t!("Ohne Maßstab: Heatmap mit angenommener Planbreite von 40 m berechnet.", "Without scale: heatmap computed assuming a plan width of 40 m."));
-            *y += 10.0;
-        }
+        !layers.is_empty()
     }
 
     /// Signalverlauf als Vektorgrafik mit nummerierten Messpunkten

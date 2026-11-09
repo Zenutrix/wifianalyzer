@@ -43,7 +43,8 @@ Erste öffentliche Version.
 
 ### Grundriss-Messung (neu)
 - Eigene Seite **Grundriss-Messung**, getrennt von der normalen Messung (Rundgang): Grundriss laden (PNG/JPG oder PDF), an der eigenen Position in den Plan klicken – dort wird gemessen.
-- **PDF-Pläne**: Bei mehrseitigen PDFs erscheint eine Seitenauswahl mit Vorschaubildern (z. B. für das richtige Stockwerk). Gerendert wird mit dem in Windows eingebauten PDF-Renderer, ohne zusätzliche Bibliothek.
+- **Mehrere Stockwerke** pro Messung: je Stockwerk ein Grundriss mit eigenen Messpunkten und eigener Heatmap. Reiter zum Wechseln, Rechtsklick zum Umbenennen (z. B. „EG“) oder Entfernen, „+ Stockwerk“ zum Hinzufügen. Bericht (PDF/HTML) und CSV enthalten alle Stockwerke.
+- **PDF-Pläne**: Bei mehrseitigen PDFs erscheint eine Seitenauswahl mit Vorschaubildern; jede gewählte Seite wird ein Stockwerk. Gerendert wird mit dem in Windows eingebauten PDF-Renderer, ohne zusätzliche Bibliothek.
 - **Heatmap** der Ausleuchtung zwischen den Messpunkten; Punkte lassen sich verschieben, schwache Stellen sind sofort sichtbar.
 - Der Grundriss wird in der Messungsdatei gespeichert und für die nächste Grundriss-Messung übernommen.
 - Gespeicherte Messungen erscheinen jeweils bei ihrer Messart.

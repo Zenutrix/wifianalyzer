@@ -173,6 +173,9 @@ pub struct MeasPoint {
     /// Position im Grundriss (0..1 relativ zu Breite/Höhe des Plans)
     #[serde(default)]
     pub pos: Option<[f32; 2]>,
+    /// Stockwerk (Index in `Measurement::plans`), auf dem die Position gilt
+    #[serde(default)]
+    pub floor: usize,
     /// stärkster AP der SSID je Frequenzband an dieser Stelle (dBm)
     #[serde(default)]
     pub bands: BandValues,
@@ -184,7 +187,11 @@ pub struct MeasPoint {
 /// Grundriss (Bilddatei) einer Messung – wird in der Messungsdatei mitgespeichert
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FloorPlan {
+    /// Dateiname (bei PDFs mit Seitenzahl)
     pub name: String,
+    /// Bezeichnung des Stockwerks (z. B. „EG“), leer = Dateiname
+    #[serde(default)]
+    pub label: String,
     #[serde(with = "b64")]
     pub data: Vec<u8>,
     /// reale Breite des Plans in Metern (aus dem Maßstab)
@@ -200,7 +207,16 @@ pub struct FloorPlan {
 
 impl FloorPlan {
     pub fn new(name: String, data: Vec<u8>) -> Self {
-        Self { name, data, width_m: None, scale_line: None, scale_len_m: None }
+        Self { name, label: String::new(), data, width_m: None, scale_line: None, scale_len_m: None }
+    }
+
+    /// Anzeigename: Bezeichnung oder Dateiname
+    pub fn title(&self) -> &str {
+        if self.label.trim().is_empty() {
+            &self.name
+        } else {
+            self.label.trim()
+        }
     }
 }
 
@@ -283,14 +299,43 @@ impl MeasPoint {
 }
 
 impl Measurement {
-    /// Platzierte Punkte mit Wert für die Heatmap
-    pub fn heat_points(&self, layer: Layer) -> Vec<([f32; 2], f64)> {
-        self.points.iter().filter_map(|p| Some((p.pos?, p.value_for(layer)?))).collect()
+    /// Platzierte Punkte eines Stockwerks mit Wert für die Heatmap
+    pub fn heat_points(&self, floor: usize, layer: Layer) -> Vec<([f32; 2], f64)> {
+        self.points.iter().filter(|p| p.floor == floor).filter_map(|p| Some((p.pos?, p.value_for(layer)?))).collect()
     }
 
-    /// Ebenen, für die es Werte gibt
-    pub fn layers_with_data(&self) -> Vec<Layer> {
-        Layer::ALL.into_iter().filter(|l| self.points.iter().any(|p| p.pos.is_some() && p.value_for(*l).is_some())).collect()
+    /// Ebenen, für die es auf einem Stockwerk Werte gibt
+    pub fn layers_with_data(&self, floor: usize) -> Vec<Layer> {
+        Layer::ALL
+            .into_iter()
+            .filter(|l| self.points.iter().any(|p| p.floor == floor && p.pos.is_some() && p.value_for(*l).is_some()))
+            .collect()
+    }
+
+    /// Grundriss des aktuellen Stockwerks
+    pub fn plan(&self) -> Option<&FloorPlan> {
+        self.plans.get(self.floor)
+    }
+
+    pub fn plan_mut(&mut self) -> Option<&mut FloorPlan> {
+        self.plans.get_mut(self.floor)
+    }
+
+    /// Stockwerk entfernen: Punkte darauf verlieren ihre Position, die Nummern dahinter rücken nach
+    pub fn remove_floor(&mut self, idx: usize) {
+        if idx >= self.plans.len() {
+            return;
+        }
+        self.plans.remove(idx);
+        for p in &mut self.points {
+            if p.floor == idx {
+                p.pos = None;
+                p.floor = 0;
+            } else if p.floor > idx {
+                p.floor -= 1;
+            }
+        }
+        self.floor = self.floor.min(self.plans.len().saturating_sub(1));
     }
 }
 
@@ -322,8 +367,12 @@ struct SurveyFile {
     events: Vec<Event>,
     #[serde(default)]
     points: Vec<MeasPoint>,
-    #[serde(default)]
+    /// nur ältere Dateien (ein Grundriss)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     plan: Option<FloorPlan>,
+    /// Grundrisse je Stockwerk
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    plans: Vec<FloorPlan>,
 }
 
 #[derive(Default)]
@@ -356,7 +405,10 @@ pub struct Measurement {
     pub best: Vec<BestSample>,
     pub events: Vec<Event>,
     pub points: Vec<MeasPoint>,
-    pub plan: Option<FloorPlan>,
+    /// Grundrisse je Stockwerk
+    pub plans: Vec<FloorPlan>,
+    /// gerade angezeigtes Stockwerk
+    pub floor: usize,
     /// Grundriss-Messung (Klick in den Plan = Messpunkt) statt Rundgang mit Verlauf
     pub plan_mode: bool,
     connected: bool,
@@ -377,7 +429,8 @@ impl Measurement {
             best: Vec::new(),
             events: vec![Event { t: 0.0, kind: EventKind::Start }],
             points: Vec::new(),
-            plan: None,
+            plans: Vec::new(),
+            floor: 0,
             plan_mode: false,
             connected: false,
             last: None,
@@ -436,6 +489,7 @@ impl Measurement {
             bands: scan.bands,
             id: self.points.iter().map(|p| p.id).max().unwrap_or(0) + 1,
             pos,
+            floor: self.floor,
             net: None,
         };
 
@@ -526,7 +580,7 @@ impl Measurement {
     pub fn to_file(&self, now_t: f64) -> String {
         let f = SurveyFile {
             app: "WiFi Analyzer".into(),
-            format: 1,
+            format: 2,
             plan_mode: self.plan_mode,
             app_version: env!("CARGO_PKG_VERSION").into(),
             ssid: self.ssid.clone(),
@@ -536,7 +590,8 @@ impl Measurement {
             best: self.best.clone(),
             events: self.events.clone(),
             points: self.points.clone(),
-            plan: self.plan.clone(),
+            plan: None,
+            plans: self.plans.clone(),
         };
         serde_json::to_string_pretty(&f).unwrap_or_default()
     }
@@ -547,6 +602,7 @@ impl Measurement {
         if f.app != "WiFi Analyzer" {
             return Err(crate::t!("Keine WiFi-Analyzer-Messung", "Not a WiFi Analyzer survey").into());
         }
+        let plans: Vec<FloorPlan> = if f.plans.is_empty() { f.plan.into_iter().collect() } else { f.plans };
         let started = DateTime::parse_from_rfc3339(&f.started).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now());
         let mut m = Self {
             ssid: f.ssid,
@@ -558,14 +614,21 @@ impl Measurement {
             best: f.best,
             events: f.events,
             points: f.points,
-            plan_mode: f.plan_mode || f.plan.is_some(),
-            plan: f.plan,
+            plan_mode: f.plan_mode || !plans.is_empty(),
+            floor: 0,
+            plans,
             connected: false,
             last: None,
             sticky_since: None,
             sticky_reported: false,
         };
         m.ensure_point_ids();
+        let n = m.plans.len();
+        for p in &mut m.points {
+            if p.floor >= n {
+                p.floor = 0;
+            }
+        }
         Ok(m)
     }
 
@@ -867,6 +930,40 @@ mod tests {
         m.remove_point(0);
         assert!(m.points.is_empty());
         assert_eq!(m.marker_count(), 0);
+    }
+
+    #[test]
+    fn floors_roundtrip_old_files_and_remove_floor() {
+        let ctx = ScanContext::default();
+        let mut m = Measurement::new("Net".into(), 0.0);
+        m.plans = vec![FloorPlan::new("eg.png".into(), vec![1, 2, 3]), FloorPlan::new("og.png".into(), vec![4, 5])];
+        m.plans[1].label = "1. OG".into();
+        m.add_point(1.0, 1.0, "a", "", Some([0.1, 0.1]), &ctx);
+        m.floor = 1;
+        m.add_point(2.0, 2.0, "b", "", Some([0.2, 0.2]), &ctx);
+        assert_eq!((m.points[0].floor, m.points[1].floor), (0, 1));
+        assert_eq!(m.plan().map(|p| p.title()), Some("1. OG"));
+        assert_eq!(m.plans[0].title(), "eg.png");
+
+        let back = Measurement::from_file(&m.to_file(3.0)).unwrap();
+        assert_eq!(back.plans.len(), 2);
+        assert_eq!(back.points[1].floor, 1);
+        assert!(back.plan_mode);
+
+        // ältere Datei mit nur einem Grundriss („plan“)
+        let mut v: serde_json::Value = serde_json::from_str(&m.to_file(3.0)).unwrap();
+        let first = v["plans"][0].clone();
+        v.as_object_mut().unwrap().remove("plans");
+        v["plan"] = first;
+        let old = Measurement::from_file(&v.to_string()).unwrap();
+        assert_eq!(old.plans.len(), 1);
+        assert_eq!(old.points[1].floor, 0, "Stockwerk außerhalb wird auf 0 gesetzt");
+
+        // Stockwerk 0 entfernen: Punkt darauf verliert Position, Punkt auf 1 rückt nach 0
+        m.remove_floor(0);
+        assert_eq!(m.plans.len(), 1);
+        assert_eq!((m.points[0].pos, m.points[1].floor), (None, 0));
+        assert_eq!(m.floor, 0);
     }
 
     #[test]

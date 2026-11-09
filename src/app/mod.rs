@@ -240,7 +240,7 @@ pub struct WifiApp {
     /// Seitenauswahl beim Laden eines mehrseitigen PDF-Grundrisses
     pdf_pick: Option<plan::PdfPick>,
     /// zuletzt verwendeter Grundriss (für die nächste Grundriss-Messung)
-    last_plan: Option<crate::measure::FloorPlan>,
+    last_plans: Vec<crate::measure::FloorPlan>,
     meas_follow: bool,
 
     splash_done: bool,
@@ -330,7 +330,7 @@ impl WifiApp {
             plan_scale: None,
             show_scale_editor: false,
             pdf_pick: None,
-            last_plan: None,
+            last_plans: Vec::new(),
             meas_follow: false,
             splash_done: false,
             splash_progress: 0.0,
@@ -789,9 +789,13 @@ impl WifiApp {
         self.meas_point = None;
         self.meas_ssid = Some(ssid.clone());
         // Grundriss-Messung: Plan der vorherigen Grundriss-Messung übernehmen (gleiches Gebäude)
-        let plan = if plan_mode { self.meas.as_ref().filter(|m| m.plan_mode).and_then(|m| m.plan.clone()).or_else(|| self.last_plan.clone()) } else { None };
+        let plans = if plan_mode {
+            self.meas.as_ref().filter(|m| m.plan_mode && !m.plans.is_empty()).map(|m| m.plans.clone()).unwrap_or_else(|| self.last_plans.clone())
+        } else {
+            Vec::new()
+        };
         let mut m = Measurement::new(ssid.clone(), self.now_t());
-        m.plan = plan;
+        m.plans = plans;
         m.plan_mode = plan_mode;
         self.meas = Some(m);
         self.net_jobs.clear();

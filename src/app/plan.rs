@@ -1,6 +1,6 @@
 //! Grundriss mit Heatmap und Netzwerktests (Latenz/Durchsatz) pro Messpunkt.
 //!
-//! - Grundriss laden (PNG/JPEG oder eine Seite aus einem PDF), Messpunkte per Klick platzieren oder verschieben
+//! - Grundrisse je Stockwerk laden (PNG/JPEG oder Seiten aus einem PDF), Messpunkte per Klick platzieren oder verschieben
 //! - Heatmap der Ausleuchtung (IDW-Interpolation, siehe `crate::heatmap`)
 //! - Netzwerktest startet beim Öffnen des Messpunkt-Dialogs im Hintergrund und wird dem
 //!   Messpunkt zugeordnet, sobald er fertig ist
@@ -40,12 +40,20 @@ pub(crate) struct PdfPick {
     name: String,
     pages: u32,
     thumbs: Vec<(TextureHandle, [usize; 2])>,
+    /// ausgewählte Seiten (Index = Seite)
+    selected: Vec<bool>,
+    /// Seite für die Nummern-Eingabe (Seiten ohne Vorschaubild)
     page: u32,
+    /// als neue Stockwerke hinzufügen (sonst ersetzt die erste Seite das aktuelle)
+    add: bool,
 }
+
+/// Geladener Grundriss: Dateiname, Stockwerk-Bezeichnung, Bilddaten
+type PlanLoad = (String, String, Result<(Vec<u8>, u32, u32), String>);
 
 /// Grundriss-Textur (Schlüssel: Name + Größe der Bilddaten)
 pub(crate) struct PlanTex {
-    key: (String, usize),
+    key: (usize, String, usize),
     tex: TextureHandle,
     size: [usize; 2],
 }
@@ -147,7 +155,8 @@ impl WifiApp {
 
     // ---------------------------------------------------------------- Grundriss laden
 
-    pub(super) fn load_plan(&mut self, ctx: &egui::Context) {
+    /// Grundriss laden. `add` = als neues Stockwerk, sonst ersetzt er den des aktuellen Stockwerks.
+    pub(super) fn load_plan(&mut self, ctx: &egui::Context, add: bool) {
         if self.meas.is_none() {
             return;
         }
@@ -161,18 +170,19 @@ impl WifiApp {
         };
         let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "plan".into());
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
-            self.open_pdf_plan(ctx, path, name);
+            self.open_pdf_plan(ctx, path, name, add);
             return;
         }
+        let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let res = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| heatmap::prepare_plan(&b));
-        self.apply_plan(name, res);
+        self.apply_plans(vec![(name, stem, res)], add);
     }
 
     /// PDF: einseitig direkt übernehmen, sonst Seitenauswahl mit Vorschaubildern
-    fn open_pdf_plan(&mut self, ctx: &egui::Context, path: std::path::PathBuf, name: String) {
+    fn open_pdf_plan(&mut self, ctx: &egui::Context, path: std::path::PathBuf, name: String, add: bool) {
         match crate::pdfimport::thumbnails(path.clone(), 360) {
             Ok((0, _)) => self.toast(Sev::Critical, t!("Das PDF enthält keine Seiten", "The PDF has no pages").into()),
-            Ok((1, _)) => self.load_pdf_page(path, name, 0, 1),
+            Ok((1, _)) => self.load_pdf_pages(path, name, vec![0], 1, add),
             Ok((pages, imgs)) => {
                 let thumbs = imgs
                     .iter()
@@ -183,43 +193,86 @@ impl WifiApp {
                         (ctx.load_texture(format!("pdf_thumb_{i}"), color, TextureOptions::LINEAR), size)
                     })
                     .collect();
-                self.pdf_pick = Some(PdfPick { path, name, pages, thumbs, page: 0 });
+                let mut selected = vec![false; pages as usize];
+                selected[0] = true;
+                self.pdf_pick = Some(PdfPick { path, name, pages, thumbs, selected, page: 0, add });
             }
             Err(e) => self.toast(Sev::Critical, tf!("PDF kann nicht geladen werden: {e}", "Cannot load PDF: {e}")),
         }
     }
 
-    /// Eine PDF-Seite in voller Auflösung rendern und als Grundriss übernehmen
-    fn load_pdf_page(&mut self, path: std::path::PathBuf, name: String, page: u32, pages: u32) {
-        let res = crate::pdfimport::render_page(path, page, 2400).and_then(|png| heatmap::prepare_plan(&png));
-        let name = if pages > 1 { tf!("{name} – Seite {}", "{name} – page {}", page + 1) } else { name };
-        self.apply_plan(name, res);
+    /// PDF-Seiten in voller Auflösung rendern und als Grundrisse übernehmen (je Seite ein Stockwerk)
+    fn load_pdf_pages(&mut self, path: std::path::PathBuf, name: String, pages: Vec<u32>, total: u32, add: bool) {
+        let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let items = pages
+            .into_iter()
+            .map(|page| {
+                let res = crate::pdfimport::render_page(path.clone(), page, 2400).and_then(|png| heatmap::prepare_plan(&png));
+                if total > 1 {
+                    (tf!("{name} – Seite {}", "{name} – page {}", page + 1), tf!("Seite {}", "Page {}", page + 1), res)
+                } else {
+                    (name.clone(), stem.clone(), res)
+                }
+            })
+            .collect();
+        self.apply_plans(items, add);
     }
 
-    /// Fertig vorbereitete Bilddaten als Grundriss der laufenden Messung setzen
-    fn apply_plan(&mut self, name: String, res: Result<(Vec<u8>, u32, u32), String>) {
-        match res {
-            Ok((data, w, h)) => {
-                let plan = FloorPlan::new(name.clone(), data);
-                self.last_plan = Some(plan.clone());
-                if let Some(m) = self.meas.as_mut() {
-                    m.plan = Some(plan);
-                    self.plan_sel = m.points.iter().find(|p| p.pos.is_none()).map(|p| p.id);
+    /// Geladene Grundrisse übernehmen: der erste ersetzt (wenn nicht `add`) den des aktuellen
+    /// Stockwerks, alle weiteren werden als neue Stockwerke angehängt
+    fn apply_plans(&mut self, items: Vec<PlanLoad>, add: bool) {
+        let mut errors = Vec::new();
+        let mut loaded: Vec<(FloorPlan, u32, u32)> = Vec::new();
+        for (name, label, res) in items {
+            match res {
+                Ok((data, w, h)) => {
+                    let mut plan = FloorPlan::new(name, data);
+                    plan.label = label;
+                    loaded.push((plan, w, h));
                 }
-                self.survey_changed();
-                self.toast(Sev::Info, tf!("Grundriss geladen: {name} ({w} × {h} px)", "Floor plan loaded: {name} ({w} × {h} px)"));
+                Err(e) => errors.push(e),
             }
-            Err(e) => self.toast(Sev::Critical, tf!("Grundriss kann nicht geladen werden: {e}", "Cannot load floor plan: {e}")),
+        }
+        if let Some(e) = errors.first() {
+            self.toast(Sev::Critical, tf!("Grundriss kann nicht geladen werden: {e}", "Cannot load floor plan: {e}"));
+        }
+        if loaded.is_empty() {
+            return;
+        }
+        let n = loaded.len();
+        let first = (loaded[0].0.title().to_string(), loaded[0].1, loaded[0].2);
+        let Some(m) = self.meas.as_mut() else { return };
+        for (i, (plan, _, _)) in loaded.into_iter().enumerate() {
+            if i == 0 && !add && !m.plans.is_empty() {
+                let f = m.floor;
+                m.plans[f] = plan;
+            } else {
+                m.plans.push(plan);
+                if i == 0 {
+                    m.floor = m.plans.len() - 1;
+                }
+            }
+        }
+        self.plan_sel = m.points.iter().find(|p| p.pos.is_none()).map(|p| p.id);
+        self.last_plans = m.plans.clone();
+        self.plan_scale = None;
+        self.heat_tex = None;
+        self.survey_changed();
+        let (title, w, h) = first;
+        if n == 1 {
+            self.toast(Sev::Info, tf!("Grundriss geladen: {title} ({w} × {h} px)", "Floor plan loaded: {title} ({w} × {h} px)"));
+        } else {
+            self.toast(Sev::Info, tf!("{n} Stockwerke geladen", "{n} floors loaded"));
         }
     }
 
-    /// Fenster: Seite eines mehrseitigen PDFs wählen
+    /// Fenster: Seiten eines mehrseitigen PDFs wählen (jede gewählte Seite = ein Stockwerk)
     fn pdf_pick_window(&mut self, ctx: &egui::Context) {
         let Some(pick) = self.pdf_pick.as_mut() else { return };
         let mut open = true;
-        let mut chosen: Option<u32> = None;
+        let mut chosen: Option<Vec<u32>> = None;
         let screen = ctx.screen_rect();
-        egui::Window::new(RichText::new(t!("\u{E230} Seite für den Grundriss wählen", "\u{E230} Choose the floor plan page")).strong())
+        egui::Window::new(RichText::new(t!("\u{E702} Seiten für den Grundriss wählen", "\u{E702} Choose the floor plan pages")).strong())
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
@@ -227,7 +280,15 @@ impl WifiApp {
             .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 let p = pal(ui);
-                ui.label(RichText::new(tf!("{} · {} Seiten – Seite anklicken (z. B. das richtige Stockwerk), Doppelklick übernimmt", "{} · {} pages – click a page (e.g. the right floor), double-click to use it", pick.name, pick.pages)).color(p.weak));
+                ui.label(
+                    RichText::new(tf!(
+                        "{} · {} Seiten – Seiten anklicken, jede gewählte Seite wird ein Stockwerk. Doppelklick übernimmt nur diese Seite.",
+                        "{} · {} pages – click pages, each selected page becomes a floor. Double-click uses just that page.",
+                        pick.name,
+                        pick.pages
+                    ))
+                    .color(p.weak),
+                );
                 ui.add_space(6.0);
                 let max_h = (screen.height() * 0.6).max(240.0);
                 egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
@@ -238,12 +299,18 @@ impl WifiApp {
                             let scale = box_px / size[0].max(size[1]) as f32;
                             let img_size = Vec2::new(size[0] as f32 * scale, size[1] as f32 * scale);
                             let (rect, resp) = ui.allocate_exact_size(Vec2::new(box_px + 16.0, box_px + 40.0), Sense::click());
-                            let sel = pick.page == i as u32;
+                            let sel = pick.selected[i];
                             let bg = if sel { p.accent.gamma_multiply(0.18) } else if resp.hovered() { p.surface } else { Color32::TRANSPARENT };
                             ui.painter().rect(rect, 10.0, bg, Stroke::new(if sel { 2.0f32 } else { 1.0 }, if sel { p.accent } else { p.border }));
                             let img_rect = Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 8.0 + box_px / 2.0), img_size);
                             ui.painter().rect_filled(img_rect, 2.0, Color32::WHITE);
                             ui.painter().image(tex.id(), img_rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                            // Auswahl-Häkchen oben rechts
+                            let cb = Rect::from_center_size(Pos2::new(rect.right() - 18.0, rect.top() + 18.0), Vec2::splat(20.0));
+                            ui.painter().rect(cb, 5.0, if sel { p.accent } else { p.surface2 }, Stroke::new(1.0f32, if sel { p.accent } else { p.border }));
+                            if sel {
+                                ui.painter().text(cb.center(), Align2::CENTER_CENTER, "\u{E182}", FontId::proportional(14.0), Color32::WHITE);
+                            }
                             ui.painter().text(
                                 Pos2::new(rect.center().x, rect.bottom() - 16.0),
                                 Align2::CENTER_CENTER,
@@ -251,11 +318,10 @@ impl WifiApp {
                                 FontId::proportional(13.0),
                                 if sel { p.accent } else { p.text },
                             );
-                            if resp.clicked() {
-                                pick.page = i as u32;
-                            }
                             if resp.double_clicked() {
-                                chosen = Some(i as u32);
+                                chosen = Some(vec![i as u32]);
+                            } else if resp.clicked() {
+                                pick.selected[i] = !sel;
                             }
                             resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                         }
@@ -263,44 +329,136 @@ impl WifiApp {
                 });
                 ui.add_space(8.0);
                 ui.separator();
+                let sel: Vec<u32> = pick.selected.iter().enumerate().filter(|(_, s)| **s).map(|(i, _)| i as u32).collect();
                 ui.horizontal(|ui| {
+                    let all = sel.len() == pick.selected.len();
+                    if ui.button(if all { t!("Keine", "None") } else { t!("Alle Seiten", "All pages") }).clicked() {
+                        pick.selected.iter_mut().for_each(|s| *s = !all);
+                    }
                     if pick.pages as usize > pick.thumbs.len() {
-                        ui.label(RichText::new(t!("Seite:", "Page:")).color(p.weak));
+                        ui.separator();
+                        ui.label(RichText::new(t!("Seite", "Page")).color(p.weak));
                         let mut n = pick.page + 1;
                         if ui.add(egui::DragValue::new(&mut n).range(1..=pick.pages)).changed() {
                             pick.page = n - 1;
                         }
-                        ui.label(RichText::new(tf!("von {} (Vorschau nur für die ersten {})", "of {} (preview for the first {} only)", pick.pages, pick.thumbs.len())).color(p.weak));
+                        let on = pick.selected[pick.page as usize];
+                        if ui.button(if on { t!("abwählen", "deselect") } else { t!("auswählen", "select") }).clicked() {
+                            pick.selected[pick.page as usize] = !on;
+                        }
+                        ui.label(RichText::new(tf!("(Vorschau nur für die ersten {})", "(preview for the first {} only)", pick.thumbs.len())).color(p.weak));
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if primary_button(ui, &tf!("Seite {} übernehmen", "Use page {}", pick.page + 1), p.accent).clicked() {
-                            chosen = Some(pick.page);
+                        let label = match sel.as_slice() {
+                            [] => t!("Keine Seite gewählt", "No page selected").to_string(),
+                            [one] => tf!("Seite {} übernehmen", "Use page {}", one + 1),
+                            many => tf!("{} Seiten als Stockwerke übernehmen", "Use {} pages as floors", many.len()),
+                        };
+                        let resp = ui.add_enabled_ui(!sel.is_empty(), |ui| primary_button(ui, &label, p.accent)).inner;
+                        if resp.clicked() && !sel.is_empty() {
+                            chosen = Some(sel.clone());
+                        }
+                        if sel.len() > 1 {
+                            ui.label(RichText::new(sel.iter().map(|i| (i + 1).to_string()).collect::<Vec<_>>().join(", ")).color(p.weak));
                         }
                     });
                 });
             });
-        if let Some(page) = chosen {
+        if let Some(pages) = chosen {
             if let Some(pick) = self.pdf_pick.take() {
-                self.load_pdf_page(pick.path, pick.name, page, pick.pages);
+                self.load_pdf_pages(pick.path, pick.name, pages, pick.pages, pick.add);
             }
         } else if !open {
             self.pdf_pick = None;
         }
     }
 
+    /// Aktuelles Stockwerk samt Grundriss entfernen
     fn remove_plan(&mut self) {
         if let Some(m) = self.meas.as_mut() {
-            m.plan = None;
+            let f = m.floor;
+            m.remove_floor(f);
         }
         self.plan_tex = None;
         self.heat_tex = None;
+        self.plan_scale = None;
         self.survey_changed();
+    }
+
+    /// Reiter für die Stockwerke (Wechseln, Umbenennen, Hinzufügen, Entfernen)
+    fn floor_tabs(&mut self, ui: &mut Ui) {
+        let p = pal(ui);
+        let Some(m) = self.meas.as_mut() else { return };
+        let mut switch: Option<usize> = None;
+        let mut remove: Option<usize> = None;
+        let mut add = false;
+        let mut changed = false;
+        let cur = m.floor;
+        let n = m.plans.len();
+        let counts: Vec<usize> = (0..n).map(|f| m.points.iter().filter(|pt| pt.floor == f && pt.pos.is_some()).count()).collect();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(t!("\u{E466} Stockwerk", "\u{E466} Floor")).color(p.weak));
+            for (i, fp) in m.plans.iter_mut().enumerate() {
+                let sel = i == cur;
+                let label = if counts[i] > 0 { format!("{}  {}", fp.title(), counts[i]) } else { fp.title().to_string() };
+                let text = RichText::new(label).color(if sel { Color32::WHITE } else { p.text });
+                let b = egui::Button::new(text).fill(if sel { p.accent } else { p.surface2 }).stroke(Stroke::new(1.0f32, if sel { p.accent } else { p.border }));
+                let resp = ui.add(b).on_hover_text(tf!(
+                    "{}\n{} Messpunkte platziert · Rechtsklick: umbenennen / entfernen",
+                    "{}\n{} points placed · right-click: rename / remove",
+                    fp.name,
+                    counts[i]
+                ));
+                if resp.clicked() {
+                    switch = Some(i);
+                }
+                resp.context_menu(|ui| {
+                    ui.label(RichText::new(t!("Bezeichnung", "Name")).small().color(p.weak));
+                    let r = ui.add(egui::TextEdit::singleline(&mut fp.label).desired_width(180.0).hint_text(t!("z. B. EG, 1. OG", "e.g. Ground floor")));
+                    if r.changed() {
+                        changed = true;
+                    }
+                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button(t!("\u{E4A6} Stockwerk entfernen", "\u{E4A6} Remove floor")).clicked() {
+                        remove = Some(i);
+                        ui.close_menu();
+                    }
+                });
+            }
+            if ui.button(t!("+ Stockwerk", "+ Floor")).on_hover_text(t!("Weiteren Grundriss (Bild oder PDF-Seiten) als Stockwerk hinzufügen", "Add another floor plan (image or PDF pages) as a floor")).clicked() {
+                add = true;
+            }
+        });
+        if let Some(i) = switch {
+            if i != m.floor {
+                m.floor = i;
+                self.plan_scale = None;
+                self.heat_tex = None;
+            }
+        }
+        if changed {
+            self.last_plans = m.plans.clone();
+            self.survey_changed();
+        }
+        if let Some(i) = remove {
+            if let Some(m) = self.meas.as_mut() {
+                m.floor = i;
+            }
+            self.remove_plan();
+        }
+        if add {
+            self.load_plan(&ui.ctx().clone(), true);
+        }
     }
 
     /// Textur des Grundrisses (wird bei Bedarf neu erzeugt)
     pub(super) fn plan_texture(&mut self, ctx: &egui::Context) -> Option<(egui::TextureId, [usize; 2])> {
-        let plan = self.meas.as_ref()?.plan.as_ref()?;
-        let key = (plan.name.clone(), plan.data.len());
+        let m = self.meas.as_ref()?;
+        let plan = m.plan()?;
+        let key = (m.floor, plan.name.clone(), plan.data.len());
         if self.plan_tex.as_ref().map(|t| &t.key) != Some(&key) {
             let img = heatmap::decode_plan(&plan.data).ok()?;
             let size = [img.width() as usize, img.height() as usize];
@@ -315,12 +473,13 @@ impl WifiApp {
     /// Heatmap-Textur passend zu den platzierten Messpunkten
     fn heat_texture(&mut self, ctx: &egui::Context, size: [usize; 2]) -> Option<egui::TextureId> {
         let m = self.meas.as_ref()?;
-        let pts = m.heat_points(self.plan_layer);
+        let pts = m.heat_points(m.floor, self.plan_layer);
         if pts.is_empty() {
             return None;
         }
-        let width_m = m.plan.as_ref().and_then(|p| p.width_m);
+        let width_m = m.plan().and_then(|p| p.width_m);
         let mut h = DefaultHasher::new();
+        m.floor.hash(&mut h);
         width_m.map(f32::to_bits).hash(&mut h);
         heatmap::scale_to_string(&heatmap::scale()).hash(&mut h);
         for (p, v) in &pts {
@@ -347,8 +506,11 @@ impl WifiApp {
     pub(super) fn plan_view(&mut self, ui: &mut Ui, height: f32) {
         let p = pal(ui);
         self.pdf_pick_window(&ui.ctx().clone());
+        if self.meas.as_ref().is_some_and(|m| !m.plans.is_empty()) {
+            self.floor_tabs(ui);
+        }
         let Some(m) = &self.meas else { return };
-        if m.plan.is_none() {
+        if m.plans.is_empty() {
             let rect = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover()).0;
             ui.painter().rect(rect, 12.0, p.surface, Stroke::new(1.0f32, p.border));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(20.0)).layout(egui::Layout::top_down(egui::Align::Center)));
@@ -357,14 +519,14 @@ impl WifiApp {
             child.label(RichText::new(t!("Noch kein Grundriss", "No floor plan yet")).size(18.0).strong().color(p.text));
             child.label(
                 RichText::new(t!(
-                    "Plan als Bild oder PDF laden (PNG, JPG, Foto vom Fluchtplan oder PDF – bei mehreren Seiten wählst du die richtige aus). Danach die Messpunkte per Klick platzieren – die App färbt die Ausleuchtung ein.",
-                    "Load a plan as image or PDF (PNG, JPG, a photo of the evacuation plan or PDF – with several pages you pick the right one). Then place the points by clicking – the app colours the coverage."
+                    "Plan als Bild oder PDF laden (PNG, JPG, Foto vom Fluchtplan oder PDF). Bei mehreren Seiten wird jede gewählte Seite ein Stockwerk; weitere Stockwerke lassen sich jederzeit hinzufügen. Danach die Messpunkte per Klick platzieren – die App färbt die Ausleuchtung ein.",
+                    "Load a plan as image or PDF (PNG, JPG, a photo of the evacuation plan or PDF). With several pages each selected page becomes a floor; more floors can be added at any time. Then place the points by clicking – the app colours the coverage."
                 ))
                 .color(p.weak),
             );
             child.add_space(10.0);
             if primary_button(&mut child, t!("\u{E31A} Grundriss laden", "\u{E31A} Load floor plan"), p.accent).clicked() {
-                self.load_plan(&ui.ctx().clone());
+                self.load_plan(&ui.ctx().clone(), true);
             }
             return;
         }
@@ -372,8 +534,8 @@ impl WifiApp {
         // Werkzeugleiste
         let unplaced = m.points.iter().filter(|pt| pt.pos.is_none()).count();
         let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id)).map(|i| i + 1);
-        let with_data = m.layers_with_data();
-        let (width_m, plan_px) = (m.plan.as_ref().and_then(|p| p.width_m), self.plan_tex.as_ref().map(|t| t.size));
+        let with_data = m.layers_with_data(m.floor);
+        let (width_m, plan_px) = (m.plan().and_then(|p| p.width_m), self.plan_tex.as_ref().map(|t| t.size));
         let (mut change, mut remove, mut start_scale) = (false, false, false);
         let mut heat = self.plan_heat;
         let mut layer = self.plan_layer;
@@ -399,7 +561,7 @@ impl WifiApp {
             if ui.button(t!("\u{E31A} Anderer Grundriss …", "\u{E31A} Other floor plan …")).clicked() {
                 change = true;
             }
-            if ui.button(t!("Entfernen", "Remove")).on_hover_text(t!("Grundriss aus dieser Messung entfernen", "Remove the floor plan from this survey")).clicked() {
+            if ui.button(t!("Entfernen", "Remove")).on_hover_text(t!("Dieses Stockwerk (Grundriss) aus der Messung entfernen – die Messpunkte bleiben, verlieren aber ihre Position", "Remove this floor (plan) from the survey – the points stay but lose their position")).clicked() {
                 remove = true;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| legend(ui));
@@ -470,11 +632,13 @@ impl WifiApp {
                     let len_px = (((b[0] - a[0]) * size[0] as f32).powi(2) + ((b[1] - a[1]) * size[1] as f32).powi(2)).sqrt();
                     if len_px > 2.0 {
                         let wm = meters * size[0] as f32 / len_px;
-                        if let Some(pl) = self.meas.as_mut().and_then(|m| m.plan.as_mut()) {
-                            pl.width_m = Some(wm);
-                            pl.scale_line = Some([a, b]);
-                            pl.scale_len_m = Some(meters);
-                            self.last_plan = Some(pl.clone());
+                        if let Some(m) = self.meas.as_mut() {
+                            if let Some(pl) = m.plan_mut() {
+                                pl.width_m = Some(wm);
+                                pl.scale_line = Some([a, b]);
+                                pl.scale_len_m = Some(meters);
+                            }
+                            self.last_plans = m.plans.clone();
                         }
                         self.heat_tex = None;
                         self.survey_changed();
@@ -486,7 +650,7 @@ impl WifiApp {
         self.plan_heat = heat;
         self.scale_editor_window(ui.ctx());
         if change {
-            self.load_plan(&ui.ctx().clone());
+            self.load_plan(&ui.ctx().clone(), false);
         }
         if remove {
             self.remove_plan();
@@ -515,10 +679,12 @@ impl WifiApp {
             .points
             .iter()
             .enumerate()
+            .filter(|(_, pt)| pt.floor == m.floor)
             .filter_map(|(i, pt)| pt.pos.map(|pos| (pt.id, i + 1, to_screen(img, pos), pt.value_for(self.plan_layer), pt.name.clone())))
             .collect();
-        let heat_pts = m.heat_points(self.plan_layer);
-        let plan_m = m.plan.as_ref().map(|pl| (pl.width_m, pl.scale_line)).unwrap_or((None, None));
+        let floor = m.floor;
+        let heat_pts = m.heat_points(floor, self.plan_layer);
+        let plan_m = m.plan().map(|pl| (pl.width_m, pl.scale_line)).unwrap_or((None, None));
         let scaling = self.plan_scale.is_some();
         let next_ids: Vec<u64> = m.points.iter().filter(|pt| pt.pos.is_none()).map(|pt| pt.id).collect();
         let running = m.running;
@@ -635,6 +801,7 @@ impl WifiApp {
         if let Some((id, pos)) = set_pos {
             if let Some(pt) = self.meas.as_mut().and_then(|m| m.point_mut(id)) {
                 pt.pos = Some(pos);
+                pt.floor = floor;
             }
         }
         if let Some(pos) = click_measure {
@@ -727,14 +894,14 @@ impl WifiApp {
             crate::widgets::card(ui, Some(t!("So funktioniert die Grundriss-Messung", "How the floor plan survey works")), |ui| {
                 ui.set_max_width(700.0);
                 ui.label(t!("1.  SSID wählen und „Messung starten“", "1.  Choose the SSID and click \"Start survey\""));
-                ui.label(t!("2.  Grundriss laden – Bild oder Foto vom Fluchtplan (PNG/JPG)", "2.  Load the floor plan – image or photo of the evacuation plan (PNG/JPG)"));
+                ui.label(t!("2.  Grundriss laden – Bild, Foto vom Fluchtplan oder PDF; mehrere Stockwerke möglich", "2.  Load the floor plan – image, photo of the evacuation plan or PDF; several floors possible"));
                 ui.label(t!("3.  Durchs Gebäude gehen und an deiner Position in den Plan klicken – Raum eingeben (optional), Enter", "3.  Walk the building and click your position on the plan – enter the room (optional), Enter"));
                 ui.label(t!("4.  Die Heatmap zeigt die Ausleuchtung; Export als PDF-Bericht mit Grundriss", "4.  The heatmap shows the coverage; export as PDF report with the floor plan"));
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(t!(
-                        "Tipp: Der zuletzt verwendete Grundriss wird für die nächste Grundriss-Messung übernommen.",
-                        "Tip: the floor plan used last is reused for the next floor plan survey."
+                        "Tipp: Die zuletzt verwendeten Grundrisse (alle Stockwerke) werden für die nächste Grundriss-Messung übernommen.",
+                        "Tip: the floor plans used last (all floors) are reused for the next floor plan survey."
                     ))
                     .size(12.0)
                     .color(p.weak),
