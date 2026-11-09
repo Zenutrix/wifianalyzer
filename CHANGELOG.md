@@ -42,7 +42,8 @@ Erste öffentliche Version.
 - Die portable `WiFiAnalyzer.exe` gibt es weiterhin.
 
 ### Grundriss-Messung (neu)
-- Eigene Seite **Grundriss-Messung**, getrennt von der normalen Messung (Rundgang): Grundriss laden (PNG/JPG), an der eigenen Position in den Plan klicken – dort wird gemessen.
+- Eigene Seite **Grundriss-Messung**, getrennt von der normalen Messung (Rundgang): Grundriss laden (PNG/JPG oder PDF), an der eigenen Position in den Plan klicken – dort wird gemessen.
+- **PDF-Pläne**: Bei mehrseitigen PDFs erscheint eine Seitenauswahl mit Vorschaubildern (z. B. für das richtige Stockwerk). Gerendert wird mit dem in Windows eingebauten PDF-Renderer, ohne zusätzliche Bibliothek.
 - **Heatmap** der Ausleuchtung zwischen den Messpunkten; Punkte lassen sich verschieben, schwache Stellen sind sofort sichtbar.
 - Der Grundriss wird in der Messungsdatei gespeichert und für die nächste Grundriss-Messung übernommen.
 - Gespeicherte Messungen erscheinen jeweils bei ihrer Messart.

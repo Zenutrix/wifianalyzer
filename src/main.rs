@@ -12,6 +12,7 @@ mod heatmap;
 mod measure;
 mod nettest;
 mod pdf;
+mod pdfimport;
 mod model;
 mod oui;
 mod perm;

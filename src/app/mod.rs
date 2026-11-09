@@ -237,6 +237,8 @@ pub struct WifiApp {
     /// Maßstab wird gerade gesetzt
     plan_scale: Option<plan::ScaleDraft>,
     show_scale_editor: bool,
+    /// Seitenauswahl beim Laden eines mehrseitigen PDF-Grundrisses
+    pdf_pick: Option<plan::PdfPick>,
     /// zuletzt verwendeter Grundriss (für die nächste Grundriss-Messung)
     last_plan: Option<crate::measure::FloorPlan>,
     meas_follow: bool,
@@ -327,6 +329,7 @@ impl WifiApp {
             plan_layer: crate::measure::Layer::Measured,
             plan_scale: None,
             show_scale_editor: false,
+            pdf_pick: None,
             last_plan: None,
             meas_follow: false,
             splash_done: false,
@@ -967,10 +970,11 @@ impl WifiApp {
             }
         }
         if esc {
-            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.meas_point.is_some() || self.plan_scale.is_some() || self.show_scale_editor {
+            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.meas_point.is_some() || self.plan_scale.is_some() || self.show_scale_editor || self.pdf_pick.is_some() {
                 self.meas_point = None;
                 self.plan_scale = None;
                 self.show_scale_editor = false;
+                self.pdf_pick = None;
                 self.show_settings = false;
                 self.show_about = false;
                 self.show_update = false;

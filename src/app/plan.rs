@@ -1,6 +1,6 @@
 //! Grundriss mit Heatmap und Netzwerktests (Latenz/Durchsatz) pro Messpunkt.
 //!
-//! - Grundriss laden (PNG/JPEG), Messpunkte per Klick platzieren oder verschieben
+//! - Grundriss laden (PNG/JPEG oder eine Seite aus einem PDF), Messpunkte per Klick platzieren oder verschieben
 //! - Heatmap der Ausleuchtung (IDW-Interpolation, siehe `crate::heatmap`)
 //! - Netzwerktest startet beim Öffnen des Messpunkt-Dialogs im Hintergrund und wird dem
 //!   Messpunkt zugeordnet, sobald er fertig ist
@@ -32,6 +32,15 @@ pub(crate) struct ScaleDraft {
     a: Option<[f32; 2]>,
     b: Option<[f32; 2]>,
     meters: String,
+}
+
+/// Seitenauswahl für einen mehrseitigen PDF-Grundriss
+pub(crate) struct PdfPick {
+    path: std::path::PathBuf,
+    name: String,
+    pages: u32,
+    thumbs: Vec<(TextureHandle, [usize; 2])>,
+    page: u32,
 }
 
 /// Grundriss-Textur (Schlüssel: Name + Größe der Bilddaten)
@@ -138,20 +147,59 @@ impl WifiApp {
 
     // ---------------------------------------------------------------- Grundriss laden
 
-    pub(super) fn load_plan(&mut self) {
+    pub(super) fn load_plan(&mut self, ctx: &egui::Context) {
         if self.meas.is_none() {
             return;
         }
         let Some(path) = rfd::FileDialog::new()
-            .add_filter(t!("Bilder (Grundriss)", "Images (floor plan)"), &["png", "jpg", "jpeg", "bmp"])
+            .add_filter(t!("Grundriss (Bild oder PDF)", "Floor plan (image or PDF)"), &["png", "jpg", "jpeg", "bmp", "pdf"])
+            .add_filter("PDF", &["pdf"])
+            .add_filter(t!("Bilder", "Images"), &["png", "jpg", "jpeg", "bmp"])
             .pick_file()
         else {
             return;
         };
+        let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "plan".into());
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
+            self.open_pdf_plan(ctx, path, name);
+            return;
+        }
         let res = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| heatmap::prepare_plan(&b));
+        self.apply_plan(name, res);
+    }
+
+    /// PDF: einseitig direkt übernehmen, sonst Seitenauswahl mit Vorschaubildern
+    fn open_pdf_plan(&mut self, ctx: &egui::Context, path: std::path::PathBuf, name: String) {
+        match crate::pdfimport::thumbnails(path.clone(), 360) {
+            Ok((0, _)) => self.toast(Sev::Critical, t!("Das PDF enthält keine Seiten", "The PDF has no pages").into()),
+            Ok((1, _)) => self.load_pdf_page(path, name, 0, 1),
+            Ok((pages, imgs)) => {
+                let thumbs = imgs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, img)| {
+                        let size = [img.width() as usize, img.height() as usize];
+                        let color = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+                        (ctx.load_texture(format!("pdf_thumb_{i}"), color, TextureOptions::LINEAR), size)
+                    })
+                    .collect();
+                self.pdf_pick = Some(PdfPick { path, name, pages, thumbs, page: 0 });
+            }
+            Err(e) => self.toast(Sev::Critical, tf!("PDF kann nicht geladen werden: {e}", "Cannot load PDF: {e}")),
+        }
+    }
+
+    /// Eine PDF-Seite in voller Auflösung rendern und als Grundriss übernehmen
+    fn load_pdf_page(&mut self, path: std::path::PathBuf, name: String, page: u32, pages: u32) {
+        let res = crate::pdfimport::render_page(path, page, 2400).and_then(|png| heatmap::prepare_plan(&png));
+        let name = if pages > 1 { tf!("{name} – Seite {}", "{name} – page {}", page + 1) } else { name };
+        self.apply_plan(name, res);
+    }
+
+    /// Fertig vorbereitete Bilddaten als Grundriss der laufenden Messung setzen
+    fn apply_plan(&mut self, name: String, res: Result<(Vec<u8>, u32, u32), String>) {
         match res {
             Ok((data, w, h)) => {
-                let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "plan".into());
                 let plan = FloorPlan::new(name.clone(), data);
                 self.last_plan = Some(plan.clone());
                 if let Some(m) = self.meas.as_mut() {
@@ -161,7 +209,82 @@ impl WifiApp {
                 self.survey_changed();
                 self.toast(Sev::Info, tf!("Grundriss geladen: {name} ({w} × {h} px)", "Floor plan loaded: {name} ({w} × {h} px)"));
             }
-            Err(e) => self.toast(Sev::Critical, tf!("Bild kann nicht geladen werden: {e}", "Cannot load image: {e}")),
+            Err(e) => self.toast(Sev::Critical, tf!("Grundriss kann nicht geladen werden: {e}", "Cannot load floor plan: {e}")),
+        }
+    }
+
+    /// Fenster: Seite eines mehrseitigen PDFs wählen
+    fn pdf_pick_window(&mut self, ctx: &egui::Context) {
+        let Some(pick) = self.pdf_pick.as_mut() else { return };
+        let mut open = true;
+        let mut chosen: Option<u32> = None;
+        let screen = ctx.screen_rect();
+        egui::Window::new(RichText::new(t!("\u{E230} Seite für den Grundriss wählen", "\u{E230} Choose the floor plan page")).strong())
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([screen.width().min(1300.0) * 0.8, screen.height() * 0.7])
+            .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                let p = pal(ui);
+                ui.label(RichText::new(tf!("{} · {} Seiten – Seite anklicken (z. B. das richtige Stockwerk), Doppelklick übernimmt", "{} · {} pages – click a page (e.g. the right floor), double-click to use it", pick.name, pick.pages)).color(p.weak));
+                ui.add_space(6.0);
+                let max_h = (screen.height() * 0.6).max(240.0);
+                egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(14.0, 14.0);
+                        for (i, (tex, size)) in pick.thumbs.iter().enumerate() {
+                            let box_px = 200.0;
+                            let scale = box_px / size[0].max(size[1]) as f32;
+                            let img_size = Vec2::new(size[0] as f32 * scale, size[1] as f32 * scale);
+                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(box_px + 16.0, box_px + 40.0), Sense::click());
+                            let sel = pick.page == i as u32;
+                            let bg = if sel { p.accent.gamma_multiply(0.18) } else if resp.hovered() { p.surface } else { Color32::TRANSPARENT };
+                            ui.painter().rect(rect, 10.0, bg, Stroke::new(if sel { 2.0f32 } else { 1.0 }, if sel { p.accent } else { p.border }));
+                            let img_rect = Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 8.0 + box_px / 2.0), img_size);
+                            ui.painter().rect_filled(img_rect, 2.0, Color32::WHITE);
+                            ui.painter().image(tex.id(), img_rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                            ui.painter().text(
+                                Pos2::new(rect.center().x, rect.bottom() - 16.0),
+                                Align2::CENTER_CENTER,
+                                tf!("Seite {}", "Page {}", i + 1),
+                                FontId::proportional(13.0),
+                                if sel { p.accent } else { p.text },
+                            );
+                            if resp.clicked() {
+                                pick.page = i as u32;
+                            }
+                            if resp.double_clicked() {
+                                chosen = Some(i as u32);
+                            }
+                            resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if pick.pages as usize > pick.thumbs.len() {
+                        ui.label(RichText::new(t!("Seite:", "Page:")).color(p.weak));
+                        let mut n = pick.page + 1;
+                        if ui.add(egui::DragValue::new(&mut n).range(1..=pick.pages)).changed() {
+                            pick.page = n - 1;
+                        }
+                        ui.label(RichText::new(tf!("von {} (Vorschau nur für die ersten {})", "of {} (preview for the first {} only)", pick.pages, pick.thumbs.len())).color(p.weak));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if primary_button(ui, &tf!("Seite {} übernehmen", "Use page {}", pick.page + 1), p.accent).clicked() {
+                            chosen = Some(pick.page);
+                        }
+                    });
+                });
+            });
+        if let Some(page) = chosen {
+            if let Some(pick) = self.pdf_pick.take() {
+                self.load_pdf_page(pick.path, pick.name, page, pick.pages);
+            }
+        } else if !open {
+            self.pdf_pick = None;
         }
     }
 
@@ -223,6 +346,7 @@ impl WifiApp {
 
     pub(super) fn plan_view(&mut self, ui: &mut Ui, height: f32) {
         let p = pal(ui);
+        self.pdf_pick_window(&ui.ctx().clone());
         let Some(m) = &self.meas else { return };
         if m.plan.is_none() {
             let rect = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover()).0;
@@ -233,14 +357,14 @@ impl WifiApp {
             child.label(RichText::new(t!("Noch kein Grundriss", "No floor plan yet")).size(18.0).strong().color(p.text));
             child.label(
                 RichText::new(t!(
-                    "Plan als Bild laden (PNG oder JPG, z. B. Foto vom Fluchtplan). Danach die Messpunkte per Klick platzieren – die App färbt die Ausleuchtung ein.",
-                    "Load a plan image (PNG or JPG, e.g. a photo of the evacuation plan). Then place the points by clicking – the app colours the coverage."
+                    "Plan als Bild oder PDF laden (PNG, JPG, Foto vom Fluchtplan oder PDF – bei mehreren Seiten wählst du die richtige aus). Danach die Messpunkte per Klick platzieren – die App färbt die Ausleuchtung ein.",
+                    "Load a plan as image or PDF (PNG, JPG, a photo of the evacuation plan or PDF – with several pages you pick the right one). Then place the points by clicking – the app colours the coverage."
                 ))
                 .color(p.weak),
             );
             child.add_space(10.0);
             if primary_button(&mut child, t!("\u{E31A} Grundriss laden", "\u{E31A} Load floor plan"), p.accent).clicked() {
-                self.load_plan();
+                self.load_plan(&ui.ctx().clone());
             }
             return;
         }
@@ -362,7 +486,7 @@ impl WifiApp {
         self.plan_heat = heat;
         self.scale_editor_window(ui.ctx());
         if change {
-            self.load_plan();
+            self.load_plan(&ui.ctx().clone());
         }
         if remove {
             self.remove_plan();
