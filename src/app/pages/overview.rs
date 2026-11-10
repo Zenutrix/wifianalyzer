@@ -23,6 +23,22 @@ fn ranked<K: Ord + Clone>(items: impl Iterator<Item = K>) -> Vec<(K, usize)> {
     v
 }
 
+/// Kartenkopf mit Titel links und Link rechts („Alle anzeigen »“); true = Link geklickt
+fn card_head(ui: &mut Ui, title: &str, link: Option<&str>) -> bool {
+    let p = pal(ui);
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(title).family(crate::theme::semibold()).size(14.5).color(p.text));
+        if let Some(l) = link {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                clicked = ui.link(RichText::new(l).size(12.5)).clicked();
+            });
+        }
+    });
+    ui.add_space(6.0);
+    clicked
+}
+
 /// Gleich hohe Karten in einer Reihe
 const ROW_H: f32 = 236.0;
 /// erste Reihe: Platz für die Verbindungsdetails, damit alle drei Karten gleich hoch sind
@@ -75,9 +91,9 @@ impl WifiApp {
                 ("\u{E150}", t!("Netzwerke", "Networks"), ssids.len().to_string(), tf!("+ {hidden} versteckte APs", "+ {hidden} hidden APs"), p.accent),
                 ("\u{E4EA}", "Access Points", vis.len().to_string(), bands, p.purple),
                 ("\u{E2E2}", t!("Verbindung", "Connection"), val, csub, col),
-                ("\u{E4E0}", t!("Befunde", "Findings"), fv, tf!("{crit} kritisch · {warn} Warnungen", "{crit} critical · {warn} warnings"), fc),
-                ("\u{E67E}", t!("Empfehlung 2,4 GHz", "Best 2.4 GHz"), ch(best24), t!("aus 1 / 6 / 11", "of 1 / 6 / 11").into(), p.success),
-                ("\u{E67E}", t!("Empfehlung 5 GHz", "Best 5 GHz"), ch(best5), t!("ohne DFS", "non-DFS").into(), p.success),
+                ("\u{E4E0}", t!("Befunde", "Findings"), fv, tf!("{crit} kritisch · {warn} Warn.", "{crit} critical · {warn} warn."), fc),
+                ("\u{E67E}", t!("2,4 GHz", "2.4 GHz"), ch(best24), t!("empfohlen (1/6/11)", "best of 1/6/11").into(), p.success),
+                ("\u{E67E}", "5 GHz", ch(best5), t!("empfohlen, ohne DFS", "best, non-DFS").into(), p.success),
             ];
             // eine Kachel braucht ca. 175 px, sonst werden Werte abgeschnitten; Raster 6 / 3 / 2
             let fit = ((avail + 10.0) / 185.0).floor() as usize;
@@ -205,12 +221,15 @@ impl WifiApp {
 
             // ---------- Stärkste Netze · Befunde ----------
             let two = avail >= 900.0;
+            let mut go_networks = false;
             let mut strongest = |ui: &mut Ui, h: f32| {
-                card_full(ui, Some(t!("Stärkste Netze", "Strongest networks")), h, |ui| {
+                card_full(ui, None, h, |ui| {
+                    let link = (ssids.len() > 5).then(|| tf!("Alle {} Netze »", "All {} networks »", ssids.len()));
+                    go_networks = card_head(ui, t!("Stärkste Netze", "Strongest networks"), link.as_deref());
                     if ssids.is_empty() {
                         ui.label(RichText::new(t!("Noch keine Netze gefunden", "No networks found yet")).color(p.weak));
                     }
-                    for (s, _) in ssids.iter().take(6) {
+                    for (s, _) in ssids.iter().take(5) {
                         let Some(best) = self.best_ap_of(s) else { continue };
                         let n = vis.iter().filter(|r| r.info.ssid == *s && !r.info.hidden).count();
                         let resp = ui
@@ -240,7 +259,9 @@ impl WifiApp {
             };
             let mut go_findings = false;
             let mut top_findings = |ui: &mut Ui, h: f32| {
-                card_full(ui, Some(t!("Wichtigste Befunde", "Top findings")), h, |ui| {
+                card_full(ui, None, h, |ui| {
+                    let link = (!findings.is_empty()).then(|| tf!("Alle {} Befunde »", "All {} findings »", findings.len()));
+                    go_findings = card_head(ui, t!("Wichtigste Befunde", "Top findings"), link.as_deref());
                     if findings.is_empty() {
                         ui.add_space(30.0);
                         ui.vertical_centered(|ui| {
@@ -248,7 +269,7 @@ impl WifiApp {
                             ui.label(RichText::new(t!("Keine Auffälligkeiten", "Nothing unusual")).color(p.text));
                         });
                     }
-                    for f in findings.iter().take(6) {
+                    for f in findings.iter().take(5) {
                         let col = match f.sev {
                             Sev::Critical => p.danger,
                             Sev::Warning => p.warning,
@@ -261,12 +282,6 @@ impl WifiApp {
                                 ui.label(RichText::new(f.category).size(11.5).color(p.weak));
                             });
                         });
-                    }
-                    if !findings.is_empty() {
-                        ui.add_space(4.0);
-                        if ui.link(tf!("Alle {} Befunde mit Empfehlungen anzeigen »", "Show all {} findings with recommendations »", findings.len())).clicked() {
-                            go_findings = true;
-                        }
                     }
                 });
             };
@@ -282,6 +297,9 @@ impl WifiApp {
             }
             if go_findings {
                 go = Some(Page::Findings);
+            }
+            if go_networks {
+                go = Some(Page::Networks);
             }
             ui.add_space(12.0);
 

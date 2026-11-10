@@ -518,6 +518,7 @@ impl WifiApp {
             });
 
         if save {
+            self.push_undo(t!("Messpunkt erfasst", "Point added"));
             let scan = self.survey_scan_ctx(&ssid);
             let has_plan = self.meas.as_ref().is_some_and(|m| !m.plans.is_empty());
             let res = self.meas.as_mut().map(|m| {
@@ -709,6 +710,9 @@ impl WifiApp {
                     self.plan_scale = None;
                 }
             }
+        }
+        if remove.is_some() {
+            self.push_undo(t!("Messpunkt gelöscht", "Point deleted"));
         }
         let Some(m) = self.meas.as_mut() else { return };
         if let Some(i) = remove {

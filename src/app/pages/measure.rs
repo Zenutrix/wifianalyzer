@@ -1,7 +1,7 @@
 //! Messung (Walk-Survey): Live-Anzeige, Kennzahlen, Verlauf mit Roams/Markierungen, Ereignisliste.
 
 use eframe::egui::{self, Align2, Color32, RichText, Ui};
-use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Points, Text, VLine};
+use egui_plot::{HLine, Line, LineStyle, Plot, PlotPoint, PlotPoints, Points, Text, VLine};
 
 use crate::app::WifiApp;
 use crate::measure::EventKind;
@@ -132,6 +132,8 @@ impl WifiApp {
         }
 
         // Messpunkte
+        let undo_label = if draft { None } else { self.undo_label() };
+        let mut undo = false;
         ui.horizontal(|ui| {
             let btn = egui::Button::new(RichText::new(t!("\u{E316} Messpunkt erfassen", "\u{E316} Add measurement point")).strong().color(if running { Color32::WHITE } else { p.weak }))
                 .fill(if running { p.purple } else { p.surface2 })
@@ -160,6 +162,12 @@ impl WifiApp {
                 "Pro Messpunkt: Download/Upload über das Internet (speed.cloudflare.com), ca. 12 s und bis zu 70 MB – nur mit Verbindung zur gemessenen SSID",
                 "Per point: download/upload via the internet (speed.cloudflare.com), approx. 12 s and up to 70 MB – only when connected to the surveyed SSID"
             ));
+            if let Some(what) = undo_label.as_deref() {
+                ui.separator();
+                if ui.button(t!("\u{E08A} Rückgängig", "\u{E08A} Undo")).on_hover_text(tf!("Strg+Z: {what}", "Ctrl+Z: {what}")).clicked() {
+                    undo = true;
+                }
+            }
             if let Some(f) = &self.meas_file {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let name = f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
@@ -176,6 +184,9 @@ impl WifiApp {
                 });
             }
         });
+        if undo {
+            self.undo_points();
+        }
         self.meas_follow = follow;
         self.settings.point_ping = ping_on;
         self.settings.point_speed = speed_on;
@@ -253,8 +264,8 @@ impl WifiApp {
         } else {
         ui.horizontal(|ui| {
             card(ui, None, |ui| {
-                ui.set_width(300.0);
-                ui.vertical_centered(|ui| signal_gauge(ui, live_rssi, false, 0.75));
+                ui.set_width(270.0);
+                ui.vertical_centered(|ui| signal_gauge(ui, live_rssi, false, 0.58));
                 match conn_here {
                     Some(c) => {
                         let ap = self.aps.get(&c.bssid);
@@ -307,7 +318,7 @@ impl WifiApp {
                             let state = if m.running { t!("läuft", "running") } else { t!("beendet", "stopped") };
                             kpi(ui, &tf!("Dauer ({state})", "Duration ({state})"), &fmt_mmss(s.duration), "", if m.running { p.success } else { p.text }, w);
                             let src = if s.from_scan { t!("aus dem Scan", "from scan") } else { "" };
-                            kpi(ui, t!("Ø Signal", "Avg signal"), &s.avg.map(|v| format!("{v:.1} dBm")).unwrap_or("–".into()), src, s.avg.map(|v| signal_color(v as i32)).unwrap_or(p.text), w);
+                            kpi(ui, t!("Ø Signal", "Avg signal"), &s.avg.map(|v| format!("{v:.0} dBm")).unwrap_or("–".into()), src, s.avg.map(|v| signal_color(v as i32)).unwrap_or(p.text), w);
                             let mm = match (s.min, s.max) {
                                 (Some(a), Some(b)) => format!("{a} / {b}"),
                                 _ => "–".into(),
@@ -360,34 +371,49 @@ impl WifiApp {
         }
         ui.add_space(6.0);
         if plan_mode {
+            let draft = self.meas.as_ref().is_some_and(|m| m.draft);
+            if draft {
+                self.plan_view(ui, ui.available_height() - 8.0);
+                return;
+            }
+            let avail_w = ui.available_width();
+            if !self.plan_full_table && avail_w >= 900.0 {
+                // breiter Bildschirm: kompakte Messpunkt-Liste rechts neben dem Plan
+                let h = ui.available_height() - 4.0;
+                let list_w = 280.0;
+                ui.horizontal_top(|ui| {
+                    ui.allocate_ui_with_layout(egui::Vec2::new(avail_w - list_w - 14.0, h), egui::Layout::top_down(egui::Align::Min), |ui| {
+                        self.plan_view(ui, h);
+                    });
+                    ui.allocate_ui_with_layout(egui::Vec2::new(list_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.set_min_size(egui::Vec2::new(list_w, h));
+                        self.plan_points_list(ui);
+                    });
+                });
+                return;
+            }
             // Tabelle darunter soll mindestens ~4 Zeilen zeigen
             let avail = ui.available_height();
             let h = (avail - 190.0).clamp(240.0, (avail * 0.70).max(240.0));
-            let draft = self.meas.as_ref().is_some_and(|m| m.draft);
-            self.plan_view(ui, if draft { ui.available_height() - 8.0 } else { h });
-            if draft {
-                return;
-            }
+            self.plan_view(ui, h);
         } else {
             self.meas_chart(ui);
         }
 
-        // ---------- Messpunkte | Ereignisse ----------
+        // ---------- Messpunkte | Ereignisse (Reiter) ----------
         ui.add_space(6.0);
-        let h = ui.available_height();
-        let w = ui.available_width();
-        let left_w = (w * 0.62).max(420.0).min(w - 260.0);
-        ui.horizontal_top(|ui| {
-            ui.allocate_ui_with_layout(egui::Vec2::new(left_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.set_min_size(egui::Vec2::new(left_w, h));
-                self.points_table(ui);
-            });
-            ui.separator();
-            ui.vertical(|ui| {
-                ui.set_min_height(h);
-                self.survey_events(ui);
-            });
-        });
+        let (n_pts, n_ev) = self.meas.as_ref().map(|m| (m.points.len(), m.events.iter().filter(|e| !matches!(e.kind, EventKind::Start | EventKind::Stop)).count())).unwrap_or_default();
+        let mut show_events = self.meas_show_events;
+        let pts_label = tf!("\u{E316} Messpunkte ({n_pts})", "\u{E316} Points ({n_pts})");
+        let ev_label = tf!("\u{E1A0} Ereignisse ({n_ev})", "\u{E1A0} Events ({n_ev})");
+        crate::widgets::segmented(ui, &mut show_events, &[(false, pts_label.as_str()), (true, ev_label.as_str())]);
+        self.meas_show_events = show_events;
+        ui.add_space(4.0);
+        if show_events {
+            self.survey_events(ui);
+        } else {
+            self.points_table(ui);
+        }
     }
 
     /// Signalverlauf der Messung (Diagramm mit Roams, Messpunkten, Live-Kopf)
@@ -458,7 +484,7 @@ impl WifiApp {
             .filter(|e| in_view(e.t))
             .filter_map(|e| {
                 let (label, col) = match &e.kind {
-                    EventKind::Roam { to, .. } => (format!("Roam > {}", &fmt_mac(to)[9..]), p.accent),
+                    EventKind::Roam { to, .. } => (format!("\u{E0A0} {}", &fmt_mac(to)[12..]), p.accent),
                     EventKind::Disconnect { .. } => (t!("Abbruch", "Disconnect").to_string(), p.danger),
                     EventKind::Connect { .. } => (t!("Verbunden", "Connected").to_string(), p.success),
                     EventKind::Sticky { .. } => ("Sticky".to_string(), p.warning),
@@ -474,11 +500,72 @@ impl WifiApp {
             (Some(_), Some(c)) => ap_color(&c.bssid),
             _ => p.accent,
         };
-        let plot_h = (ui.available_height() * 0.5).max(240.0);
+        // Legende über dem Diagramm statt darin (verdeckt sonst Linien)
+        let best_name = t!("Bester AP der SSID (Scan)", "Best AP of the SSID (scan)");
+        let mut legend: Vec<(String, Color32, bool)> = Vec::new();
+        if !best_pts.is_empty() {
+            legend.push((best_name.to_string(), if no_conn { p.accent } else { p.weak }, !no_conn));
+        }
+        let seg_name = |bssid: &[u8; 6], ch: u32| {
+            let v = vendor_of(bssid);
+            let name = tf!("AP {} · Kanal {ch}", "AP {} · channel {ch}", &fmt_mac(bssid)[9..]);
+            if v.is_empty() {
+                name
+            } else {
+                format!("{name} · {v}")
+            }
+        };
+        for (bssid, ch, _) in &segments {
+            let n = seg_name(bssid, *ch);
+            if !legend.iter().any(|l| l.0 == n) {
+                legend.push((n, ap_color(bssid), false));
+            }
+        }
+        if !legend.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                for (name, col, dashed) in &legend {
+                    let (r, _) = ui.allocate_exact_size(egui::Vec2::new(18.0, 12.0), egui::Sense::hover());
+                    let y = r.center().y;
+                    if *dashed {
+                        for k in 0..3 {
+                            let x = r.min.x + k as f32 * 6.5;
+                            ui.painter().line_segment([egui::pos2(x, y), egui::pos2(x + 4.0, y)], egui::Stroke::new(1.5f32, *col));
+                        }
+                    } else {
+                        ui.painter().line_segment([egui::pos2(r.min.x, y), egui::pos2(r.max.x, y)], egui::Stroke::new(3.0f32, *col));
+                    }
+                    ui.label(RichText::new(name).small().color(p.text));
+                    ui.add_space(10.0);
+                }
+            });
+        }
+        let avail_h = ui.available_height();
+        // unten sollen noch einige Messpunkt-Zeilen sichtbar bleiben
+        let plot_h = (avail_h - 210.0).min(avail_h * 0.55).max(180.0);
+        // Ereignis-Beschriftungen in Zeilen staffeln, damit sie sich nicht überlappen
+        let plot_w = (ui.available_width() - 70.0).max(200.0) as f64;
+        let secs_per_px = (x1 - x0).max(1.0) / plot_w;
+        let dbm_per_px = 80.0 / plot_h as f64;
+        let mut row_end: Vec<f64> = Vec::new();
+        let label_y: Vec<f64> = events
+            .iter()
+            .map(|(t, label, _)| {
+                let w = (label.chars().count() as f64 * 6.6 + 12.0) * secs_per_px;
+                let row = match row_end.iter().position(|e| *e <= *t) {
+                    Some(r) => r,
+                    None if row_end.len() < 4 => {
+                        row_end.push(f64::MIN);
+                        row_end.len() - 1
+                    }
+                    None => row_end.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i).unwrap_or(0),
+                };
+                row_end[row] = t + w;
+                -21.0 - row as f64 * 15.0 * dbm_per_px
+            })
+            .collect();
         crate::widgets::plot_style(ui, true);
         Plot::new(("meas_plot", self.meas_follow))
             .height(plot_h)
-            .legend(Legend::default().position(Corner::LeftBottom))
             .include_y(-100.0)
             .include_y(-20.0)
             .include_x(x0)
@@ -499,7 +586,7 @@ impl WifiApp {
                 }
                 if !best_pts.is_empty() {
                     // ohne Verbindung ist der Scan-Wert die Hauptlinie, sonst nur Vergleich
-                    let line = Line::new(PlotPoints::from(best_pts)).name(t!("Bester AP der SSID (Scan)", "Best AP of the SSID (scan)"));
+                    let line = Line::new(PlotPoints::from(best_pts)).name(best_name);
                     pui.line(if no_conn {
                         line.color(p.accent).width(2.6f32)
                     } else {
@@ -507,21 +594,14 @@ impl WifiApp {
                     });
                 }
                 for (bssid, ch, pts) in segments {
-                    let v = vendor_of(&bssid);
-                    let name = tf!("AP {} · Kanal {ch}", "AP {} · channel {ch}", &fmt_mac(&bssid)[9..]);
-                    pui.line(
-                        Line::new(PlotPoints::from(pts))
-                            .color(ap_color(&bssid))
-                            .width(2.6f32)
-                            .name(if v.is_empty() { name } else { format!("{name} · {v}") }),
-                    );
+                    pui.line(Line::new(PlotPoints::from(pts)).color(ap_color(&bssid)).width(2.6f32).name(seg_name(&bssid, ch)));
                 }
                 if let Some(h) = head {
                     pui.points(Points::new(vec![h]).radius(5.0f32).color(head_col).filled(true));
                 }
-                for (t, label, col) in &events {
+                for ((t, label, col), y) in events.iter().zip(&label_y) {
                     pui.vline(VLine::new(*t).color(col.gamma_multiply(0.8)).width(1.5f32));
-                    pui.text(Text::new(PlotPoint::new(*t, -21.0), RichText::new(label).small().color(*col)).anchor(Align2::LEFT_TOP));
+                    pui.text(Text::new(PlotPoint::new(*t, *y), RichText::new(label).small().color(*col)).anchor(Align2::LEFT_TOP));
                 }
                 if waiting {
                     pui.text(
@@ -539,7 +619,6 @@ impl WifiApp {
     fn survey_events(&self, ui: &mut Ui) {
         let p = pal(ui);
         let Some(m) = &self.meas else { return };
-        ui.label(RichText::new(t!("Ereignisse der Messung", "Survey events")).strong().color(p.text));
         let wall = |t: f64| (m.started_wall + chrono::Duration::milliseconds((t * 1000.0) as i64)).format("%H:%M:%S").to_string();
         egui::ScrollArea::vertical().id_salt("meas_events").auto_shrink(false).show(ui, |ui| {
             egui::Grid::new("meas_ev_grid").num_columns(4).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {

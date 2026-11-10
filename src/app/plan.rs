@@ -204,11 +204,11 @@ impl WifiApp {
                 if n > 0 && !all_scaled && ssid_ok && ui.link(RichText::new(t!("ohne Maßstab starten", "start without scale")).small()).clicked() {
                     start_anyway = true;
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.menu_button(t!("\u{E256} Gespeicherte Messungen", "\u{E256} Saved surveys"), |ui| {
-                        ui.set_min_width(420.0);
-                        self.recent_surveys_ui(ui, true);
-                    });
+                // im Fluss (nicht rechtsbündig), damit beim Umbrechen nichts überlappt
+                ui.separator();
+                ui.menu_button(t!("\u{E256} Gespeicherte Messungen", "\u{E256} Saved surveys"), |ui| {
+                    ui.set_min_width(420.0);
+                    self.recent_surveys_ui(ui, true);
                 });
             });
         });
@@ -496,6 +496,42 @@ impl WifiApp {
         }
     }
 
+    /// Stand der Messpunkte vor einer Änderung merken (Strg+Z)
+    pub(super) fn push_undo(&mut self, what: &str) {
+        if let Some(m) = &self.meas {
+            self.plan_undo.push((m.started_wall, what.to_string(), m.points.clone()));
+            if self.plan_undo.len() > 40 {
+                self.plan_undo.remove(0);
+            }
+        }
+    }
+
+    /// Beschreibung der Änderung, die „Rückgängig“ zurücknehmen würde
+    pub(super) fn undo_label(&self) -> Option<String> {
+        let w = self.meas.as_ref()?.started_wall;
+        self.plan_undo.iter().rev().find(|u| u.0 == w).map(|u| u.1.clone())
+    }
+
+    /// Letzte Änderung an den Messpunkten zurücknehmen
+    pub(super) fn undo_points(&mut self) {
+        let Some(w) = self.meas.as_ref().map(|m| m.started_wall) else { return };
+        // Einträge anderer Messungen verwerfen
+        while let Some(u) = self.plan_undo.pop() {
+            if u.0 != w {
+                continue;
+            }
+            if let Some(m) = self.meas.as_mut() {
+                m.restore_points(u.2);
+            }
+            self.plan_drag = None;
+            self.plan_sel = None;
+            self.heat_tex = None;
+            self.survey_changed();
+            self.toast(Sev::Info, tf!("Rückgängig: {}", "Undone: {}", u.1));
+            return;
+        }
+    }
+
     /// Aktuelles Stockwerk samt Grundriss entfernen
     fn remove_plan(&mut self) {
         if let Some(m) = self.meas.as_mut() {
@@ -520,6 +556,8 @@ impl WifiApp {
         let cur = m.floor;
         let n = m.plans.len();
         let counts: Vec<usize> = (0..n).map(|f| m.points.iter().filter(|pt| pt.floor == f && pt.pos.is_some()).count()).collect();
+        let confirm = self.floor_remove_confirm;
+        let mut ask_confirm: Option<usize> = None;
         ui.horizontal(|ui| {
             ui.label(RichText::new(t!("\u{E466} Stockwerk", "\u{E466} Floor")).color(p.weak));
             for (i, fp) in m.plans.iter_mut().enumerate() {
@@ -546,9 +584,14 @@ impl WifiApp {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button(t!("\u{E4A6} Stockwerk entfernen", "\u{E4A6} Remove floor")).clicked() {
-                        remove = Some(i);
-                        ui.close_menu();
+                    if confirm == Some(i) {
+                        ui.label(RichText::new(tf!("{} Messpunkte verlieren ihre Position.", "{} points will lose their position.", counts[i])).small().color(p.warning));
+                        if ui.button(RichText::new(t!("\u{E4A6} Wirklich entfernen", "\u{E4A6} Really remove")).color(p.danger)).clicked() {
+                            remove = Some(i);
+                            ui.close_menu();
+                        }
+                    } else if ui.button(t!("\u{E4A6} Stockwerk entfernen …", "\u{E4A6} Remove floor …")).clicked() {
+                        ask_confirm = Some(i);
                     }
                 });
             }
@@ -556,6 +599,9 @@ impl WifiApp {
                 add = true;
             }
         });
+        if ask_confirm.is_some() || remove.is_some() || switch.is_some() {
+            self.floor_remove_confirm = ask_confirm;
+        }
         if let Some(i) = switch {
             if i != m.floor {
                 m.floor = i;
@@ -607,6 +653,7 @@ impl WifiApp {
         width_m.map(f32::to_bits).hash(&mut h);
         heatmap::scale_to_string(&heatmap::scale()).hash(&mut h);
         heatmap::no_signal_setting().hash(&mut h);
+        self.settings.heat_opacity.to_bits().hash(&mut h);
         for (p, v) in &pts {
             p[0].to_bits().hash(&mut h);
             p[1].to_bits().hash(&mut h);
@@ -618,7 +665,9 @@ impl WifiApp {
             let aspect = size[0] as f32 / size[1].max(1) as f32;
             let (w, hgt) = if aspect >= 1.0 { (220usize, ((220.0 / aspect) as usize).max(8)) } else { (((220.0 * aspect) as usize).max(8), 220usize) };
             let field = heatmap::field(&pts, w, hgt, aspect, width_m);
-            let rgba: Vec<u8> = field.iter().flatten().copied().collect();
+            // Deckkraft nach Einstellung (die Berichte verwenden die feste Standard-Deckkraft)
+            let k = self.settings.heat_opacity / heatmap::OPACITY;
+            let rgba: Vec<u8> = field.iter().flat_map(|c| [c[0], c[1], c[2], (c[3] as f32 * k).min(255.0) as u8]).collect();
             let img = egui::ColorImage::from_rgba_unmultiplied([w, hgt], &rgba);
             let tex = ctx.load_texture("heatmap", img, TextureOptions::LINEAR);
             self.heat_tex = Some((key, tex));
@@ -663,11 +712,21 @@ impl WifiApp {
         let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id)).map(|i| i + 1);
         let with_data = m.layers_with_data(m.floor);
         let (width_m, plan_px) = (m.plan().and_then(|p| p.width_m), self.plan_tex.as_ref().map(|t| t.size));
-        let (mut change, mut remove, mut start_scale) = (false, false, false);
+        let (mut change, mut start_scale, mut toggle_table) = (false, false, false);
+        let full_table = self.plan_full_table;
         let mut heat = self.plan_heat;
         let mut layer = self.plan_layer;
-        ui.horizontal(|ui| {
+        let mut opacity = self.settings.heat_opacity;
+        ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut heat, t!("Heatmap", "Heatmap"));
+            ui.add_enabled_ui(heat, |ui| {
+                ui.spacing_mut().slider_width = 70.0;
+                ui.add(egui::Slider::new(&mut opacity, 0.2..=0.9).show_value(false)).on_hover_text(tf!(
+                    "Deckkraft der Heatmap: {:.0} % – weniger, damit der Plan (Raumnamen) lesbar bleibt",
+                    "Heatmap opacity: {:.0} % – lower it to keep the plan (room names) readable",
+                    opacity * 100.0
+                ));
+            });
             let opts: Vec<(Layer, String)> = Layer::ALL
                 .iter()
                 .map(|l| (*l, if *l == Layer::Measured || with_data.contains(l) { l.label().to_string() } else { format!("{} –", l.label()) }))
@@ -688,11 +747,18 @@ impl WifiApp {
             if ui.button(t!("\u{E31A} Anderer Grundriss …", "\u{E31A} Other floor plan …")).clicked() {
                 change = true;
             }
-            if ui.button(t!("Entfernen", "Remove")).on_hover_text(t!("Dieses Stockwerk (Grundriss) aus der Messung entfernen – die Messpunkte bleiben, verlieren aber ihre Position", "Remove this floor (plan) from the survey – the points stay but lose their position")).clicked() {
-                remove = true;
+            // bei voller Tabelle zurück zur Liste (sonst steht der Umschalter im Kopf der Liste)
+            if !draft && full_table && ui.button(t!("\u{EC24} Liste daneben", "\u{EC24} List beside")).on_hover_text(t!("Kompakte Messpunkt-Liste rechts neben dem Plan", "Compact point list to the right of the plan")).clicked() {
+                toggle_table = true;
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| legend(ui));
         });
+        if toggle_table {
+            self.plan_full_table = !self.plan_full_table;
+        }
+        if opacity != self.settings.heat_opacity {
+            self.settings.heat_opacity = opacity;
+            self.heat_tex = None;
+        }
         if layer != self.plan_layer {
             self.plan_layer = layer;
             self.heat_tex = None;
@@ -704,7 +770,25 @@ impl WifiApp {
         // Statuszeile: Maßstab bzw. Hinweis
         let mut apply_scale: Option<f32> = None;
         let mut cancel_scale = false;
+        let mut zoom_to: Option<f32> = None;
+        let zoom = self.plan_zoom;
         ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let tip = t!(
+                    "Mausrad = zoomen · ziehen = verschieben (auf freier Fläche oder mit rechter/mittlerer Maustaste) · Taste 0 = einpassen",
+                    "Mouse wheel = zoom · drag = pan (on empty space or with the right/middle button) · key 0 = fit"
+                );
+                if ui.add_enabled(zoom > 1.0, egui::Button::new(t!("Einpassen", "Fit"))).on_hover_text(tip).clicked() {
+                    zoom_to = Some(1.0);
+                }
+                if ui.button("\u{E310}").on_hover_text(t!("Vergrößern", "Zoom in")).clicked() {
+                    zoom_to = Some(zoom * 1.25);
+                }
+                ui.label(RichText::new(format!("{:.0} %", zoom * 100.0)).monospace().color(p.weak)).on_hover_text(tip);
+                if ui.add_enabled(zoom > 1.0, egui::Button::new("\u{E30E}")).on_hover_text(t!("Verkleinern", "Zoom out")).clicked() {
+                    zoom_to = Some(zoom / 1.25);
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             if let Some(sd) = self.plan_scale.as_mut() {
                 ui.label(RichText::new("\u{E6B8}").color(p.accent));
                 match (sd.a, sd.b) {
@@ -753,6 +837,8 @@ impl WifiApp {
                 };
                 ui.label(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak }));
             }
+                });
+            });
         });
         if cancel_scale {
             self.plan_scale = None;
@@ -791,10 +877,6 @@ impl WifiApp {
         if change {
             self.load_plan(&ui.ctx().clone(), false);
         }
-        if remove {
-            self.remove_plan();
-            return;
-        }
 
         let ctx = ui.ctx().clone();
         let Some((tex, size)) = self.plan_texture(&ctx) else {
@@ -805,7 +887,40 @@ impl WifiApp {
         // Höhe abzüglich Reiter, Werkzeugleiste und Statuszeile
         let h = (height - (ui.cursor().top() - top) - 4.0).max(160.0);
         let (area, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
-        let img = fit_rect(area, size);
+        let base = fit_rect(area, size);
+        // anderes Stockwerk: wieder eingepasst anzeigen
+        let view_key = self.meas.as_ref().map(|m| (m.floor, m.plans.len())).unwrap_or_default();
+        if self.plan_view_key != view_key {
+            self.plan_view_key = view_key;
+            self.plan_zoom = 1.0;
+            self.plan_pan = Vec2::ZERO;
+        }
+        if !ui.ctx().wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Num0) && i.modifiers.is_none()) {
+            zoom_to = Some(1.0);
+        }
+        // Zoom per Mausrad: der Punkt unter dem Mauszeiger bleibt stehen
+        let mut zoom_at: Option<(f32, Pos2)> = zoom_to.map(|z| (z, area.center()));
+        if let Some(hp) = resp.hover_pos() {
+            let (scroll, zd) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+            let f = zd * (scroll * 0.0015).exp();
+            if (f - 1.0).abs() > 1e-4 {
+                zoom_at = Some((self.plan_zoom * f, hp));
+                ui.ctx().input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
+            }
+        }
+        if let Some((z, at)) = zoom_at {
+            let (old, new) = (self.plan_zoom, z.clamp(1.0, 8.0));
+            let rel = at - (base.center() + self.plan_pan);
+            self.plan_pan += rel - rel * (new / old);
+            self.plan_zoom = new;
+            if new <= 1.0 {
+                self.plan_pan = Vec2::ZERO;
+            }
+        }
+        let max_pan = base.size() * (self.plan_zoom - 1.0) / 2.0;
+        self.plan_pan = Vec2::new(self.plan_pan.x.clamp(-max_pan.x, max_pan.x), self.plan_pan.y.clamp(-max_pan.y, max_pan.y));
+        let img = Rect::from_center_size(base.center() + self.plan_pan, base.size() * self.plan_zoom);
+        let visible = img.intersect(area);
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 10.0, p.surface);
         painter.image(tex, img, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
@@ -813,6 +928,9 @@ impl WifiApp {
             painter.image(ht, img, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
         }
         painter.rect_stroke(img, 0.0, Stroke::new(1.0f32, p.border));
+        if heat_tex.is_some() {
+            legend_overlay(&painter, visible);
+        }
 
         let Some(m) = &self.meas else { return };
         let markers: Vec<(u64, usize, Pos2, Option<f64>, String)> = m
@@ -837,7 +955,7 @@ impl WifiApp {
         if let Some(wm) = plan_m.0 {
             let len = heatmap::nice_length(wm * 0.18);
             let px = len / wm * img.width();
-            let base = Pos2::new(img.min.x + 14.0, img.max.y - 14.0);
+            let base = Pos2::new(visible.min.x + 14.0, visible.max.y - 14.0);
             let bg = Rect::from_min_max(Pos2::new(base.x - 8.0, base.y - 22.0), Pos2::new(base.x + px + 8.0, base.y + 6.0));
             painter.rect_filled(bg, 4.0, Color32::from_white_alpha(225));
             let ink = Color32::from_rgb(40, 44, 52);
@@ -867,13 +985,22 @@ impl WifiApp {
         // Interaktion: Marker ziehen, klicken = auswählen, Klick ins Leere = ausgewählten Punkt setzen
         let hit = |pos: Pos2| markers.iter().filter(|m| m.2.distance(pos) <= r + 4.0).min_by(|a, b| a.2.distance(pos).total_cmp(&b.2.distance(pos))).map(|m| m.0);
         let mut set_pos: Option<(u64, [f32; 2])> = None;
-        if resp.drag_started() && !scaling {
+        if resp.drag_started_by(egui::PointerButton::Primary) && !scaling {
             self.plan_drag = resp.interact_pointer_pos().and_then(hit);
+            if self.plan_drag.is_some() {
+                self.push_undo(t!("Punkt verschoben", "Point moved"));
+            }
         }
         if let (Some(id), Some(pos)) = (self.plan_drag, resp.interact_pointer_pos()) {
-            if resp.dragged() && img.contains(pos) {
+            if resp.dragged_by(egui::PointerButton::Primary) && img.contains(pos) {
                 set_pos = Some((id, to_norm(img, pos)));
             }
+        }
+        // Verschieben: auf freier Fläche ziehen oder mit rechter/mittlerer Maustaste
+        let panning = resp.dragged() && self.plan_drag.is_none() && self.plan_zoom > 1.0;
+        if panning {
+            self.plan_pan += resp.drag_delta();
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         }
         if resp.drag_stopped() && self.plan_drag.is_some() {
             self.plan_drag = None;
@@ -888,6 +1015,7 @@ impl WifiApp {
                     Some(id) => self.plan_sel = if self.plan_sel == Some(id) { None } else { Some(id) },
                     None => {
                         if let (Some(id), true) = (self.plan_sel, img.contains(pos)) {
+                            self.push_undo(t!("Punkt gesetzt", "Point placed"));
                             set_pos = Some((id, to_norm(img, pos)));
                             self.survey_changed();
                             // weiter zum nächsten Punkt ohne Position
@@ -908,7 +1036,7 @@ impl WifiApp {
                 sd.b = Some(c);
             }
         }
-        if let Some(pos) = resp.hover_pos() {
+        if let Some(pos) = resp.hover_pos().filter(|_| !panning) {
             if scaling {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
             } else if let Some(id) = hit(pos) {
@@ -946,6 +1074,114 @@ impl WifiApp {
         }
         if let Some(pos) = click_measure {
             self.open_point_dialog_at(Some(pos));
+        }
+    }
+
+    /// Stockwerk anzeigen (Plan, Heatmap und Maßstab-Werkzeug zurücksetzen)
+    pub(super) fn show_floor(&mut self, f: usize) {
+        if let Some(m) = self.meas.as_mut() {
+            if m.floor != f && f < m.plans.len() {
+                m.floor = f;
+                self.heat_tex = None;
+                self.plan_scale = None;
+            }
+        }
+    }
+
+    /// Kompakte Messpunkt-Liste neben dem Plan (breite Bildschirme)
+    pub(super) fn plan_points_list(&mut self, ui: &mut Ui) {
+        let p = pal(ui);
+        let Some(m) = &self.meas else { return };
+        let multi = m.plans.len() > 1;
+        let floor_names: Vec<String> = m.plans.iter().map(|f| f.title().to_string()).collect();
+        let rows: Vec<(u64, usize, String, Option<f64>, Option<usize>, String)> =
+            m.points.iter().enumerate().map(|(i, pt)| (pt.id, i + 1, pt.name.clone(), pt.value_for(self.plan_layer), pt.pos.map(|_| pt.floor), pt.note.clone())).collect();
+        let running = m.running;
+        let sel = self.plan_sel;
+        let (mut select, mut delete, mut full) = (None, None, false);
+        crate::widgets::card(ui, None, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(ui.available_height() - 2.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tf!("Messpunkte ({})", "Points ({})", rows.len())).strong().color(p.text));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button(t!("\u{E476} Tabelle", "\u{E476} Table")).on_hover_text(t!("Alle Spalten (AP, Rate, Ping, Notiz …) in einer Tabelle unter dem Plan", "All columns (AP, rate, ping, note …) in a table below the plan")).clicked() {
+                        full = true;
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            if rows.is_empty() {
+                ui.label(
+                    RichText::new(if running {
+                        t!("Noch keine Messpunkte. An deiner Position in den Plan klicken.", "No points yet. Click your position on the plan.")
+                    } else {
+                        t!("Keine Messpunkte.", "No points.")
+                    })
+                    .color(p.weak),
+                );
+                return;
+            }
+            egui::ScrollArea::vertical().id_salt("plan_points_list").auto_shrink(false).show(ui, |ui| {
+                for (id, no, name, v, floor, note) in &rows {
+                    let selected = sel == Some(*id);
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 38.0), Sense::click());
+                    let painter = ui.painter_at(rect);
+                    if selected {
+                        painter.rect_filled(rect, 6.0, p.accent.gamma_multiply(0.18));
+                    } else if resp.hovered() {
+                        painter.rect_filled(rect, 6.0, p.surface2);
+                    }
+                    draw_marker(&painter, Pos2::new(rect.min.x + 15.0, rect.center().y), 10.0, *no, *v, selected);
+                    let right = match v {
+                        Some(x) => (format!("{x:.0} dBm"), point_color(Some(*x))),
+                        None => ("–".to_string(), p.weak),
+                    };
+                    let rw = painter.layout_no_wrap(right.0.clone(), FontId::monospace(12.5), right.1).size().x;
+                    painter.text(Pos2::new(rect.max.x - 6.0, rect.center().y), Align2::RIGHT_CENTER, &right.0, FontId::monospace(12.5), right.1);
+                    let text_rect = Rect::from_min_max(Pos2::new(rect.min.x + 32.0, rect.min.y), Pos2::new(rect.max.x - rw - 14.0, rect.max.y));
+                    let tp = painter.with_clip_rect(text_rect);
+                    tp.text(Pos2::new(text_rect.min.x, rect.min.y + 11.0), Align2::LEFT_CENTER, name, FontId::proportional(13.5), p.text);
+                    let (sub, sub_col) = match floor {
+                        None => (t!("ohne Position – anklicken, dann im Plan setzen", "no position – click, then place on the plan").to_string(), p.warning),
+                        Some(f) if multi => (floor_names.get(*f).cloned().unwrap_or_default() + if note.is_empty() { "" } else { " · " } + note, p.weak),
+                        Some(_) => (note.clone(), p.weak),
+                    };
+                    tp.text(Pos2::new(text_rect.min.x, rect.min.y + 27.0), Align2::LEFT_CENTER, sub, FontId::proportional(11.0), sub_col);
+                    let tip = match v {
+                        Some(x) => tf!("{no}. {name}\n{x:.0} dBm · {}\nKlick: auswählen und im Plan neu setzen · Rechtsklick: löschen", "{no}. {name}\n{x:.0} dBm · {}\nClick: select and place again · right-click: delete", Quality::of(*x).label()),
+                        None => tf!("{no}. {name}\nKlick: auswählen und im Plan setzen · Rechtsklick: löschen", "{no}. {name}\nClick: select and place · right-click: delete"),
+                    };
+                    let resp = resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if resp.clicked() {
+                        select = Some((*id, *floor));
+                    }
+                    resp.context_menu(|ui| {
+                        if ui.button(t!("\u{E4A6} Messpunkt löschen", "\u{E4A6} Delete point")).clicked() {
+                            delete = Some(no - 1);
+                            ui.close_menu();
+                        }
+                    });
+                }
+            });
+        });
+        if full {
+            self.plan_full_table = true;
+        }
+        if let Some((id, floor)) = select {
+            self.plan_sel = if self.plan_sel == Some(id) { None } else { Some(id) };
+            if let Some(f) = floor {
+                self.show_floor(f);
+            }
+        }
+        if let Some(i) = delete {
+            self.push_undo(t!("Messpunkt gelöscht", "Point deleted"));
+            if let Some(m) = self.meas.as_mut() {
+                m.remove_point(i);
+            }
+            self.plan_sel = None;
+            self.heat_tex = None;
+            self.survey_changed();
         }
     }
 
@@ -1158,28 +1394,40 @@ impl WifiApp {
     }
 }
 
-/// Farblegende der Heatmap
-fn legend(ui: &mut Ui) {
-    let p = pal(ui);
-    // rechts-nach-links-Layout: zuerst das rechte Ende
+/// Farblegende der Heatmap unten rechts im Plan
+fn legend_overlay(painter: &egui::Painter, area: Rect) {
     let (lo, hi) = (heatmap::scale_min(), heatmap::scale_max());
-    ui.label(RichText::new(format!("{hi:.0} dBm")).small().color(p.weak));
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(140.0, 10.0), Sense::hover());
-    let steps = 28;
+    let ink = Color32::from_rgb(40, 44, 52);
+    let font = FontId::proportional(11.0);
+    let nosig = heatmap::no_signal();
+    let ns_label = t!("kein Signal", "no signal");
+    let bar_w = 120.0;
+    let ns_w = if nosig.is_some() { 16.0 + painter.layout_no_wrap(ns_label.to_string(), font.clone(), ink).size().x + 10.0 } else { 0.0 };
+    let lo_txt = format!("{lo:.0}");
+    let hi_txt = format!("{hi:.0} dBm");
+    let lo_w = painter.layout_no_wrap(lo_txt.clone(), font.clone(), ink).size().x;
+    let hi_w = painter.layout_no_wrap(hi_txt.clone(), font.clone(), ink).size().x;
+    let w = 10.0 + ns_w + lo_w + 6.0 + bar_w + 6.0 + hi_w + 10.0;
+    let bg = Rect::from_min_size(Pos2::new(area.max.x - w - 10.0, area.max.y - 34.0), Vec2::new(w, 24.0));
+    painter.rect_filled(bg, 4.0, Color32::from_white_alpha(225));
+    let cy = bg.center().y;
+    let mut x = bg.min.x + 10.0;
+    if let Some([r, g, b]) = nosig {
+        painter.rect_filled(Rect::from_center_size(Pos2::new(x + 5.0, cy), Vec2::splat(10.0)), 2.0, Color32::from_rgb(r, g, b));
+        painter.text(Pos2::new(x + 16.0, cy), Align2::LEFT_CENTER, ns_label, font.clone(), ink);
+        x += ns_w;
+    }
+    painter.text(Pos2::new(x, cy), Align2::LEFT_CENTER, lo_txt, font.clone(), ink);
+    x += lo_w + 6.0;
+    let steps = 30;
     for i in 0..steps {
         let v = lo + (hi - lo) * i as f64 / (steps - 1) as f64;
-        let x0 = rect.min.x + rect.width() * i as f32 / steps as f32;
-        let r = Rect::from_min_max(Pos2::new(x0, rect.min.y), Pos2::new(x0 + rect.width() / steps as f32 + 0.5, rect.max.y));
+        let x0 = x + bar_w * i as f32 / steps as f32;
         let [rr, g, b] = heatmap::color(v);
-        ui.painter().rect_filled(r, 0.0, Color32::from_rgb(rr, g, b));
+        painter.rect_filled(Rect::from_min_max(Pos2::new(x0, cy - 5.0), Pos2::new(x0 + bar_w / steps as f32 + 0.5, cy + 5.0)), 0.0, Color32::from_rgb(rr, g, b));
     }
-    ui.label(RichText::new(format!("{lo:.0}")).small().color(p.weak));
-    if let Some([r, g, b]) = heatmap::no_signal() {
-        ui.add_space(6.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(10.0, 10.0), Sense::hover());
-        ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(r, g, b));
-        ui.label(RichText::new(t!("kein Signal", "no signal")).small().color(p.weak));
-    }
+    x += bar_w + 6.0;
+    painter.text(Pos2::new(x, cy), Align2::LEFT_CENTER, hi_txt, font, ink);
 }
 
 /// Kleiner, anklickbarer Grundriss im Messpunkt-Dialog

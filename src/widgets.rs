@@ -54,6 +54,16 @@ pub fn page_header(ui: &mut Ui, title: &str, subtitle: &str, actions: impl FnOnc
     ui.add_space(8.0);
 }
 
+/// Schriftgröße, mit der `text` in `width` passt (höchstens `size`, mindestens 60 % davon)
+pub fn fit_font_size(ui: &Ui, text: &str, family: egui::FontFamily, size: f32, width: f32) -> f32 {
+    let w = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), FontId::new(size, family), Color32::WHITE).size().x);
+    if w <= width || w <= 0.0 {
+        size
+    } else {
+        (size * width / w).max(size * 0.6)
+    }
+}
+
 /// Kennzahl-Kachel (Titel klein, Wert groß, optional Untertitel)
 pub fn kpi(ui: &mut Ui, title: &str, value: &str, sub: &str, color: Color32, width: f32) -> Response {
     let p = pal(ui);
@@ -66,7 +76,8 @@ pub fn kpi(ui: &mut Ui, title: &str, value: &str, sub: &str, color: Color32, wid
             ui.set_width(width);
             ui.vertical(|ui| {
                 ui.add(egui::Label::new(RichText::new(title).size(12.0).color(p.weak)).truncate());
-                ui.add(egui::Label::new(RichText::new(value).family(crate::theme::semibold()).size(22.0).color(color)).truncate());
+                let size = fit_font_size(ui, value, crate::theme::semibold(), 22.0, width);
+                ui.add(egui::Label::new(RichText::new(value).family(crate::theme::semibold()).size(size).color(color)).truncate());
                 // Unterzeile immer belegen, damit alle Kacheln einer Reihe gleich hoch sind
                 ui.add(egui::Label::new(RichText::new(if sub.is_empty() { " " } else { sub }).size(11.5).color(p.weak)).truncate());
             });
@@ -94,7 +105,8 @@ pub fn kpi_tile(ui: &mut Ui, icon: &str, title: &str, value: &str, sub: &str, co
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.add(egui::Label::new(RichText::new(title).size(12.0).color(p.weak)).truncate());
-                    ui.add(egui::Label::new(RichText::new(value).family(crate::theme::semibold()).size(23.0).color(p.text)).truncate());
+                    let size = fit_font_size(ui, value, crate::theme::semibold(), 23.0, ui.available_width());
+                    ui.add(egui::Label::new(RichText::new(value).family(crate::theme::semibold()).size(size).color(p.text)).truncate());
                     ui.add(egui::Label::new(RichText::new(sub).size(11.5).color(p.weak)).truncate());
                 });
             });

@@ -582,6 +582,28 @@ impl Measurement {
     }
 
     /// Markierung eines Messpunkts im Verlauf (gleicher Zeitpunkt)
+    /// Messpunkte auf einen früheren Stand zurücksetzen (Rückgängig); Markierungen im Verlauf passend
+    pub fn restore_points(&mut self, pts: Vec<MeasPoint>) {
+        let old: Vec<f64> = self.points.iter().map(|p| p.t).collect();
+        for t in old {
+            if !pts.iter().any(|p| p.t == t) {
+                if let Some(i) = self.marker_index(t) {
+                    self.events.remove(i);
+                }
+            }
+        }
+        for p in &pts {
+            match self.marker_index(p.t) {
+                Some(i) => self.events[i].kind = EventKind::Marker(p.name.clone()),
+                None => {
+                    let i = self.events.iter().position(|e| e.t > p.t).unwrap_or(self.events.len());
+                    self.events.insert(i, Event { t: p.t, kind: EventKind::Marker(p.name.clone()) });
+                }
+            }
+        }
+        self.points = pts;
+    }
+
     fn marker_index(&self, t: f64) -> Option<usize> {
         self.events.iter().position(|e| e.t == t && matches!(e.kind, EventKind::Marker(_)))
     }
@@ -950,6 +972,22 @@ mod tests {
         m.remove_point(0);
         assert!(m.points.is_empty());
         assert_eq!(m.marker_count(), 0);
+    }
+
+    #[test]
+    fn restore_points_keeps_markers_in_sync() {
+        let ctx = ScanContext::default();
+        let mut m = Measurement::new("Net".into(), 0.0);
+        m.add_point(1.0, 1.0, "a", "", None, &ctx);
+        let before = m.points.clone();
+        m.add_point(2.0, 2.0, "b", "", None, &ctx);
+        assert_eq!(m.marker_count(), 2);
+        m.restore_points(before.clone());
+        assert_eq!((m.points.len(), m.marker_count()), (1, 1));
+        m.remove_point(0);
+        assert_eq!(m.marker_count(), 0);
+        m.restore_points(before);
+        assert_eq!((m.points.len(), m.marker_count()), (1, 1));
     }
 
     #[test]

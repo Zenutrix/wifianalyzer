@@ -14,7 +14,7 @@ use std::sync::RwLock;
 use image::{imageops, ImageFormat, Rgb, RgbImage, RgbaImage};
 
 /// Deckkraft der Heatmap über dem Plan
-const OPACITY: f32 = 0.62;
+pub const OPACITY: f32 = 0.62;
 /// Annahme für die Planbreite ohne Maßstab (m)
 pub const DEFAULT_WIDTH_M: f32 = 40.0;
 /// Bis zu diesem Abstand (m) vom Messpunkt gilt der gemessene Wert ohne Abschlag

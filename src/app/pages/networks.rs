@@ -45,6 +45,9 @@ fn headers() -> [(SortCol, &'static str, &'static str); 12] {
     ]
 }
 
+/// Standardbreiten der verstellbaren Spalten (SSID … Clients)
+const DEFAULT_WIDTHS: [f32; 10] = [180.0, 142.0, 120.0, 112.0, 96.0, 58.0, 86.0, 150.0, 50.0, 52.0];
+
 impl WifiApp {
     pub(crate) fn page_networks(&mut self, ui: &mut Ui) {
         let p = pal(ui);
@@ -152,6 +155,18 @@ impl WifiApp {
         let child_bg = p.accent.gamma_multiply(0.06);
         let palette = self.ssid_colors();
         let conn_bssid = self.conn.as_ref().map(|c| c.bssid);
+        // Spaltenbreiten: gespeichert (vom Benutzer gezogen) oder Standard
+        let saved: Vec<f32> = self.settings.net_cols.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+        let widths: Vec<f32> = (0..DEFAULT_WIDTHS.len()).map(|i| if saved.len() == DEFAULT_WIDTHS.len() { saved[i].max(40.0) } else { DEFAULT_WIDTHS[i] }).collect();
+        let gen_id = egui::Id::new("net_table_gen");
+        let gen: u32 = ui.data(|d| d.get_temp(gen_id)).unwrap_or(0);
+        let mut measured = [0.0f32; 12];
+        let mut reset_widths = false;
+        let stripe_tip = if self.settings.group_ssid {
+            t!("Farbe je Netz (SSID) – gleiche Farbe = gleiches Netz, wie in Kanäle und Signalverlauf", "Colour per network (SSID) – same colour = same network, as in Channels and Signal history")
+        } else {
+            t!("Farbe je Access Point – wie in den Diagrammen", "Colour per access point – as in the charts")
+        };
 
         egui::Frame::none()
             .fill(p.surface)
@@ -162,26 +177,28 @@ impl WifiApp {
                 egui::ScrollArea::horizontal().show(ui, |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     TableBuilder::new(ui)
+                        .id_salt(("net_table", gen))
                         .striped(true)
                         .resizable(true)
                         .sense(Sense::click())
                         .cell_layout(Layout::left_to_right(Align::Center))
                         .column(Column::exact(22.0))
-                        .column(Column::initial(170.0).at_least(100.0).clip(true))
-                        .column(Column::initial(128.0))
-                        .column(Column::initial(104.0).at_least(60.0).clip(true))
-                        .column(Column::initial(118.0).at_least(80.0))
-                        .column(Column::initial(86.0).at_least(60.0).clip(true))
-                        .column(Column::initial(62.0))
-                        .column(Column::initial(84.0).clip(true))
-                        .column(Column::initial(120.0).at_least(80.0).clip(true))
-                        .column(Column::initial(56.0))
-                        .column(Column::initial(50.0))
+                        .column(Column::initial(widths[0]).at_least(100.0).clip(true))
+                        .column(Column::initial(widths[1]).at_least(60.0).clip(true))
+                        .column(Column::initial(widths[2]).at_least(60.0).clip(true))
+                        .column(Column::initial(widths[3]).at_least(80.0))
+                        .column(Column::initial(widths[4]).at_least(50.0).clip(true))
+                        .column(Column::initial(widths[5]).at_least(40.0).clip(true))
+                        .column(Column::initial(widths[6]).at_least(50.0).clip(true))
+                        .column(Column::initial(widths[7]).at_least(70.0).clip(true))
+                        .column(Column::initial(widths[8]).at_least(40.0))
+                        .column(Column::initial(widths[9]).at_least(40.0))
                         .column(Column::remainder().at_least(56.0))
                         .min_scrolled_height(0.0)
                         .header(28.0, |mut h| {
-                            for (col, label, hint) in headers() {
+                            for (ci, (col, label, hint)) in headers().into_iter().enumerate() {
                                 h.col(|ui| {
+                                    measured[ci] = ui.max_rect().width();
                                     let txt = if self.sort_col == col {
                                         format!("{label} {}", if self.sort_asc { "\u{E13C}" } else { "\u{E136}" })
                                     } else {
@@ -189,10 +206,16 @@ impl WifiApp {
                                     };
                                     let r = ui
                                         .add(egui::Label::new(RichText::new(txt).strong().color(p.weak)).sense(Sense::click()))
-                                        .on_hover_text(format!("{hint}\n{}", t!("Klicken zum Sortieren", "Click to sort")));
+                                        .on_hover_text(format!("{hint}\n{}", t!("Klicken zum Sortieren · Spaltenrand ziehen = Breite ändern · Rechtsklick = zurücksetzen", "Click to sort · drag the column edge = change width · right-click = reset")));
                                     if r.clicked() {
                                         sort_click = Some(col);
                                     }
+                                    r.context_menu(|ui| {
+                                        if ui.button(t!("Spaltenbreiten zurücksetzen", "Reset column widths")).clicked() {
+                                            reset_widths = true;
+                                            ui.close_menu();
+                                        }
+                                    });
                                 });
                             }
                         })
@@ -237,19 +260,20 @@ impl WifiApp {
                                     } else {
                                         ap_color(&k)
                                     };
-                                    let (rect, _) = ui.allocate_exact_size(Vec2::new(4.0, 16.0), Sense::hover());
+                                    let (rect, sr) = ui.allocate_exact_size(Vec2::new(4.0, 16.0), Sense::hover());
                                     ui.painter().rect_filled(rect, 2.0, col);
+                                    sr.on_hover_text(stripe_tip);
                                     // Anzahl der APs vor dem Namen, damit sie bei langen SSIDs sichtbar bleibt
                                     if let RowKind::Group { n, .. } = kind {
                                         ui.scope(|ui| crate::widgets::badge(ui, &n.to_string(), p.accent))
                                             .response
                                             .on_hover_text(tf!("{n} Access Points – klicken zum Aufklappen", "{n} access points – click to expand"));
                                     }
-                                    let name = RichText::new(Self::display_ssid(r)).color(tc);
-                                    ui.label(if i.hidden { name.italics() } else if is_child { name } else { name.strong() });
                                     if conn_bssid == Some(k) {
                                         ui.label(RichText::new("\u{E2E2}").color(p.success)).on_hover_text(t!("Verbunden", "Connected"));
                                     }
+                                    let name = RichText::new(Self::display_ssid(r)).color(tc);
+                                    ui.add(egui::Label::new(if i.hidden { name.italics() } else if is_child { name } else { name.strong() }).truncate());
                                 });
                                 row.col(|ui| {
                                     shade(ui);
@@ -257,7 +281,7 @@ impl WifiApp {
                                 });
                                 row.col(|ui| {
                                     shade(ui);
-                                    let r2 = ui.label(RichText::new(Self::vendor_label(r)).color(tc));
+                                    let r2 = ui.add(egui::Label::new(RichText::new(Self::vendor_label(r)).color(tc)).truncate());
                                     if let Some(n) = &i.ap_name {
                                         r2.on_hover_text(tf!("AP-Name: {n}", "AP name: {n}"));
                                     }
@@ -270,7 +294,7 @@ impl WifiApp {
                                     shade(ui);
                                     match kind {
                                         RowKind::Group { chans, bands, .. } => {
-                                            ui.label(RichText::new(chans).color(tc)).on_hover_text(bands.as_str());
+                                            ui.add(egui::Label::new(RichText::new(chans).color(tc)).truncate()).on_hover_text(format!("{chans}\n{bands}"));
                                         }
                                         _ => {
                                             ui.label(RichText::new(i.channel.to_string()).color(tc));
@@ -294,13 +318,13 @@ impl WifiApp {
                                 });
                                 row.col(|ui| {
                                     shade(ui);
-                                    ui.label(RichText::new(i.std_label()).color(tc));
+                                    ui.add(egui::Label::new(RichText::new(i.std_label()).color(tc)).truncate());
                                 });
                                 row.col(|ui| {
                                     shade(ui);
                                     let icon = if i.sec_level == SecLevel::Open { "\u{E30A}" } else { "\u{E308}" };
                                     let col = if stale { tc } else { sec_color(ui, i.sec_level) };
-                                    ui.label(RichText::new(format!("{icon} {}", i.security)).color(col));
+                                    ui.add(egui::Label::new(RichText::new(format!("{icon} {}", i.security)).color(col)).truncate());
                                 });
                                 row.col(|ui| {
                                     shade(ui);
@@ -362,12 +386,29 @@ impl WifiApp {
         ui.add_space(4.0);
         ui.label(
             RichText::new(t!(
-                "Tipp: Klick = Details · Doppelklick = orten · Rechtsklick = weitere Aktionen",
-                "Tip: click = details · double-click = locate · right-click = more actions"
+                "Tipp: Klick = Details · Doppelklick = orten · Rechtsklick = weitere Aktionen · Spaltenränder lassen sich ziehen",
+                "Tip: click = details · double-click = locate · right-click = more actions · column edges can be dragged"
             ))
             .size(12.0)
             .color(p.weak),
         );
+        // Spaltenbreiten merken (nur die verstellbaren Spalten)
+        if reset_widths {
+            self.settings.net_cols.clear();
+            ui.data_mut(|d| d.insert_temp(gen_id, gen + 1));
+        } else if measured[1..11].iter().all(|w| *w > 0.0) {
+            let cur = measured[1..11].iter().map(|w| format!("{:.0}", w)).collect::<Vec<_>>().join(",");
+            let differs = measured[1..11].iter().zip(&widths).any(|(a, b)| (a - b).abs() > 1.5);
+            if differs && cur != self.settings.net_cols {
+                self.settings.net_cols = cur;
+            }
+        }
+        // freie Fläche unter der Tabelle: APs des gewählten (sonst verbundenen) Netzes im Vergleich
+        let rest = ui.available_height();
+        if rest > 150.0 {
+            ui.add_space(10.0);
+            self.network_compare(ui, rest - 14.0);
+        }
 
         if let Some(c) = sort_click {
             if self.sort_col == c {
@@ -389,6 +430,85 @@ impl WifiApp {
             Some(RowAction::Finder(k)) => self.open_finder(k),
             Some(RowAction::Measure(s)) => self.start_measurement(s),
             None => {}
+        }
+    }
+
+    /// Vergleich der Access Points eines Netzes: Kanal, Signal-Verlauf (5 min), Clients, Last
+    fn network_compare(&mut self, ui: &mut Ui, height: f32) {
+        let p = pal(ui);
+        let now = Instant::now();
+        let t_now = self.now_t();
+        let key = self
+            .selected
+            .and_then(|k| self.aps.get(&k))
+            .map(Self::group_key)
+            .or_else(|| self.conn.as_ref().map(|c| c.ssid.clone()));
+        let Some(key) = key else {
+            return;
+        };
+        let mut members: Vec<&ApRecord> = self.aps.values().filter(|r| Self::group_key(r) == key && !self.is_stale(r, now)).collect();
+        if members.is_empty() {
+            return;
+        }
+        members.sort_by_key(|r| -r.info.rssi);
+        let title = if key.starts_with('\u{0}') { t!("‹versteckt›", "‹hidden›").to_string() } else { key.clone() };
+        let selected = self.selected;
+        let row_h = 30.0;
+        let max_rows = (((height - 70.0) / row_h).floor() as usize).max(1);
+        let mut pick = None;
+        crate::widgets::card(ui, None, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tf!("Access Points von „{title}“", "Access points of \"{title}\"")).strong().color(p.text));
+                ui.label(RichText::new(tf!("{} sichtbar · Signal der letzten 5 Minuten", "{} visible · signal of the last 5 minutes", members.len())).color(p.weak));
+            });
+            ui.add_space(4.0);
+            egui::Grid::new("net_compare").num_columns(7).spacing([16.0, 4.0]).min_row_height(row_h - 4.0).show(ui, |ui| {
+                for r in members.iter().take(max_rows) {
+                    let i = &r.info;
+                    let sel = selected == Some(i.bssid);
+                    ui.horizontal(|ui| {
+                        crate::widgets::dot(ui, ap_color(&i.bssid), 4.0);
+                        let txt = RichText::new(fmt_mac(&i.bssid)).monospace().color(if sel { p.accent } else { p.text });
+                        if ui.add(egui::Label::new(txt).sense(Sense::click())).on_hover_text(t!("Details anzeigen", "Show details")).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            pick = Some(i.bssid);
+                        }
+                    });
+                    ui.label(RichText::new(Self::vendor_label(r)).color(p.weak));
+                    ui.label(RichText::new(tf!("{} · Kanal {} · {}", "{} · channel {} · {}", i.band.label(), i.channel, i.width_label)).color(p.text));
+                    // Sparkline
+                    let (rect, _) = ui.allocate_exact_size(Vec2::new(220.0, row_h - 8.0), Sense::hover());
+                    let painter = ui.painter_at(rect);
+                    painter.rect_filled(rect, 4.0, p.surface2);
+                    let (lo, hi) = (-95.0, -30.0);
+                    let pts: Vec<egui::Pos2> = r
+                        .history
+                        .iter()
+                        .filter(|(t, _)| t_now - t <= 300.0)
+                        .map(|(t, v)| {
+                            let x = rect.max.x - ((t_now - t) / 300.0) as f32 * rect.width();
+                            let y = rect.max.y - (((v - lo) / (hi - lo)).clamp(0.0, 1.0) as f32) * rect.height();
+                            egui::pos2(x, y)
+                        })
+                        .collect();
+                    if pts.len() >= 2 {
+                        painter.add(egui::Shape::line(pts, egui::Stroke::new(1.6f32, signal_color(i.rssi))));
+                    }
+                    ui.label(RichText::new(format!("{} dBm", i.rssi)).monospace().strong().color(signal_color(i.rssi)));
+                    ui.label(RichText::new(tf!("{} Clients", "{} clients", i.stations.map(|v| v.to_string()).unwrap_or("–".into()))).color(p.weak));
+                    match i.ch_util {
+                        Some(u) => ui.label(RichText::new(tf!("Last {u:.0} %", "load {u:.0} %")).color(load_color(u as f64 * 0.6))),
+                        None => ui.label(RichText::new(t!("Last –", "load –")).color(p.weak)),
+                    };
+                    ui.end_row();
+                }
+            });
+            if members.len() > max_rows {
+                ui.label(RichText::new(tf!("… und {} weitere", "… and {} more", members.len() - max_rows)).small().color(p.weak));
+            }
+        });
+        if let Some(k) = pick {
+            self.selected = Some(k);
         }
     }
 }

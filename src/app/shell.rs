@@ -107,6 +107,66 @@ fn pill(ui: &mut Ui, text: &str, col: Color32) {
 }
 
 impl WifiApp {
+    /// Fenster mit allen Tastenkürzeln (F1)
+    pub(super) fn shortcuts_window(&mut self, ctx: &egui::Context) {
+        if !self.show_shortcuts {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new(RichText::new(t!("\u{E2D8} Tastenkürzel", "\u{E2D8} Keyboard shortcuts")).strong())
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                let p = pal(ui);
+                let groups: [(&str, Vec<(&str, &str)>); 3] = [
+                    (
+                        t!("Allgemein", "General"),
+                        vec![
+                            ("Strg+1 … 9", t!("Seite wechseln (Reihenfolge der Seitenleiste)", "Switch page (sidebar order)")),
+                            ("F5", t!("Sofort scannen", "Scan now")),
+                            (t!("Leertaste", "Space"), t!("Scan anhalten / fortsetzen", "Pause / resume scanning")),
+                            ("Strg+F", t!("Suchen (Netzwerkliste)", "Search (network list)")),
+                            ("Strg+E", t!("Exportieren (CSV)", "Export (CSV)")),
+                            ("Esc", t!("Fenster / Auswahl schließen", "Close window / selection")),
+                            ("F1", t!("Diese Übersicht", "This overview")),
+                        ],
+                    ),
+                    (
+                        t!("Messung", "Survey"),
+                        vec![
+                            (t!("Enter oder M", "Enter or M"), t!("Messpunkt erfassen (laufende Messung)", "Add a point (running survey)")),
+                            ("Strg+Z", t!("Letzte Änderung an den Messpunkten zurücknehmen", "Undo the last change to the points")),
+                        ],
+                    ),
+                    (
+                        t!("Grundriss", "Floor plan"),
+                        vec![
+                            (t!("Mausrad", "Mouse wheel"), t!("Zoomen", "Zoom")),
+                            (t!("Ziehen", "Drag"), t!("Verschieben (freie Fläche, rechte oder mittlere Maustaste)", "Pan (empty space, right or middle button)")),
+                            ("0", t!("Plan einpassen", "Fit plan")),
+                            (t!("Rechtsklick Stockwerk", "Right-click floor"), t!("Umbenennen / entfernen", "Rename / remove")),
+                        ],
+                    ),
+                ];
+                for (title, rows) in groups {
+                    ui.label(RichText::new(title).strong().color(p.text));
+                    egui::Grid::new(("keys", title)).num_columns(2).min_col_width(170.0).spacing([18.0, 4.0]).show(ui, |ui| {
+                        for (k, what) in rows {
+                            ui.label(RichText::new(k).monospace().color(p.accent));
+                            ui.label(RichText::new(what).color(p.text));
+                            ui.end_row();
+                        }
+                    });
+                    ui.add_space(8.0);
+                }
+            });
+        if !open {
+            self.show_shortcuts = false;
+        }
+    }
+
     pub(super) fn top_bar(&mut self, ctx: &egui::Context) {
         let p = pal_ctx(ctx);
         egui::TopBottomPanel::top("top")
@@ -161,35 +221,53 @@ impl WifiApp {
                         self.scan_now();
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("\u{E2CE}").on_hover_text(t!("Über WiFi Analyzer", "About WiFi Analyzer")).clicked() {
-                            self.show_about = true;
+                        // Seltenes im ⋯-Menü: Design, Updates, Tastenkürzel, Über
+                        let mut check_updates = false;
+                        ui.menu_button("\u{E1FE}", |ui| {
+                            ui.set_min_width(240.0);
+                            let (theme_icon, theme_txt) = if self.settings.dark { ("\u{E472}", t!("Helles Design", "Light theme")) } else { ("\u{E330}", t!("Dunkles Design", "Dark theme")) };
+                            if ui.button(format!("{theme_icon}  {theme_txt}")).clicked() {
+                                self.settings.dark = !self.settings.dark;
+                                crate::theme::apply(ctx, self.settings.dark);
+                                ui.close_menu();
+                            }
+                            if self.update.rx.is_some() {
+                                ui.add_enabled(false, egui::Button::new(t!("\u{E094}  Prüfe auf Updates …", "\u{E094}  Checking for updates …")));
+                            } else {
+                                let label = match (&self.update.latest, &self.update.error) {
+                                    (Some(_), _) => tf!("\u{E182}  v{VERSION} ist aktuell – erneut prüfen", "\u{E182}  v{VERSION} is up to date – check again"),
+                                    (None, Some(_)) => t!("\u{E094}  Updates prüfen (letzte Prüfung fehlgeschlagen)", "\u{E094}  Check for updates (last check failed)").into(),
+                                    (None, None) => t!("\u{E094}  Nach Updates suchen", "\u{E094}  Check for updates").into(),
+                                };
+                                if ui.button(label).clicked() {
+                                    check_updates = true;
+                                    ui.close_menu();
+                                }
+                            }
+                            if ui.button(t!("\u{E2D8}  Tastenkürzel  (F1)", "\u{E2D8}  Keyboard shortcuts  (F1)")).clicked() {
+                                self.show_shortcuts = true;
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button(t!("\u{E2CE}  Über WiFi Analyzer", "\u{E2CE}  About WiFi Analyzer")).clicked() {
+                                self.show_about = true;
+                                ui.close_menu();
+                            }
+                        })
+                        .response
+                        .on_hover_text(t!("Design, Updates, Tastenkürzel, Über", "Theme, updates, keyboard shortcuts, about"));
+                        if check_updates {
+                            self.start_update_check(ctx, true);
                         }
                         if ui.button(t!("\u{E270} Einstellungen", "\u{E270} Settings")).clicked() {
                             self.show_settings = true;
                         }
-                        // Update-Button: zeigt den Stand der GitHub-Prüfung
+                        // nur bei verfügbarem Update sichtbar
                         if let Some(v) = self.update.available().map(|r| r.version.clone()) {
                             let b = egui::Button::new(RichText::new(tf!("\u{E030} Update auf {v}", "\u{E030} Update to {v}")).color(Color32::WHITE).strong()).fill(p.accent);
                             if ui.add(b).on_hover_text(t!("Neue Version verfügbar – Details und Installation", "New version available – details and installation")).clicked() {
                                 self.show_update = true;
                             }
-                        } else if self.update.rx.is_some() {
-                            ui.add_enabled(false, egui::Button::new(t!("\u{E094} Prüfe …", "\u{E094} Checking …")));
-                        } else {
-                            let hint = match (&self.update.latest, &self.update.error) {
-                                (Some(_), _) => tf!("v{VERSION} ist aktuell – klicken zum erneuten Prüfen", "v{VERSION} is up to date – click to check again"),
-                                (None, Some(e)) => tf!("Letzte Prüfung fehlgeschlagen: {e}", "Last check failed: {e}"),
-                                (None, None) => t!("Bei GitHub nach einer neuen Version suchen", "Check GitHub for a new version").into(),
-                            };
-                            let label = if self.update.latest.is_some() { t!("\u{E182} Aktuell", "\u{E182} Up to date") } else { t!("\u{E094} Updates", "\u{E094} Updates") };
-                            if ui.button(label).on_hover_text(hint).clicked() {
-                                self.start_update_check(ctx, true);
-                            }
-                        }
-                        let theme_icon = if self.settings.dark { "\u{E472}" } else { "\u{E330}" };
-                        if ui.button(theme_icon).on_hover_text(t!("Hell / Dunkel", "Light / dark")).clicked() {
-                            self.settings.dark = !self.settings.dark;
-                            crate::theme::apply(ctx, self.settings.dark);
                         }
                         let has_meas = self.meas.is_some();
                         ui.menu_button(t!("\u{E20C} Export", "\u{E20C} Export"), |ui| {

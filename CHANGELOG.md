@@ -54,6 +54,11 @@ Erste öffentliche Version.
 - **Heatmap wie bei professionellen Survey-Tools**: Messpunkte beeinflussen sich gegenseitig (Interpolation), abseits der Punkte nimmt das Signal mit dem Pfadverlust ab; schwächer als die unterste Schwelle bleibt frei. Geschätzter Wert unter dem Mauszeiger.
 - **Farbskala einstellbar**: dBm-Schwellen und Farben frei wählbar (Standard angelehnt an gängige Tools), wird gespeichert.
 - **2,4 / 5 / 6 GHz**: pro Messpunkt wird der stärkste AP je Band gespeichert; Heatmap umschaltbar zwischen Messwert und den drei Bändern. Bericht (PDF/HTML) enthält eine Karte je Band, CSV die Werte.
+- **Zoom und Verschieben** im Plan: Mausrad zoomt zum Mauszeiger, Ziehen auf freier Fläche (oder mit rechter/mittlerer Maustaste) verschiebt, Taste 0 passt wieder ein.
+- **Deckkraft der Heatmap** per Regler, damit Raumnamen lesbar bleiben (wird gespeichert); Farblegende direkt im Plan.
+- **Messpunkt-Liste neben dem Plan** auf breiten Bildschirmen (Klick wählt aus, Rechtsklick löscht); volle Tabelle per Umschalter.
+- **Rückgängig (Strg+Z)** für erfasste, gesetzte, verschobene und gelöschte Messpunkte.
+- Stockwerk entfernen nur noch über das Rechtsklick-Menü des Reiters, mit Rückfrage.
 
 ### Latenz und Durchsatz pro Messpunkt
 - Ping zum Router und ins Internet (Ø, Min/Max, Jitter, Verlust) – läuft schon, während der Raumname eingegeben wird.
@@ -75,6 +80,11 @@ Erste öffentliche Version.
 - Diagramme mit ruhigem Hintergrund und dezentem Gitter, Achsen auch bei hoher Bildschirmskalierung beschriftet.
 - Einheitlich hohe Kacheln, AP-Anzahl als Abzeichen in der Netzwerkliste, Schnellauswahl im AP-Finder.
 - Heller Modus: besser lesbare AP-Farben.
+- Messung: Beschriftungen im Diagramm gestaffelt statt übereinander, Legende über dem Diagramm, kleinerer Tacho, Messpunkte und Ereignisse als Reiter.
+- Kennzahlen passen ihre Schriftgröße an, statt abgeschnitten zu werden; kürzere Kacheltexte in der Übersicht und „Alle anzeigen »“ im Kartenkopf.
+- Netzwerkliste: Spaltenbreiten werden gespeichert (Rechtsklick auf Spaltenkopf = zurücksetzen), abgeschnittene Texte zeigen den vollen Inhalt beim Überfahren, Erklärung des Farbstreifens; darunter ein Vergleich aller APs des gewählten Netzes mit Signalverlauf.
+- Kopfleiste entschlackt: Design, Updates, Tastenkürzel und Über im ⋯-Menü (Update-Knopf erscheint nur bei neuer Version).
+- Neue Tastenkürzel: Leertaste (Scan anhalten), M (Messpunkt), Strg+Z (Rückgängig), F1 (Übersicht aller Tastenkürzel).
 - **Demo-Modus** (`--demo`) mit erfundener WLAN-Umgebung für Präsentationen und Screenshots.
 
 ### Website

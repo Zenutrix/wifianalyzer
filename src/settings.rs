@@ -26,6 +26,10 @@ pub struct Settings {
     pub heat_scale: String,
     /// Farbe für „kein Signal“ (unter der untersten Schwelle): leer = Grau, „none“ = durchsichtig, sonst rrggbb
     pub heat_nosignal: String,
+    /// Deckkraft der Heatmap im Grundriss (0,2 … 0,9)
+    pub heat_opacity: f32,
+    /// Spaltenbreiten der Netzwerkliste „Breite,…“ (leer = Standard)
+    pub net_cols: String,
 }
 
 impl Default for Settings {
@@ -45,6 +49,8 @@ impl Default for Settings {
             point_speed: false,
             heat_scale: String::new(),
             heat_nosignal: String::new(),
+            heat_opacity: 0.5,
+            net_cols: String::new(),
         }
     }
 }
@@ -85,6 +91,8 @@ impl Settings {
                 "point_speed" => s.point_speed = b,
                 "heat_scale" => s.heat_scale = v.to_string(),
                 "heat_nosignal" => s.heat_nosignal = v.to_string(),
+                "heat_opacity" => s.heat_opacity = v.parse().unwrap_or(s.heat_opacity).clamp(0.2, 0.9),
+                "net_cols" => s.net_cols = v.to_string(),
                 "pinned" => s.pinned = v.split(',').filter_map(|m| parse_mac(m.trim())).collect(),
                 _ => {}
             }
@@ -95,7 +103,7 @@ impl Settings {
     pub fn save(&self) {
         let pinned: Vec<String> = self.pinned.iter().map(fmt_mac).collect();
         let text = format!(
-            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\npoint_ping={}\npoint_speed={}\nheat_scale={}\nheat_nosignal={}\n",
+            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\npoint_ping={}\npoint_speed={}\nheat_scale={}\nheat_nosignal={}\nheat_opacity={}\nnet_cols={}\n",
             self.lang.code(),
             self.dark as u8,
             self.interval,
@@ -109,7 +117,9 @@ impl Settings {
             self.point_ping as u8,
             self.point_speed as u8,
             self.heat_scale,
-            self.heat_nosignal
+            self.heat_nosignal,
+            self.heat_opacity,
+            self.net_cols
         );
         let _ = std::fs::create_dir_all(app_dir());
         // erst in eine temporäre Datei, dann umbenennen – nie eine halb geschriebene settings.ini

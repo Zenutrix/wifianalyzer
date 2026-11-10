@@ -245,6 +245,19 @@ pub struct WifiApp {
     plans_saved_sig: u64,
     plans_pending: Option<(u64, Instant)>,
     meas_follow: bool,
+    /// Grundriss-Ansicht: Zoom (1 = eingepasst), Verschiebung in Bildschirmpunkten, Stockwerk dazu
+    plan_zoom: f32,
+    plan_pan: egui::Vec2,
+    plan_view_key: (usize, usize),
+    /// Rückgängig für Messpunkte: (Messung, Beschreibung, Punkte vorher)
+    plan_undo: Vec<(chrono::DateTime<chrono::Local>, String, Vec<crate::measure::MeasPoint>)>,
+    /// Stockwerk, dessen Entfernen bestätigt werden muss
+    floor_remove_confirm: Option<usize>,
+    /// Grundriss-Messung: volle Tabelle unter dem Plan statt kompakter Liste daneben
+    plan_full_table: bool,
+    /// Messung: unten Messpunkte (false) oder Ereignisse (true)
+    meas_show_events: bool,
+    show_shortcuts: bool,
 
     splash_done: bool,
     splash_progress: f32,
@@ -339,6 +352,14 @@ impl WifiApp {
             plans_pending: None,
             last_plans: saved_plans,
             meas_follow: false,
+            plan_zoom: 1.0,
+            plan_pan: egui::Vec2::ZERO,
+            plan_view_key: (usize::MAX, 0),
+            plan_undo: Vec::new(),
+            floor_remove_confirm: None,
+            plan_full_table: false,
+            meas_show_events: false,
+            show_shortcuts: false,
             splash_done: false,
             splash_progress: 0.0,
             splash_done_steps: 0,
@@ -952,6 +973,29 @@ impl WifiApp {
     fn shortcuts(&mut self, ctx: &egui::Context) {
         use egui::{Key, Modifiers};
         let typing = ctx.wants_keyboard_input();
+        let on_meas = matches!(self.page, Page::Measure | Page::PlanSurvey);
+        let dialog_open = self.meas_point.is_some() || self.show_settings || self.pdf_pick.is_some();
+        let (f1, space, key_m, ctrl_z) = ctx.input_mut(|i| {
+            (
+                i.consume_key(Modifiers::NONE, Key::F1),
+                !typing && !dialog_open && i.consume_key(Modifiers::NONE, Key::Space),
+                !typing && !dialog_open && on_meas && i.consume_key(Modifiers::NONE, Key::M),
+                !typing && on_meas && i.consume_key(Modifiers::CTRL, Key::Z),
+            )
+        });
+        if f1 {
+            self.show_shortcuts = !self.show_shortcuts;
+        }
+        if space {
+            self.set_paused(!self.paused);
+            self.toast(Sev::Info, if self.paused { t!("Scan angehalten (Leertaste = fortsetzen)", "Scanning paused (Space = resume)") } else { t!("Scan fortgesetzt", "Scanning resumed") }.into());
+        }
+        if key_m && self.meas.as_ref().is_some_and(|m| m.running && !m.draft) {
+            self.open_point_dialog();
+        }
+        if ctrl_z {
+            self.undo_points();
+        }
         let (f5, ctrl_f, ctrl_e, esc, num) = ctx.input_mut(|i| {
             let num = (1..=9).find(|n| {
                 let key = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7, Key::Num8, Key::Num9][*n - 1];
@@ -982,7 +1026,8 @@ impl WifiApp {
             }
         }
         if esc {
-            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.meas_point.is_some() || self.plan_scale.is_some() || self.show_scale_editor || self.pdf_pick.is_some() {
+            if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.show_shortcuts || self.meas_point.is_some() || self.plan_scale.is_some() || self.show_scale_editor || self.pdf_pick.is_some() {
+                self.show_shortcuts = false;
                 self.meas_point = None;
                 self.plan_scale = None;
                 self.show_scale_editor = false;
@@ -1037,6 +1082,7 @@ impl eframe::App for WifiApp {
         self.perm_dialog(ctx);
         self.settings_window(ctx);
         self.about_window(ctx);
+        self.shortcuts_window(ctx);
         self.update_window(ctx);
         self.whats_new_window(ctx);
         self.point_dialog(ctx);
