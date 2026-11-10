@@ -2,6 +2,7 @@
 
 mod dialogs;
 mod inspector;
+mod logo;
 mod pages;
 mod plan;
 mod report_pdf;
@@ -258,12 +259,16 @@ pub struct WifiApp {
     /// Messung: unten Messpunkte (false) oder Ereignisse (true)
     meas_show_events: bool,
     show_shortcuts: bool,
+    /// Rückfrage „Wirklich deinstallieren?“ in den Einstellungen
+    uninstall_confirm: bool,
 
     splash_done: bool,
     splash_progress: f32,
     splash_done_steps: usize,
     splash_step_t: f32,
     icon_tex: Option<egui::TextureHandle>,
+    /// Kachel des Logos (der Ladebildschirm zeichnet das Logo darauf)
+    logo_tile_tex: Option<egui::TextureHandle>,
 
     perm: Option<PermStatus>,
     perm_rx: Option<Receiver<PermStatus>>,
@@ -360,10 +365,18 @@ impl WifiApp {
             plan_full_table: false,
             meas_show_events: false,
             show_shortcuts: false,
+            uninstall_confirm: false,
             splash_done: false,
             splash_progress: 0.0,
             splash_done_steps: 0,
             splash_step_t: 0.0,
+            logo_tile_tex: eframe::icon_data::from_png_bytes(include_bytes!("../../assets/logo_tile.png")).ok().map(|d| {
+                ctx.load_texture(
+                    "logo-tile",
+                    egui::ColorImage::from_rgba_unmultiplied([d.width as usize, d.height as usize], &d.rgba),
+                    egui::TextureOptions::LINEAR,
+                )
+            }),
             icon_tex: eframe::icon_data::from_png_bytes(crate::ICON_PNG).ok().map(|d| {
                 ctx.load_texture(
                     "app-icon",
@@ -955,6 +968,20 @@ impl WifiApp {
             let since = *self.settings_dirty_since.get_or_insert_with(Instant::now);
             if since.elapsed() > Duration::from_millis(800) {
                 self.save_settings();
+            }
+        }
+    }
+
+    /// Deinstallation starten: alles speichern, Deinstaller öffnen, App beenden (sonst ist die EXE gesperrt)
+    fn start_uninstall(&mut self, ctx: &egui::Context) {
+        self.autosave_survey(true);
+        self.sync_settings();
+        self.save_settings();
+        match update::run_uninstaller() {
+            Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Err(e) => {
+                self.uninstall_confirm = false;
+                self.toast(Sev::Critical, tf!("Deinstallation konnte nicht gestartet werden: {e}", "Could not start the uninstaller: {e}"));
             }
         }
     }

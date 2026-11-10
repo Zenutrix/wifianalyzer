@@ -85,6 +85,8 @@ Erste öffentliche Version.
 - Netzwerkliste: Spaltenbreiten werden gespeichert (Rechtsklick auf Spaltenkopf = zurücksetzen), abgeschnittene Texte zeigen den vollen Inhalt beim Überfahren, Erklärung des Farbstreifens; darunter ein Vergleich aller APs des gewählten Netzes mit Signalverlauf.
 - Kopfleiste entschlackt: Design, Updates, Tastenkürzel und Über im ⋯-Menü (Update-Knopf erscheint nur bei neuer Version).
 - Neue Tastenkürzel: Leertaste (Scan anhalten), M (Messpunkt), Strg+Z (Rückgängig), F1 (Übersicht aller Tastenkürzel).
+- **Neues Logo**: ein „W“ als Linie im Verlauf Cyan → Violett, aus dessen mittlerer Spitze WLAN-Wellen aufsteigen. Im **Ladefenster baut es sich auf** (Kachel, das W zeichnet sich, die Wellen ploppen auf und senden weiter), ebenso auf der Website.
+- **Deinstallieren** direkt in der App (Einstellungen → Programm) mit Rückfrage; die portable Version zeigt, wo die EXE liegt. Daneben ein Link zu den installierten Apps in Windows.
 - **Demo-Modus** (`--demo`) mit erfundener WLAN-Umgebung für Präsentationen und Screenshots.
 
 ### Website

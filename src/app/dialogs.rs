@@ -24,7 +24,7 @@ impl WifiApp {
         let oui_ready = self.oui_rx.is_none();
         let perm_ready = self.perm.is_some();
         // Auf die Windows-Abfrage wird gewartet (der Benutzer muss evtl. erst bestätigen), sonst max. 12 s
-        let ready = t > 1.6 && scanned && perm_ready && (oui_ready || t > 6.0) || (perm_ready && t > 12.0) || t > 60.0;
+        let ready = t > crate::app::logo::BUILT + 0.3 && scanned && perm_ready && (oui_ready || t > 6.0) || (perm_ready && t > 12.0) || t > 60.0;
         let steps = [
             (t!("Berechtigungen prüfen", "Checking permissions"), perm_ready),
             (t!("WLAN-Adapter initialisieren", "Initializing Wi-Fi adapter"), !self.interfaces.is_empty() || t > 1.0),
@@ -86,31 +86,29 @@ impl WifiApp {
             pc.circle_filled(egui::pos2(card.center().x, card.top() + 60.0), 230.0, Color32::from_rgb(30, 80, 170).gamma_multiply(0.10));
             p.rect_stroke(card, 18.0, Stroke::new(1.5f32, accent.gamma_multiply(0.45)));
 
-            let ic = egui::pos2(card.center().x, card.top() + 100.0);
-            for k in 0..3 {
-                let ph = (t * 0.6 + k as f32 / 3.0) % 1.0;
-                pc.circle_stroke(ic, 50.0 + ph * 190.0, Stroke::new(1.5f32, accent.gamma_multiply((1.0 - ph) * 0.45 * fade)));
-            }
-            let breathe = 1.0 + (t * 2.0).sin() * 0.03;
+            // Logo baut sich auf (Kachel, W-Linie, Wellen), danach pulsieren die Wellen
+            let ic = egui::pos2(card.center().x, card.top() + 98.0);
+            let glow_a = crate::app::logo::BUILT;
+            let shine = ((t - glow_a + 0.4) / 0.8).clamp(0.0, 1.0);
             for k in 0..5 {
-                p.circle_filled(ic, (52.0 + k as f32 * 7.0) * breathe, Color32::from_rgb(40, 140, 255).gamma_multiply(0.05 * fade));
+                pc.circle_filled(ic, 64.0 + k as f32 * 9.0, Color32::from_rgb(99, 102, 241).gamma_multiply(0.035 * shine));
             }
-            if let Some(tex) = &self.icon_tex {
-                let r = egui::Rect::from_center_size(ic, Vec2::splat(96.0 * breathe));
-                p.image(tex.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE.gamma_multiply(fade));
-            }
+            let logo_rect = egui::Rect::from_center_size(ic, Vec2::splat(124.0));
+            crate::app::logo::draw(&p, logo_rect, t, self.logo_tile_tex.as_ref().map(|t| t.id()));
+            // Schrift erscheint, sobald das W steht
+            let txt = ((t - 0.9) / 0.5).clamp(0.0, 1.0);
             let weak = Color32::from_rgb(140, 160, 190);
-            p.text(egui::pos2(ic.x, card.top() + 186.0), Align2::CENTER_CENTER, "WiFi Analyzer", FontId::proportional(32.0), Color32::WHITE.gamma_multiply(fade));
+            p.text(egui::pos2(ic.x, card.top() + 194.0 + 6.0 * (1.0 - txt)), Align2::CENTER_CENTER, "WiFi Analyzer", FontId::new(31.0, crate::theme::semibold()), Color32::WHITE.gamma_multiply(txt));
             p.text(
-                egui::pos2(ic.x, card.top() + 216.0),
+                egui::pos2(ic.x, card.top() + 224.0 + 6.0 * (1.0 - txt)),
                 Align2::CENTER_CENTER,
                 t!("WLAN-Analyse für Techniker", "Wi-Fi analysis for technicians"),
                 FontId::proportional(14.5),
-                weak.gamma_multiply(fade),
+                weak.gamma_multiply(txt),
             );
 
             let bar_w = 360.0;
-            let bar = egui::Rect::from_center_size(egui::pos2(ic.x, card.top() + 256.0), Vec2::new(bar_w, 5.0));
+            let bar = egui::Rect::from_center_size(egui::pos2(ic.x, card.top() + 262.0), Vec2::new(bar_w, 5.0));
             p.rect_filled(bar, 3.0, Color32::from_rgb(32, 44, 66));
             let mut fill = bar;
             fill.set_width((bar_w * progress).max(6.0));

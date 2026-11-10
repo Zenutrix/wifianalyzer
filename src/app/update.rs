@@ -98,6 +98,13 @@ pub fn is_installed() -> bool {
         .unwrap_or(false)
 }
 
+/// Deinstallationsprogramm des Installers starten (liegt neben der EXE)
+pub fn run_uninstaller() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let unins = exe.parent().map(|d| d.join("unins000.exe")).ok_or_else(|| "kein Programmordner".to_string())?;
+    std::process::Command::new(unins).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Heruntergeladenes Update: entweder eine neue EXE (portable) oder der Installer
 pub(crate) enum Download {
     Exe(PathBuf),

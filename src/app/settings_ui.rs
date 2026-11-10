@@ -58,6 +58,7 @@ impl WifiApp {
         }
         let mut open = true;
         let (mut oui, mut clear, mut unpin, mut reset, mut done) = (false, false, false, false, false);
+        let mut uninstall = false;
         let mut interval_changed = false;
         egui::Window::new(RichText::new(t!("Einstellungen", "Settings")).strong().size(16.0))
             .open(&mut open)
@@ -172,6 +173,45 @@ impl WifiApp {
                             }
                         });
                     });
+
+                    section(ui, t!("PROGRAMM", "PROGRAM"), |ui| {
+                        if crate::app::update::is_installed() {
+                            let confirm = self.uninstall_confirm;
+                            row(
+                                ui,
+                                t!("Deinstallieren", "Uninstall"),
+                                t!("WiFi Analyzer von diesem PC entfernen – gespeicherte Messungen in „Dokumente“ bleiben erhalten", "Remove WiFi Analyzer from this PC – saved surveys in \"Documents\" are kept"),
+                                |ui| {
+                                    let label = if confirm { t!("Wirklich deinstallieren?", "Really uninstall?") } else { t!("Deinstallieren …", "Uninstall …") };
+                                    if ui.button(RichText::new(label).color(p.danger)).clicked() {
+                                        if confirm {
+                                            uninstall = true;
+                                        } else {
+                                            self.uninstall_confirm = true;
+                                        }
+                                    }
+                                },
+                            );
+                        } else {
+                            row(
+                                ui,
+                                t!("Entfernen", "Remove"),
+                                t!("Portable Version: zum Entfernen einfach den Ordner mit der EXE löschen", "Portable version: to remove it, simply delete the folder containing the EXE"),
+                                |ui| {
+                                    if ui.button(t!("Ordner öffnen", "Open folder")).clicked() {
+                                        if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+                                            let _ = std::process::Command::new("explorer").arg(d).spawn();
+                                        }
+                                    }
+                                },
+                            );
+                        }
+                        row(ui, t!("Windows-Apps", "Windows apps"), t!("Installierte Apps in den Windows-Einstellungen", "Installed apps in Windows Settings"), |ui| {
+                            if ui.button(t!("Öffnen", "Open")).clicked() {
+                                let _ = std::process::Command::new("explorer").arg("ms-settings:appsfeatures").spawn();
+                            }
+                        });
+                    });
                 });
 
                 ui.add_space(12.0);
@@ -189,6 +229,10 @@ impl WifiApp {
             });
         if !open || done {
             self.show_settings = false;
+            self.uninstall_confirm = false;
+        }
+        if uninstall {
+            self.start_uninstall(ctx);
         }
         if interval_changed {
             self.apply_scan_interval();
