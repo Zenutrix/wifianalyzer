@@ -1211,7 +1211,7 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
         if !vals.is_empty() {
             let k = (vals.len() / 900).max(1);
             let pts: Vec<String> = vals.iter().step_by(k).map(|(t, v)| format!("{:.1},{:.1}", x(*t), y(*v))).collect();
-            let _ = write!(s, r##"<polyline points="{}" fill="none" stroke="#0969da" stroke-width="1.8" stroke-linejoin="round"/>"##, pts.join(" "));
+            let _ = write!(s, r##"<polyline points="{}" fill="none" stroke="#4f46e5" stroke-width="1.8" stroke-linejoin="round"/>"##, pts.join(" "));
         }
         for (i, p) in m.points.iter().enumerate() {
             let col = p

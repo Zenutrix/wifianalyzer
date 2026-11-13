@@ -182,7 +182,7 @@ impl WifiApp {
             let mut go_score = false;
             let mut score_card = |ui: &mut Ui, h: f32| {
                 // eigener Kartenkopf: dessen Höhe ausgleichen, damit die Reihe gleich hoch ist
-                card_full(ui, None, if h > 0.0 { h + 29.0 } else { 0.0 }, |ui| {
+                card_full(ui, None, if h > 0.0 { h + 31.0 } else { 0.0 }, |ui| {
                     go_score = card_head(ui, t!("WLAN-Bewertung", "Wi-Fi rating"), Some(t!("Befunde »", "Findings »")));
                     let col = match score.points {
                         85.. => p.success,
