@@ -90,6 +90,18 @@ impl WifiApp {
                                 crate::theme::apply(ui.ctx(), dark);
                             }
                         });
+                        row(ui, t!("Anzeigegröße", "Display size"), t!("Schrift und Bedienelemente größer oder kleiner – auch mit Strg + und Strg −", "Larger or smaller text and controls – also with Ctrl + and Ctrl −"), |ui| {
+                            let z = ui.ctx().zoom_factor();
+                            if ui.add_enabled(z < 1.59, egui::Button::new("+")).clicked() {
+                                ui.ctx().set_zoom_factor((z + 0.1).min(1.6));
+                            }
+                            if ui.button(format!("{:.0} %", z * 100.0)).on_hover_text(t!("Zurück auf 100 %", "Back to 100 %")).clicked() {
+                                ui.ctx().set_zoom_factor(1.0);
+                            }
+                            if ui.add_enabled(z > 0.71, egui::Button::new("−")).clicked() {
+                                ui.ctx().set_zoom_factor((z - 0.1).max(0.7));
+                            }
+                        });
                         row(
                             ui,
                             t!("Automatisch nach Updates suchen", "Check for updates automatically"),

@@ -20,6 +20,9 @@ use crate::{t, tf};
 /// Dateiendung gespeicherter Messungen
 pub(super) const EXT: &str = "wifisurvey";
 
+/// Logo für den HTML-Bericht (wie website/logo.svg, ohne Animation)
+const REPORT_LOGO: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" aria-hidden="true"><defs><linearGradient id="lb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e1b4b"/></linearGradient><linearGradient id="li" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024"><stop offset=".18" stop-color="#22d3ee"/><stop offset=".5" stop-color="#6366f1"/><stop offset=".82" stop-color="#d946ef"/></linearGradient></defs><rect width="1024" height="1024" rx="240" fill="url(#lb)"/><g fill="none" stroke="url(#li)" stroke-linecap="round" stroke-linejoin="round"><polyline points="196,318 346,716 512,452 678,716 828,318" stroke-width="118"/><path d="M427 304.8A170 170 0 0 1 597 304.8" stroke-width="54"/><path d="M381 225.1A262 262 0 0 1 643 225.1" stroke-width="54"/></g></svg>"##;
+
 /// Eingabe im Dialog „Messpunkt erfassen“
 pub(crate) struct PointDraft {
     name: String,
@@ -641,7 +644,7 @@ impl WifiApp {
                                 (Some(a), Some(b)) if a != b => tf!("{a} … {b} dBm, {} Werte", "{a} … {b} dBm, {} values", pt.samples),
                                 _ => tf!("{} Werte", "{} values", pt.samples),
                             };
-                            ui.label(RichText::new(format!("{v:.0} dBm")).strong().monospace().color(col)).on_hover_text(range);
+                            ui.label(RichText::new(format!("{v:.0} dBm")).strong().color(col)).on_hover_text(range);
                             ui.horizontal(|ui| badge(ui, q.label(), col)).response.on_hover_text(q.hint());
                         }
                         _ => {
@@ -995,10 +998,11 @@ impl WifiApp {
             r#"<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} – {ssid}</title>
 <style>
-:root{{--fg:#1f2328;--weak:#59636e;--line:#d1d9e0;--bg:#f6f8fa;--accent:#0969da}}
+:root{{--fg:#1f2328;--weak:#59636e;--line:#d1d9e0;--bg:#f6f8fa;--accent:#4f46e5;--grad:linear-gradient(90deg,#22d3ee,#6366f1,#d946ef)}}
 *{{box-sizing:border-box}} body{{font:14px/1.5 "Segoe UI",system-ui,sans-serif;color:var(--fg);margin:0;background:#fff}}
 .page{{max-width:1000px;margin:0 auto;padding:32px 28px}}
-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:3px solid var(--accent);padding-bottom:14px}}
+header{{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:3px solid;border-image:var(--grad) 1;padding-bottom:14px}}
+.brand{{display:flex;align-items:center;gap:12px}} .brand svg{{width:40px;height:40px;flex:none}}
 h1{{font-size:26px;margin:0}} h2{{font-size:17px;margin:28px 0 10px}} .weak{{color:var(--weak)}}
 .meta{{text-align:right;font-size:13px;color:var(--weak)}}
 .kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px}}
@@ -1011,15 +1015,16 @@ td{{border-bottom:1px solid var(--line);padding:7px 8px;vertical-align:top}} tr:
 .legend{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:12px}} .legend div{{border-left:4px solid;padding:2px 8px}}
 ul.rec li{{margin:4px 0}} svg text{{font-family:"Segoe UI",sans-serif}}
 footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--weak);display:flex;justify-content:space-between}}
-.print{{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer}}
+.print{{position:fixed;right:18px;bottom:18px;background:var(--grad);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer}}
 .tablewrap{{overflow-x:auto}}
 @media (max-width:720px){{.page{{padding:20px 14px}} header{{flex-direction:column}} .meta{{text-align:left}} .kpis,.legend{{grid-template-columns:repeat(2,1fr)}} table{{min-width:640px}}}}
 @media print{{.print{{display:none}} .page{{padding:0}} h2{{break-after:avoid}} tr{{break-inside:avoid}} @page{{size:A4;margin:14mm}}}}
 </style></head><body><div class="page">
-<header><div><h1>{title}</h1><div class="weak">{net} <b>{ssid}</b></div></div>
+<header><div class="brand">{logo}<div><h1>{title}</h1><div class="weak">{net} <b>{ssid}</b></div></div></div>
 <div class="meta">{date_l}: {date}<br>{dur_l}: {dur}<br>{pts_l}: {npts}</div></header>
 "#,
             title = t!("WLAN-Messbericht", "Wi-Fi survey report"),
+            logo = REPORT_LOGO,
             ssid = esc_html(&m.ssid),
             net = t!("Netzwerk (SSID):", "Network (SSID):"),
             date_l = t!("Datum", "Date"),

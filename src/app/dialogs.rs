@@ -67,6 +67,8 @@ impl WifiApp {
             }
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            // gespeicherte Anzeigegröße erst jetzt anwenden (das Ladefenster hat eine feste Größe)
+            ctx.set_zoom_factor(self.settings.zoom);
             return false;
         }
         let progress = self.splash_progress;

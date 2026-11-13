@@ -58,6 +58,11 @@ impl WifiApp {
         let (mut ping_on, mut speed_on) = (self.settings.point_ping, self.settings.point_speed);
         let has_meas = self.meas.is_some() && !draft;
         let confirm = self.meas_discard_confirm;
+        // Vollbild (F11): nur Messpunkt-Zeile und Plan
+        let fullscreen = plan_mode && self.plan_fullscreen;
+        let live_now: Option<i32> = self.conn.as_ref().filter(|c| c.ssid == ssid).and_then(|c| c.rssi).or(self.best_ap_of(&ssid).map(|b| b.info.rssi));
+        let connected_now = self.conn.as_ref().is_some_and(|c| c.ssid == ssid);
+        if !fullscreen {
         page_header(
             ui,
             if plan_mode { t!("Grundriss-Messung", "Floor plan survey") } else { t!("Messung", "Survey") },
@@ -102,13 +107,10 @@ impl WifiApp {
                     }
                 }
                 if running {
-                    if primary_button(ui, t!("\u{E46C} Messung stoppen", "\u{E46C} Stop survey"), p.danger).clicked() {
+                    if crate::widgets::outline_button(ui, t!("\u{E46C} Messung stoppen", "\u{E46C} Stop survey"), p.danger).clicked() {
                         stop = true;
                     }
-                } else if ui
-                    .add_enabled(!ssid.is_empty(), egui::Button::new(RichText::new(t!("\u{E3D0} Messung starten", "\u{E3D0} Start survey")).color(Color32::WHITE).strong()).fill(p.success))
-                    .clicked()
-                {
+                } else if ui.add_enabled_ui(!ssid.is_empty(), |ui| primary_button(ui, t!("\u{E3D0} Messung starten", "\u{E3D0} Start survey"), p.accent)).inner.clicked() {
                     start = true;
                 }
                 ui.add_enabled_ui(!running, |ui| {
@@ -127,6 +129,7 @@ impl WifiApp {
                 ui.label(RichText::new("SSID").color(p.weak));
             },
         );
+        }
         if let Some(s) = new_ssid {
             self.meas_ssid = Some(s);
         }
@@ -135,23 +138,28 @@ impl WifiApp {
         let undo_label = if draft { None } else { self.undo_label() };
         let mut undo = false;
         ui.horizontal(|ui| {
-            let btn = egui::Button::new(RichText::new(t!("\u{E316} Messpunkt erfassen", "\u{E316} Add measurement point")).strong().color(if running { Color32::WHITE } else { p.weak }))
-                .fill(if running { p.purple } else { p.surface2 })
-                .min_size(egui::Vec2::new(0.0, 28.0));
-            if ui.add_enabled(running, btn).clicked() {
+            // während der Messung ist „Messpunkt erfassen“ die Hauptaktion (in der Vorbereitung ausgeblendet)
+            if !draft && ui.add_enabled_ui(running, |ui| primary_button(ui, t!("\u{E316} Messpunkt erfassen", "\u{E316} Add measurement point"), p.accent)).inner.clicked() {
                 add_point = true;
             }
+            if plan_mode && !draft {
+                // Live-Wert und Kennzahlen direkt in dieser Zeile
+                self.plan_live_inline(ui, live_now, connected_now);
+            } else if draft {
+                ui.label(RichText::new(t!("Pro Messpunkt zusätzlich messen:", "Also measure at each point:")).color(p.weak));
+            } else {
             ui.label(
-                RichText::new(if running && plan_mode {
-                    t!("oder einfach an deiner Position in den Plan klicken", "or simply click your position on the plan")
-                } else if running {
+                RichText::new(if running {
                     t!("oder Enter drücken – Raum eingeben – Enter", "or press Enter – type the room – Enter")
                 } else {
                     t!("Messpunkte lassen sich während einer laufenden Messung erfassen", "Points can be added while a survey is running")
                 })
                 .color(p.weak),
             );
-            ui.separator();
+            }
+            if !draft {
+                ui.separator();
+            }
             if !plan_mode {
                 ui.checkbox(&mut follow, t!("Nur letzte 5 min", "Last 5 min only"));
                 ui.separator();
@@ -162,6 +170,9 @@ impl WifiApp {
                 "Pro Messpunkt: Download/Upload über das Internet (speed.cloudflare.com), ca. 12 s und bis zu 70 MB – nur mit Verbindung zur gemessenen SSID",
                 "Per point: download/upload via the internet (speed.cloudflare.com), approx. 12 s and up to 70 MB – only when connected to the surveyed SSID"
             ));
+            if fullscreen && running && crate::widgets::outline_button(ui, t!("\u{E46C} Stoppen", "\u{E46C} Stop"), p.danger).clicked() {
+                stop = true;
+            }
             if let Some(what) = undo_label.as_deref() {
                 ui.separator();
                 if ui.button(t!("\u{E08A} Rückgängig", "\u{E08A} Undo")).on_hover_text(tf!("Strg+Z: {what}", "Ctrl+Z: {what}")).clicked() {
@@ -255,12 +266,13 @@ impl WifiApp {
         let conn_here = self.conn.as_ref().filter(|c| c.ssid == ssid);
         let best = self.best_ap_of(&ssid);
         let live_rssi = conn_here.and_then(|c| c.rssi).or(best.map(|b| b.info.rssi));
+        let mut start_cta = false;
         if plan_mode && draft {
             if self.plan_setup_strip(ui, !ssid.is_empty()) {
                 self.start_survey(ssid.clone(), true);
             }
         } else if plan_mode {
-            self.plan_live_strip(ui, live_rssi, conn_here.is_some());
+            // Live-Wert steht bereits in der Messpunkt-Zeile
         } else {
         ui.horizontal(|ui| {
             card(ui, None, |ui| {
@@ -346,6 +358,11 @@ impl WifiApp {
                         ui.label(t!("2.  „Messung starten“ und mit dem Laptop die Räume ablaufen", "2.  Click \"Start survey\" and walk through the rooms with the laptop"));
                         ui.label(t!("3.  In jedem Raum Enter drücken, Raum eingeben, Enter – das ist ein Messpunkt", "3.  In each room press Enter, type the room, Enter – that's a measurement point"));
                         ui.label(t!("4.  Stoppen – alles wird automatisch gespeichert; Export als Bericht (PDF) oder Liste (Excel)", "4.  Stop – everything is saved automatically; export as report (PDF) or list (Excel)"));
+                        ui.add_space(8.0);
+                        let label = if ssid.is_empty() { t!("\u{E3D0} Messung starten", "\u{E3D0} Start survey").to_string() } else { tf!("\u{E3D0} Messung für „{ssid}“ starten", "\u{E3D0} Start survey for \"{ssid}\"") };
+                        if ui.add_enabled_ui(!ssid.is_empty(), |ui| primary_button(ui, &label, p.accent)).inner.clicked() {
+                            start_cta = true;
+                        }
                         ui.add_space(6.0);
                         ui.label(
                             RichText::new(t!(
@@ -361,6 +378,10 @@ impl WifiApp {
         });
         }
 
+        if start_cta {
+            self.start_survey(ssid.clone(), plan_mode);
+            return;
+        }
         if self.meas.is_none() {
             ui.add_space(10.0);
             card(ui, None, |ui| {

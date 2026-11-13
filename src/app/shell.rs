@@ -57,9 +57,20 @@ impl Page {
 }
 
 /// Navigationseintrag: Symbol, Text, optionales Zähler-Badge
-fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool, badge: Option<(String, Color32)>, hint: &str) -> Response {
+fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool, badge: Option<(String, Color32)>, hint: &str, collapsed: bool) -> Response {
     let p = pal(ui);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
+    if collapsed {
+        // nur Symbol, Zähler als Punkt; der Name steht im Tooltip
+        let r = rect.shrink2(Vec2::new(0.0, 1.0));
+        let bg = if selected { p.accent_soft } else if resp.hovered() { p.surface2 } else { Color32::TRANSPARENT };
+        ui.painter().rect_filled(r, 7.0, bg);
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, icon, FontId::proportional(17.0), if selected { p.accent } else { p.weak });
+        if let Some((_, col)) = badge {
+            ui.painter().circle_filled(r.right_top() + Vec2::new(-7.0, 8.0), 3.5, col);
+        }
+        return resp.on_hover_text(format!("{label}\n{hint}")).on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
     let painter = ui.painter();
     let bg = if selected {
         p.accent_soft
@@ -71,8 +82,17 @@ fn nav_item(ui: &mut Ui, icon: &str, label: &str, selected: bool, badge: Option<
     let r = rect.shrink2(Vec2::new(0.0, 1.0));
     painter.rect_filled(r, 7.0, bg);
     if selected {
+        // Markierung im Verlauf des Logos (Cyan oben, Violett unten)
         let bar = egui::Rect::from_min_size(r.left_top() + Vec2::new(0.0, 7.0), Vec2::new(3.0, r.height() - 14.0));
-        painter.rect_filled(bar, 2.0, p.accent);
+        let g = crate::theme::GRAD_LINE;
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(bar.left_top(), g[0]);
+        mesh.colored_vertex(bar.right_top(), g[0]);
+        mesh.colored_vertex(bar.right_bottom(), g[1]);
+        mesh.colored_vertex(bar.left_bottom(), g[1]);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        painter.add(egui::Shape::mesh(mesh));
     }
     let fg = if selected { p.text } else { p.text.gamma_multiply(0.88) };
     painter.text(r.left_center() + Vec2::new(14.0, 0.0), Align2::LEFT_CENTER, icon, FontId::proportional(15.0), if selected { p.accent } else { p.weak });
@@ -130,6 +150,8 @@ impl WifiApp {
                             ("Strg+F", t!("Suchen (Netzwerkliste)", "Search (network list)")),
                             ("Strg+E", t!("Exportieren (CSV)", "Export (CSV)")),
                             ("Esc", t!("Fenster / Auswahl schließen", "Close window / selection")),
+                            ("Strg+B", t!("Seitenleiste ein-/ausklappen", "Collapse / expand the sidebar")),
+                            ("Strg + / −", t!("Anzeige größer / kleiner", "Larger / smaller display")),
                             ("F1", t!("Diese Übersicht", "This overview")),
                         ],
                     ),
@@ -146,6 +168,7 @@ impl WifiApp {
                             (t!("Mausrad", "Mouse wheel"), t!("Zoomen", "Zoom")),
                             (t!("Ziehen", "Drag"), t!("Verschieben (freie Fläche, rechte oder mittlere Maustaste)", "Pan (empty space, right or middle button)")),
                             ("0", t!("Plan einpassen", "Fit plan")),
+                            ("F11", t!("Vollbild für die Begehung", "Full screen for the walk-through")),
                             (t!("Rechtsklick Stockwerk", "Right-click floor"), t!("Umbenennen / entfernen", "Rename / remove")),
                         ],
                     ),
@@ -293,18 +316,42 @@ impl WifiApp {
         let ssids = self.ssid_choices().len();
         let running = self.meas.as_ref().is_some_and(|m| m.running);
 
+        let collapsed = self.settings.nav_collapsed;
+        // weich zwischen schmal (nur Symbole) und breit wechseln
+        let w = 60.0 + 168.0 * ctx.animate_bool_with_time(egui::Id::new("nav_open"), !collapsed, 0.16);
         egui::SidePanel::left("nav")
-            .exact_width(228.0)
+            .exact_width(w)
             .resizable(false)
             .frame(egui::Frame::none().fill(p.surface).inner_margin(Margin::symmetric(10.0, 6.0)).stroke(Stroke::new(1.0f32, p.border)))
             .show(ctx, |ui| {
                 // Verbindung unten fixieren, Rest scrollbar darüber
                 egui::TopBottomPanel::bottom("conn_card")
                     .frame(egui::Frame::none().inner_margin(Margin::symmetric(0.0, 8.0)))
-                    .show_inside(ui, |ui| self.connection_card(ui));
+                    .show_inside(ui, |ui| {
+                        if collapsed {
+                            self.connection_mini(ui);
+                        } else {
+                            self.connection_card(ui);
+                        }
+                        ui.add_space(4.0);
+                        let (icon, tip) = if collapsed {
+                            ("\u{E13A}", t!("Seitenleiste ausklappen (Strg+B)", "Expand sidebar (Ctrl+B)"))
+                        } else {
+                            ("\u{E138}", t!("Seitenleiste einklappen – mehr Platz für Plan und Tabellen (Strg+B)", "Collapse sidebar – more room for plan and tables (Ctrl+B)"))
+                        };
+                        let txt = if collapsed { icon.to_string() } else { format!("{icon}  {}", t!("Einklappen", "Collapse")) };
+                        let b = egui::Button::new(RichText::new(txt).size(12.5).color(p.weak)).frame(false).min_size(Vec2::new(ui.available_width(), 24.0));
+                        if ui.add(b).on_hover_text(tip).clicked() {
+                            self.settings.nav_collapsed = !collapsed;
+                        }
+                    });
 
                 egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                    section_label(ui, t!("ANALYSE", "ANALYSIS"));
+                    if collapsed {
+                        ui.add_space(8.0);
+                    } else {
+                        section_label(ui, t!("ANALYSE", "ANALYSIS"));
+                    }
                     for page in [Page::Overview, Page::Networks, Page::Channels, Page::Rating, Page::History, Page::Findings] {
                         let badge = match page {
                             Page::Networks if ssids > 0 => Some((ssids.to_string(), p.weak)),
@@ -313,11 +360,17 @@ impl WifiApp {
                             _ => None,
                         };
                         let hint = self.nav_hint(page);
-                        if nav_item(ui, page.icon(), page.title(), self.page == page, badge, &hint).clicked() {
+                        if nav_item(ui, page.icon(), page.title(), self.page == page, badge, &hint, collapsed).clicked() {
                             self.page = page;
                         }
                     }
-                    section_label(ui, t!("WERKZEUGE", "TOOLS"));
+                    if collapsed {
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                    } else {
+                        section_label(ui, t!("WERKZEUGE", "TOOLS"));
+                    }
                     for page in [Page::Measure, Page::PlanSurvey, Page::Finder, Page::Events] {
                         let plan_running = self.meas.as_ref().is_some_and(|m| m.plan_mode);
                         let badge = match page {
@@ -326,13 +379,13 @@ impl WifiApp {
                             _ => None,
                         };
                         let hint = self.nav_hint(page);
-                        if nav_item(ui, page.icon(), page.title(), self.page == page, badge, &hint).clicked() {
+                        if nav_item(ui, page.icon(), page.title(), self.page == page, badge, &hint, collapsed).clicked() {
                             self.page = page;
                         }
                     }
 
                     // Filter nur dort, wo sie wirken (Analyse-Seiten)
-                    if matches!(self.page, Page::Overview | Page::Networks | Page::Channels | Page::Rating | Page::History | Page::Findings) {
+                    if !collapsed && matches!(self.page, Page::Overview | Page::Networks | Page::Channels | Page::Rating | Page::History | Page::Findings) {
                         section_label(ui, t!("FILTER", "FILTER"));
                         self.filter_panel(ui);
                     }
@@ -449,6 +502,26 @@ impl WifiApp {
         }
     }
 
+    /// Verbindung in der eingeklappten Seitenleiste: nur Signalwert mit Farbe
+    fn connection_mini(&mut self, ui: &mut Ui) {
+        let p = pal(ui);
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::hover());
+        ui.painter().rect(rect, 8.0, p.surface2, Stroke::new(1.0f32, p.border));
+        match &self.conn {
+            Some(c) => {
+                let col = c.rssi.map(signal_color).unwrap_or(p.weak);
+                let txt = c.rssi.map(|r| r.to_string()).unwrap_or("–".into());
+                ui.painter().text(rect.center() - Vec2::new(0.0, 5.0), Align2::CENTER_CENTER, txt, FontId::new(15.0, crate::theme::semibold()), col);
+                ui.painter().text(rect.center() + Vec2::new(0.0, 10.0), Align2::CENTER_CENTER, "dBm", FontId::proportional(9.5), p.weak);
+                resp.on_hover_text(tf!("Verbunden mit {}\n{}", "Connected to {}\n{}", c.ssid, fmt_mac(&c.bssid)));
+            }
+            None => {
+                ui.painter().text(rect.center(), Align2::CENTER_CENTER, "\u{E4EA}", FontId::proportional(16.0), p.weak);
+                resp.on_hover_text(t!("Nicht verbunden", "Not connected"));
+            }
+        }
+    }
+
     fn connection_card(&mut self, ui: &mut Ui) {
         let p = pal(ui);
         let mut select = None;
@@ -538,6 +611,17 @@ impl WifiApp {
             });
     }
 
+    /// Hintergrund abdunkeln, solange ein Dialog offen ist (liegt zwischen Seite und Fenstern)
+    pub(super) fn dim_behind_dialogs(&self, ctx: &egui::Context) {
+        let open = self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.show_shortcuts || self.meas_point.is_some() || self.pdf_pick.is_some();
+        let a = ctx.animate_bool_with_time(egui::Id::new("dialog_dim"), open, 0.15);
+        if a > 0.0 {
+            let dark = ctx.style().visuals.dark_mode;
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::PanelResizeLine, egui::Id::new("dialog_dim_layer")));
+            painter.rect_filled(ctx.screen_rect(), 0.0, Color32::from_black_alpha((a * if dark { 120.0 } else { 70.0 }) as u8));
+        }
+    }
+
     pub(super) fn toasts(&mut self, ctx: &egui::Context) {
         let now = Instant::now();
         self.toasts.retain(|t| t.until > now);
@@ -546,7 +630,8 @@ impl WifiApp {
         }
         let p = pal_ctx(ctx);
         egui::Area::new(egui::Id::new("toasts"))
-            .anchor(Align2::RIGHT_BOTTOM, [-16.0, -40.0])
+            // oben mittig: verdeckt weder Plan-Legende noch Listen
+            .anchor(Align2::CENTER_TOP, [0.0, 64.0])
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 for t in &self.toasts {
@@ -558,8 +643,8 @@ impl WifiApp {
                     egui::Frame::none()
                         .fill(p.surface)
                         .stroke(Stroke::new(1.0f32, col.gamma_multiply(0.7)))
-                        .rounding(8.0)
-                        .shadow(egui::Shadow { offset: Vec2::new(0.0, 4.0), blur: 14.0, spread: 0.0, color: Color32::from_black_alpha(60) })
+                        .rounding(10.0)
+                        .shadow(egui::Shadow { offset: Vec2::new(0.0, 6.0), blur: 20.0, spread: 0.0, color: Color32::from_black_alpha(80) })
                         .inner_margin(Margin::symmetric(14.0, 10.0))
                         .show(ui, |ui| {
                             ui.set_max_width(420.0);

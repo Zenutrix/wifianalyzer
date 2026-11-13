@@ -681,9 +681,6 @@ impl WifiApp {
         let p = pal(ui);
         let top = ui.cursor().top();
         self.pdf_pick_window(&ui.ctx().clone());
-        if self.meas.as_ref().is_some_and(|m| !m.plans.is_empty()) {
-            self.floor_tabs(ui);
-        }
         let Some(m) = &self.meas else { return };
         if m.plans.is_empty() {
             let rect = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover()).0;
@@ -712,88 +709,19 @@ impl WifiApp {
         let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id)).map(|i| i + 1);
         let with_data = m.layers_with_data(m.floor);
         let (width_m, plan_px) = (m.plan().and_then(|p| p.width_m), self.plan_tex.as_ref().map(|t| t.size));
-        let (mut change, mut start_scale, mut toggle_table) = (false, false, false);
-        let full_table = self.plan_full_table;
-        let mut heat = self.plan_heat;
-        let mut layer = self.plan_layer;
-        let mut opacity = self.settings.heat_opacity;
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut heat, t!("Heatmap", "Heatmap"));
-            ui.add_enabled_ui(heat, |ui| {
-                ui.spacing_mut().slider_width = 70.0;
-                ui.add(egui::Slider::new(&mut opacity, 0.2..=0.9).show_value(false)).on_hover_text(tf!(
-                    "Deckkraft der Heatmap: {:.0} % – weniger, damit der Plan (Raumnamen) lesbar bleibt",
-                    "Heatmap opacity: {:.0} % – lower it to keep the plan (room names) readable",
-                    opacity * 100.0
-                ));
-            });
-            let opts: Vec<(Layer, String)> = Layer::ALL
-                .iter()
-                .map(|l| (*l, if *l == Layer::Measured || with_data.contains(l) { l.label().to_string() } else { format!("{} –", l.label()) }))
-                .collect();
-            let opts_ref: Vec<(Layer, &str)> = opts.iter().map(|(l, s)| (*l, s.as_str())).collect();
-            crate::widgets::segmented(ui, &mut layer, &opts_ref);
-            ui.separator();
-            let scale_btn = ui.button(t!("\u{E6B8} Maßstab", "\u{E6B8} Scale")).on_hover_text(t!(
-                "Zwei Punkte einer bekannten Strecke anklicken (z. B. eine Wand) und die Länge in Metern eingeben",
-                "Click two points of a known distance (e.g. a wall) and enter its length in metres"
-            ));
-            if scale_btn.clicked() {
-                start_scale = true;
-            }
-            if ui.button(t!("\u{E6C8} Farbskala", "\u{E6C8} Colour scale")).on_hover_text(t!("dBm-Schwellen und Farben der Heatmap einstellen", "Set the dBm thresholds and colours of the heatmap")).clicked() {
-                self.show_scale_editor = !self.show_scale_editor;
-            }
-            if ui.button(t!("\u{E31A} Anderer Grundriss …", "\u{E31A} Other floor plan …")).clicked() {
-                change = true;
-            }
-            // bei voller Tabelle zurück zur Liste (sonst steht der Umschalter im Kopf der Liste)
-            if !draft && full_table && ui.button(t!("\u{EC24} Liste daneben", "\u{EC24} List beside")).on_hover_text(t!("Kompakte Messpunkt-Liste rechts neben dem Plan", "Compact point list to the right of the plan")).clicked() {
-                toggle_table = true;
-            }
-        });
-        if toggle_table {
-            self.plan_full_table = !self.plan_full_table;
-        }
-        if opacity != self.settings.heat_opacity {
-            self.settings.heat_opacity = opacity;
-            self.heat_tex = None;
-        }
-        if layer != self.plan_layer {
-            self.plan_layer = layer;
-            self.heat_tex = None;
-        }
-        if start_scale {
-            self.plan_scale = Some(ScaleDraft::default());
-            self.plan_sel = None;
-        }
         // Statuszeile: Maßstab bzw. Hinweis
         let mut apply_scale: Option<f32> = None;
         let mut cancel_scale = false;
         let mut zoom_to: Option<f32> = None;
-        let zoom = self.plan_zoom;
         ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let tip = t!(
-                    "Mausrad = zoomen · ziehen = verschieben (auf freier Fläche oder mit rechter/mittlerer Maustaste) · Taste 0 = einpassen",
-                    "Mouse wheel = zoom · drag = pan (on empty space or with the right/middle button) · key 0 = fit"
-                );
-                if ui.add_enabled(zoom > 1.0, egui::Button::new(t!("Einpassen", "Fit"))).on_hover_text(tip).clicked() {
-                    zoom_to = Some(1.0);
-                }
-                if ui.button("\u{E310}").on_hover_text(t!("Vergrößern", "Zoom in")).clicked() {
-                    zoom_to = Some(zoom * 1.25);
-                }
-                ui.label(RichText::new(format!("{:.0} %", zoom * 100.0)).monospace().color(p.weak)).on_hover_text(tip);
-                if ui.add_enabled(zoom > 1.0, egui::Button::new("\u{E30E}")).on_hover_text(t!("Verkleinern", "Zoom out")).clicked() {
-                    zoom_to = Some(zoom / 1.25);
-                }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            // Stockwerke und Hinweis teilen sich eine Zeile – der Plan bekommt den Platz
+            self.floor_tabs(ui);
+            ui.separator();
             if let Some(sd) = self.plan_scale.as_mut() {
                 ui.label(RichText::new("\u{E6B8}").color(p.accent));
                 match (sd.a, sd.b) {
                     (None, _) => {
-                        ui.label(RichText::new(t!("Maßstab: auf den Anfang einer bekannten Strecke klicken – z. B. eine Tür (meist 0,80–1,00 m) oder eine Wand mit bekannter Länge", "Scale: click the start of a known distance – e.g. a door (usually 0.80–1.00 m) or a wall of known length")).color(p.accent));
+                        ui.add(egui::Label::new(RichText::new(t!("Maßstab: Anfang einer bekannten Strecke anklicken – z. B. eine Tür (meist 0,80–1,00 m)", "Scale: click the start of a known distance – e.g. a door (usually 0.80–1.00 m)")).color(p.accent)).truncate());
                     }
                     (Some(_), None) => {
                         ui.label(RichText::new(t!("Jetzt auf das Ende der Strecke klicken", "Now click the end of the distance")).color(p.accent));
@@ -819,15 +747,16 @@ impl WifiApp {
                 match width_m {
                     Some(wm) => {
                         let hm = plan_px.map(|s| wm * s[1] as f32 / s[0].max(1) as f32).unwrap_or(0.0);
-                        ui.label(RichText::new(tf!("\u{E6B8} Maßstab: Plan {wm:.1} × {hm:.1} m", "\u{E6B8} Scale: plan {wm:.1} × {hm:.1} m")).color(p.weak));
+                        ui.label(RichText::new(tf!("\u{E6B8} {wm:.1} × {hm:.1} m", "\u{E6B8} {wm:.1} × {hm:.1} m")).color(p.weak)).on_hover_text(t!("Größe des Plans laut Maßstab", "Plan size according to the scale"));
                     }
                     None => {
-                        ui.label(RichText::new(t!("\u{E6B8} Kein Maßstab gesetzt – angenommen 40 m Breite. Für eine genaue Heatmap „Maßstab“ setzen.", "\u{E6B8} No scale set – assuming 40 m width. Set the \"Scale\" for an accurate heatmap.")).color(p.warning));
+                        ui.label(RichText::new(t!("\u{E6B8} Kein Maßstab", "\u{E6B8} No scale")).color(p.warning))
+                            .on_hover_text(t!("Angenommen werden 40 m Breite. Für eine genaue Heatmap „Maßstab“ setzen.", "Assuming 40 m width. Set the \"Scale\" for an accurate heatmap."));
                     }
                 }
                 ui.separator();
                 let hint = if draft {
-                    t!("Vorbereitung: Maßstab je Stockwerk setzen, dann „Messung starten“ – danach Klick in den Plan = Messpunkt", "Preparation: set the scale per floor, then \"Start survey\" – after that a click on the plan = point").into()
+                    t!("Maßstab je Stockwerk setzen, dann „Messung starten“", "Set the scale per floor, then \"Start survey\"").into()
                 } else {
                     match sel_no {
                     Some(n) => tf!("Klick in den Plan setzt Messpunkt {n}", "Click into the plan to place point {n}"),
@@ -835,10 +764,8 @@ impl WifiApp {
                     None => t!("Klick in den Plan = Messpunkt · Punkte lassen sich verschieben", "Click into the plan = point · points can be dragged").into(),
                     }
                 };
-                ui.label(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak }));
+                ui.add(egui::Label::new(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak })).truncate());
             }
-                });
-            });
         });
         if cancel_scale {
             self.plan_scale = None;
@@ -872,11 +799,7 @@ impl WifiApp {
                 }
             }
         }
-        self.plan_heat = heat;
         self.scale_editor_window(ui.ctx());
-        if change {
-            self.load_plan(&ui.ctx().clone(), false);
-        }
 
         let ctx = ui.ctx().clone();
         let Some((tex, size)) = self.plan_texture(&ctx) else {
@@ -884,10 +807,11 @@ impl WifiApp {
             return;
         };
         let heat_tex = if self.plan_heat { self.heat_texture(&ctx, size) } else { None };
-        // Höhe abzüglich Reiter, Werkzeugleiste und Statuszeile
+        // Höhe abzüglich der Zeile mit Reitern und Hinweis
         let h = (height - (ui.cursor().top() - top) - 4.0).max(160.0);
         let (area, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
-        let base = fit_rect(area, size);
+        // oben Platz für die schwebende Werkzeugleiste lassen, damit sie den Plan nicht verdeckt
+        let base = fit_rect(Rect::from_min_max(Pos2::new(area.min.x, area.min.y + 50.0), area.max), size);
         // anderes Stockwerk: wieder eingepasst anzeigen
         let view_key = self.meas.as_ref().map(|m| (m.floor, m.plans.len())).unwrap_or_default();
         if self.plan_view_key != view_key {
@@ -1072,9 +996,112 @@ impl WifiApp {
                 pt.floor = floor;
             }
         }
+        let (mut change, mut start_scale, mut toggle_table) = (false, false, false);
+        let full_table = self.plan_full_table;
+        let mut heat = self.plan_heat;
+        let mut layer = self.plan_layer;
+        let mut opacity = self.settings.heat_opacity;
+        // schwebende Werkzeugleiste oben links im Plan
+        let mut tb = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(area.min + Vec2::new(8.0, 8.0), Pos2::new(area.max.x - 210.0, area.min.y + 46.0))).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        overlay_frame(&p).show(&mut tb, |ui| {
+            ui.horizontal(|ui| {
+            ui.checkbox(&mut heat, t!("Heatmap", "Heatmap"));
+            ui.add_enabled_ui(heat, |ui| {
+                ui.spacing_mut().slider_width = 70.0;
+                ui.add(egui::Slider::new(&mut opacity, 0.2..=0.9).show_value(false)).on_hover_text(tf!(
+                    "Deckkraft der Heatmap: {:.0} % – weniger, damit der Plan (Raumnamen) lesbar bleibt",
+                    "Heatmap opacity: {:.0} % – lower it to keep the plan (room names) readable",
+                    opacity * 100.0
+                ));
+            });
+            let opts: Vec<(Layer, String)> = Layer::ALL
+                .iter()
+                .map(|l| (*l, if *l == Layer::Measured || with_data.contains(l) { l.label().to_string() } else { format!("{} –", l.label()) }))
+                .collect();
+            let opts_ref: Vec<(Layer, &str)> = opts.iter().map(|(l, s)| (*l, s.as_str())).collect();
+            crate::widgets::segmented(ui, &mut layer, &opts_ref);
+            ui.separator();
+            let scale_btn = ui.button(t!("\u{E6B8} Maßstab", "\u{E6B8} Scale")).on_hover_text(t!(
+                "Zwei Punkte einer bekannten Strecke anklicken (z. B. eine Wand) und die Länge in Metern eingeben",
+                "Click two points of a known distance (e.g. a wall) and enter its length in metres"
+            ));
+            if scale_btn.clicked() {
+                start_scale = true;
+            }
+            if ui.button(t!("\u{E6C8} Farbskala", "\u{E6C8} Colour scale")).on_hover_text(t!("dBm-Schwellen und Farben der Heatmap einstellen", "Set the dBm thresholds and colours of the heatmap")).clicked() {
+                self.show_scale_editor = !self.show_scale_editor;
+            }
+            if ui.button(t!("\u{E31A} Anderer Grundriss …", "\u{E31A} Other floor plan …")).clicked() {
+                change = true;
+            }
+            // bei voller Tabelle zurück zur Liste (sonst steht der Umschalter im Kopf der Liste)
+            if !draft && full_table && ui.button(t!("\u{EC24} Liste daneben", "\u{EC24} List beside")).on_hover_text(t!("Kompakte Messpunkt-Liste rechts neben dem Plan", "Compact point list to the right of the plan")).clicked() {
+                toggle_table = true;
+            }
+            });
+        });
+        // Zoom und Vollbild oben rechts
+        let zoom = self.plan_zoom;
+        let mut zoom_btn: Option<f32> = None;
+        let mut toggle_fs = false;
+        let mut zb = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(Pos2::new(area.max.x - 260.0, area.min.y + 8.0), Pos2::new(area.max.x - 8.0, area.min.y + 46.0))).layout(egui::Layout::right_to_left(egui::Align::Min)));
+        overlay_frame(&p).show(&mut zb, |ui| {
+            ui.horizontal(|ui| {
+                let tip = t!(
+                    "Mausrad = zoomen · ziehen = verschieben (auf freier Fläche oder mit rechter/mittlerer Maustaste) · Taste 0 = einpassen",
+                    "Mouse wheel = zoom · drag = pan (on empty space or with the right/middle button) · key 0 = fit"
+                );
+                let (icon, tip_fs) = if self.plan_fullscreen { ("\u{E1CE}", t!("Vollbild verlassen (F11 oder Esc)", "Leave full screen (F11 or Esc)")) } else { ("\u{E1D0}", t!("Vollbild für die Begehung (F11)", "Full screen for the walk-through (F11)")) };
+                if ui.button(icon).on_hover_text(tip_fs).clicked() {
+                    toggle_fs = true;
+                }
+                if ui.button("\u{E310}").on_hover_text(t!("Vergrößern", "Zoom in")).clicked() {
+                    zoom_btn = Some(zoom * 1.25);
+                }
+                if ui.add(egui::Button::new(RichText::new(format!("{:.0} %", zoom * 100.0)).color(p.weak)).frame(false)).on_hover_text(tip).clicked() {
+                    zoom_btn = Some(1.0);
+                }
+                if ui.add_enabled(zoom > 1.0, egui::Button::new("\u{E30E}")).on_hover_text(t!("Verkleinern", "Zoom out")).clicked() {
+                    zoom_btn = Some(zoom / 1.25);
+                }
+            });
+        });
+        if let Some(z) = zoom_btn {
+            let new = z.clamp(1.0, 8.0);
+            self.plan_pan = if new <= 1.0 { Vec2::ZERO } else { self.plan_pan * (new / self.plan_zoom) };
+            self.plan_zoom = new;
+        }
+        if toggle_fs {
+            self.set_plan_fullscreen(ui.ctx(), !self.plan_fullscreen);
+        }
+        self.plan_heat = heat;
+        if change {
+            self.load_plan(&ui.ctx().clone(), false);
+        }
+        if toggle_table {
+            self.plan_full_table = !self.plan_full_table;
+        }
+        if opacity != self.settings.heat_opacity {
+            self.settings.heat_opacity = opacity;
+            self.heat_tex = None;
+        }
+        if layer != self.plan_layer {
+            self.plan_layer = layer;
+            self.heat_tex = None;
+        }
+        if start_scale {
+            self.plan_scale = Some(ScaleDraft::default());
+            self.plan_sel = None;
+        }
         if let Some(pos) = click_measure {
             self.open_point_dialog_at(Some(pos));
         }
+    }
+
+    /// Vollbild der Grundriss-Seite ein-/ausschalten (ohne Kopfleiste, Seitenleiste und Statusleiste)
+    pub(crate) fn set_plan_fullscreen(&mut self, ctx: &egui::Context, on: bool) {
+        self.plan_fullscreen = on;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
     }
 
     /// Stockwerk anzeigen (Plan, Heatmap und Maßstab-Werkzeug zurücksetzen)
@@ -1137,8 +1164,8 @@ impl WifiApp {
                         Some(x) => (format!("{x:.0} dBm"), point_color(Some(*x))),
                         None => ("–".to_string(), p.weak),
                     };
-                    let rw = painter.layout_no_wrap(right.0.clone(), FontId::monospace(12.5), right.1).size().x;
-                    painter.text(Pos2::new(rect.max.x - 6.0, rect.center().y), Align2::RIGHT_CENTER, &right.0, FontId::monospace(12.5), right.1);
+                    let rw = painter.layout_no_wrap(right.0.clone(), FontId::proportional(13.0), right.1).size().x;
+                    painter.text(Pos2::new(rect.max.x - 6.0, rect.center().y), Align2::RIGHT_CENTER, &right.0, FontId::proportional(13.0), right.1);
                     let text_rect = Rect::from_min_max(Pos2::new(rect.min.x + 32.0, rect.min.y), Pos2::new(rect.max.x - rw - 14.0, rect.max.y));
                     let tp = painter.with_clip_rect(text_rect);
                     tp.text(Pos2::new(text_rect.min.x, rect.min.y + 11.0), Align2::LEFT_CENTER, name, FontId::proportional(13.5), p.text);
@@ -1285,70 +1312,33 @@ impl WifiApp {
         }
     }
 
-    /// Kompakte Live-Zeile der Grundriss-Messung (der Plan braucht den Platz)
-    pub(super) fn plan_live_strip(&mut self, ui: &mut Ui, live: Option<i32>, connected: bool) {
+    /// Live-Wert der Grundriss-Messung, eingebettet in die Messpunkt-Zeile (der Plan braucht den Platz)
+    pub(super) fn plan_live_inline(&self, ui: &mut Ui, live: Option<i32>, connected: bool) {
         let p = pal(ui);
-        let Some(m) = &self.meas else {
-            // noch keine Messung: kurze Anleitung
-            crate::widgets::card(ui, Some(t!("So funktioniert die Grundriss-Messung", "How the floor plan survey works")), |ui| {
-                ui.set_max_width(700.0);
-                ui.label(t!("1.  SSID wählen und „Messung starten“", "1.  Choose the SSID and click \"Start survey\""));
-                ui.label(t!("2.  Grundriss laden – Bild, Foto vom Fluchtplan oder PDF; mehrere Stockwerke möglich", "2.  Load the floor plan – image, photo of the evacuation plan or PDF; several floors possible"));
-                ui.label(t!("3.  Durchs Gebäude gehen und an deiner Position in den Plan klicken – Raum eingeben (optional), Enter", "3.  Walk the building and click your position on the plan – enter the room (optional), Enter"));
-                ui.label(t!("4.  Die Heatmap zeigt die Ausleuchtung; Export als PDF-Bericht mit Grundriss", "4.  The heatmap shows the coverage; export as PDF report with the floor plan"));
-                ui.add_space(6.0);
-                ui.label(
-                    RichText::new(t!(
-                        "Tipp: Die zuletzt verwendeten Grundrisse (alle Stockwerke) werden für die nächste Grundriss-Messung übernommen.",
-                        "Tip: the floor plans used last (all floors) are reused for the next floor plan survey."
-                    ))
-                    .size(12.0)
-                    .color(p.weak),
-                );
-            });
-            return;
-        };
+        let Some(m) = &self.meas else { return };
         let s = m.stats(self.now_t());
-        crate::widgets::card(ui, None, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                match live {
-                    Some(v) => {
-                        let q = Quality::of(v as f64);
-                        let col = point_color(Some(v as f64));
-                        ui.label(RichText::new(format!("{v} dBm")).size(26.0).strong().color(col));
-                        crate::widgets::badge(ui, q.label(), col);
-                    }
-                    None => {
-                        ui.label(RichText::new("– dBm").size(26.0).color(p.weak));
-                    }
-                }
-                ui.add_space(10.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(if connected { t!("Live – verbunden mit der SSID", "Live – connected to the SSID") } else { t!("Live – stärkster AP aus dem Scan", "Live – strongest AP from the scan") }).color(p.weak));
-                    ui.label(
-                        RichText::new(tf!(
-                            "{} Messpunkte · {} im Plan · Dauer {}",
-                            "{} points · {} on the plan · duration {}",
-                            m.points.len(),
-                            m.points.iter().filter(|pt| pt.pos.is_some()).count(),
-                            crate::widgets::fmt_mmss(s.duration)
-                        ))
-                        .color(p.text),
-                    );
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let vals: Vec<f64> = m.points.iter().filter_map(|pt| pt.rssi).collect();
-                    let weak = m.points.iter().filter(|pt| pt.quality() == Some(Quality::Weak)).count();
-                    if !vals.is_empty() {
-                        let avg = vals.iter().sum::<f64>() / vals.len() as f64;
-                        ui.label(RichText::new(tf!("schwach: {weak}", "weak: {weak}")).color(if weak > 0 { p.danger } else { p.weak }));
-                        ui.separator();
-                        ui.label(RichText::new(tf!("Ø {avg:.0} dBm an den Punkten", "avg {avg:.0} dBm at the points")).color(point_color(Some(avg))));
-                    }
-                });
-            });
-        });
+        match live {
+            Some(v) => {
+                let col = point_color(Some(v as f64));
+                ui.label(RichText::new(format!("{v} dBm")).size(19.0).family(crate::theme::semibold()).color(col))
+                    .on_hover_text(if connected { t!("Live – verbunden mit der SSID", "Live – connected to the SSID") } else { t!("Live – stärkster AP aus dem Scan", "Live – strongest AP from the scan") });
+                crate::widgets::badge(ui, Quality::of(v as f64).label(), col);
+            }
+            None => {
+                ui.label(RichText::new("– dBm").size(19.0).color(p.weak));
+            }
+        }
+        let placed = m.points.iter().filter(|pt| pt.pos.is_some()).count();
+        ui.label(RichText::new(tf!("{} Punkte · {} im Plan · {}", "{} points · {} on plan · {}", m.points.len(), placed, crate::widgets::fmt_mmss(s.duration))).color(p.weak));
+        let vals: Vec<f64> = m.points.iter().filter_map(|pt| pt.rssi).collect();
+        if !vals.is_empty() {
+            let avg = vals.iter().sum::<f64>() / vals.len() as f64;
+            let weak = m.points.iter().filter(|pt| pt.quality() == Some(Quality::Weak)).count();
+            ui.label(RichText::new(format!("Ø {avg:.0} dBm")).color(point_color(Some(avg)))).on_hover_text(t!("Durchschnitt an den Messpunkten", "Average at the points"));
+            if weak > 0 {
+                ui.label(RichText::new(tf!("{weak} schwach", "{weak} weak")).color(p.danger));
+            }
+        }
     }
 
     /// Hinweis, wenn auf der anderen Messungs-Seite eine Messung offen ist
@@ -1392,6 +1382,16 @@ impl WifiApp {
             self.apply_scan_interval();
         }
     }
+}
+
+/// Halbdurchsichtiger Rahmen für Leisten, die über dem Plan schweben
+fn overlay_frame(p: &crate::theme::Palette) -> egui::Frame {
+    egui::Frame::none()
+        .fill(p.surface.gamma_multiply(0.94))
+        .stroke(Stroke::new(1.0f32, p.border))
+        .rounding(9.0)
+        .inner_margin(egui::Margin::symmetric(8.0, 5.0))
+        .shadow(egui::Shadow { offset: Vec2::new(0.0, 3.0), blur: 10.0, spread: 0.0, color: Color32::from_black_alpha(60) })
 }
 
 /// Farblegende der Heatmap unten rechts im Plan

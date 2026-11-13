@@ -1,4 +1,4 @@
-//! Farben und Stil: ruhiges, neutrales Business-Design (an GitHub Primer angelehnt).
+//! Farben und Stil: ruhiges, neutrales Business-Design; Akzent und Verlauf wie im Logo (Cyan -> Indigo -> Violett).
 
 use eframe::egui::{self, Color32, FontId, Rounding, Stroke, TextStyle, Theme, Vec2};
 
@@ -25,8 +25,8 @@ pub const DARK: Palette = Palette {
     border: Color32::from_rgb(48, 54, 61),
     text: Color32::from_rgb(230, 237, 243),
     weak: Color32::from_rgb(139, 148, 158),
-    accent: Color32::from_rgb(47, 129, 247),
-    accent_soft: Color32::from_rgb(28, 50, 86),
+    accent: Color32::from_rgb(120, 128, 255),
+    accent_soft: Color32::from_rgb(38, 42, 92),
     success: Color32::from_rgb(63, 185, 80),
     warning: Color32::from_rgb(210, 153, 34),
     danger: Color32::from_rgb(248, 81, 73),
@@ -40,13 +40,18 @@ pub const LIGHT: Palette = Palette {
     border: Color32::from_rgb(208, 215, 222),
     text: Color32::from_rgb(31, 35, 40),
     weak: Color32::from_rgb(101, 109, 118),
-    accent: Color32::from_rgb(9, 105, 218),
-    accent_soft: Color32::from_rgb(221, 236, 255),
+    accent: Color32::from_rgb(79, 70, 229),
+    accent_soft: Color32::from_rgb(228, 230, 255),
     success: Color32::from_rgb(26, 127, 55),
     warning: Color32::from_rgb(154, 103, 0),
     danger: Color32::from_rgb(207, 34, 46),
     purple: Color32::from_rgb(130, 80, 223),
 };
+
+/// Verlauf des Logos für Hauptaktionen (links -> rechts)
+pub const GRAD: [Color32; 2] = [Color32::from_rgb(56, 132, 244), Color32::from_rgb(147, 82, 240)];
+/// heller Verlauf für Linien/Markierungen (Cyan -> Violett)
+pub const GRAD_LINE: [Color32; 2] = [Color32::from_rgb(34, 211, 238), Color32::from_rgb(168, 85, 247)];
 
 /// Palette passend zum aktuellen Theme
 pub fn pal(ui: &egui::Ui) -> Palette {
@@ -79,9 +84,11 @@ fn visuals(p: &Palette, dark: bool) -> egui::Visuals {
     v.selection.bg_fill = p.accent_soft;
     v.selection.stroke = Stroke::new(1.0f32, p.accent);
     v.window_stroke = Stroke::new(1.0f32, p.border);
-    v.window_rounding = Rounding::same(10.0);
-    v.menu_rounding = Rounding::same(8.0);
-    v.window_shadow.color = Color32::from_black_alpha(if dark { 120 } else { 40 });
+    v.window_rounding = Rounding::same(14.0);
+    v.menu_rounding = Rounding::same(10.0);
+    // kein farbiger Titelbalken – Dialoge wirken wie Karten
+    v.window_highlight_topmost = false;
+    v.window_shadow = egui::Shadow { offset: Vec2::new(0.0, 16.0), blur: 48.0, spread: 0.0, color: Color32::from_black_alpha(if dark { 150 } else { 60 }) };
     v.popup_shadow.color = Color32::from_black_alpha(if dark { 100 } else { 30 });
 
     let r = Rounding::same(7.0);

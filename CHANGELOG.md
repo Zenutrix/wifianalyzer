@@ -87,6 +87,14 @@ Erste öffentliche Version.
 - Neue Tastenkürzel: Leertaste (Scan anhalten), M (Messpunkt), Strg+Z (Rückgängig), F1 (Übersicht aller Tastenkürzel).
 - **Neues Logo**: ein „W“ als Linie im Verlauf Cyan → Violett, aus dessen mittlerer Spitze WLAN-Wellen aufsteigen. Im **Ladefenster baut es sich auf** (Kachel, das W zeichnet sich, die Wellen ploppen auf und senden weiter), ebenso auf der Website.
 - **Deinstallieren** direkt in der App (Einstellungen → Programm) mit Rückfrage; die portable Version zeigt, wo die EXE liegt. Daneben ein Link zu den installierten Apps in Windows.
+- **Farben wie im Logo**: Akzent in Indigo, Hauptaktionen mit dem Verlauf des Logos, Markierung der aktiven Seite in Cyan → Violett. Pro Seite ist nur noch die Hauptaktion farbig, „Messung stoppen“ ist rot umrandet.
+- **Dialoge** ohne farbigen Titelbalken, mit größeren Ecken und weichem Schatten; der Hintergrund dunkelt ab, solange ein Dialog offen ist. Meldungen erscheinen oben mittig und verdecken keine Inhalte mehr.
+- **Übersicht** mit **WLAN-Bewertung** (0–100, Urteil und die wichtigsten Gründe); Frequenzbänder und Sicherheit in einer Karte „Umgebung“.
+- **Grundriss-Seite mit mehr Platz für den Plan**: Live-Wert in der Messpunkt-Zeile, Stockwerke und Hinweis in einer Zeile, Werkzeuge und Zoom schweben auf dem Plan. **Vollbild** für die Begehung mit F11.
+- **Seitenleiste einklappbar** auf Symbole (Knopf unten oder Strg+B), wird gespeichert.
+- **Anzeigegröße** einstellbar (Strg + / Strg − oder Einstellungen, 70–160 %), wird gespeichert.
+- Leere Messseite mit großem Startknopf, sanftes Einblenden beim Seitenwechsel, dBm-Werte überall in derselben Schrift.
+- **Berichte im neuen Look**: PDF mit Verlaufslinie und Logo im Kopf, HTML-Bericht mit Logo und neuen Farben.
 - **Demo-Modus** (`--demo`) mit erfundener WLAN-Umgebung für Präsentationen und Screenshots.
 
 ### Website

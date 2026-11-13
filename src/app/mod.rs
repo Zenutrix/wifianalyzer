@@ -259,6 +259,10 @@ pub struct WifiApp {
     /// Messung: unten Messpunkte (false) oder Ereignisse (true)
     meas_show_events: bool,
     show_shortcuts: bool,
+    /// zuletzt gezeigte Seite und Zeitpunkt des Wechsels (für das Einblenden)
+    page_shown: (Page, Instant),
+    /// Grundriss-Seite im Vollbild (F11)
+    plan_fullscreen: bool,
     /// Rückfrage „Wirklich deinstallieren?“ in den Einstellungen
     uninstall_confirm: bool,
 
@@ -365,6 +369,8 @@ impl WifiApp {
             plan_full_table: false,
             meas_show_events: false,
             show_shortcuts: false,
+            page_shown: (Page::Overview, Instant::now()),
+            plan_fullscreen: false,
             uninstall_confirm: false,
             splash_done: false,
             splash_progress: 0.0,
@@ -1002,6 +1008,16 @@ impl WifiApp {
         let typing = ctx.wants_keyboard_input();
         let on_meas = matches!(self.page, Page::Measure | Page::PlanSurvey);
         let dialog_open = self.meas_point.is_some() || self.show_settings || self.pdf_pick.is_some();
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) && (self.page == Page::PlanSurvey || self.plan_fullscreen) {
+            self.set_plan_fullscreen(ctx, !self.plan_fullscreen);
+        }
+        // Seite gewechselt: Vollbild beenden
+        if self.plan_fullscreen && self.page != Page::PlanSurvey {
+            self.set_plan_fullscreen(ctx, false);
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::B)) {
+            self.settings.nav_collapsed = !self.settings.nav_collapsed;
+        }
         let (f1, space, key_m, ctrl_z) = ctx.input_mut(|i| {
             (
                 i.consume_key(Modifiers::NONE, Key::F1),
@@ -1052,7 +1068,9 @@ impl WifiApp {
                 self.export_networks();
             }
         }
-        if esc {
+        if esc && self.plan_fullscreen && self.meas_point.is_none() && self.plan_scale.is_none() && !self.show_scale_editor && self.pdf_pick.is_none() {
+            self.set_plan_fullscreen(ctx, false);
+        } else if esc {
             if self.show_settings || self.show_about || self.show_update || self.show_whats_new || self.show_shortcuts || self.meas_point.is_some() || self.plan_scale.is_some() || self.show_scale_editor || self.pdf_pick.is_some() {
                 self.show_shortcuts = false;
                 self.meas_point = None;
@@ -1088,9 +1106,11 @@ impl eframe::App for WifiApp {
         self.maybe_auto_update_check(ctx);
         self.shortcuts(ctx);
 
-        self.top_bar(ctx);
-        self.status_bar(ctx);
-        self.sidebar(ctx);
+        if !self.plan_fullscreen {
+            self.top_bar(ctx);
+            self.status_bar(ctx);
+            self.sidebar(ctx);
+        }
         if matches!(self.page, Page::Networks | Page::Channels | Page::History | Page::Findings | Page::Overview) {
             self.inspector(ctx);
         }
@@ -1106,6 +1126,7 @@ impl eframe::App for WifiApp {
                 self.page_content(ui)
             });
 
+        self.dim_behind_dialogs(ctx);
         self.perm_dialog(ctx);
         self.settings_window(ctx);
         self.about_window(ctx);
@@ -1121,6 +1142,12 @@ impl eframe::App for WifiApp {
         self.save_plans_if_changed();
         self.poll_install(ctx);
         self.toasts(ctx);
+        // Anzeigegröße (Strg + / Strg −) merken
+        let z = ctx.zoom_factor().clamp(0.7, 1.6);
+        if (z - ctx.zoom_factor()).abs() > 1e-3 {
+            ctx.set_zoom_factor(z);
+        }
+        self.settings.zoom = (z * 100.0).round() / 100.0;
         self.sync_settings();
         ctx.request_repaint_after(Duration::from_millis(1000));
     }
@@ -1134,6 +1161,15 @@ impl eframe::App for WifiApp {
 
 impl WifiApp {
     fn page_content(&mut self, ui: &mut egui::Ui) {
+        // Seitenwechsel: Inhalt kurz einblenden
+        if self.page_shown.0 != self.page {
+            self.page_shown = (self.page, Instant::now());
+        }
+        let a = (self.page_shown.1.elapsed().as_secs_f32() / 0.14).min(1.0);
+        if a < 1.0 {
+            ui.set_opacity(0.25 + 0.75 * a);
+            ui.ctx().request_repaint();
+        }
         match self.page {
             Page::Overview => self.page_overview(ui),
             Page::Networks => self.page_networks(ui),

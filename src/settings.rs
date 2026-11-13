@@ -30,6 +30,10 @@ pub struct Settings {
     pub heat_opacity: f32,
     /// Spaltenbreiten der Netzwerkliste „Breite,…“ (leer = Standard)
     pub net_cols: String,
+    /// Seitenleiste eingeklappt (nur Symbole)
+    pub nav_collapsed: bool,
+    /// Anzeigegröße (1.0 = 100 %), Strg + / Strg −
+    pub zoom: f32,
 }
 
 impl Default for Settings {
@@ -51,6 +55,8 @@ impl Default for Settings {
             heat_nosignal: String::new(),
             heat_opacity: 0.5,
             net_cols: String::new(),
+            nav_collapsed: false,
+            zoom: 1.0,
         }
     }
 }
@@ -93,6 +99,8 @@ impl Settings {
                 "heat_nosignal" => s.heat_nosignal = v.to_string(),
                 "heat_opacity" => s.heat_opacity = v.parse().unwrap_or(s.heat_opacity).clamp(0.2, 0.9),
                 "net_cols" => s.net_cols = v.to_string(),
+                "nav_collapsed" => s.nav_collapsed = b,
+                "zoom" => s.zoom = v.parse().unwrap_or(s.zoom).clamp(0.7, 1.6),
                 "pinned" => s.pinned = v.split(',').filter_map(|m| parse_mac(m.trim())).collect(),
                 _ => {}
             }
@@ -103,7 +111,7 @@ impl Settings {
     pub fn save(&self) {
         let pinned: Vec<String> = self.pinned.iter().map(fmt_mac).collect();
         let text = format!(
-            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\npoint_ping={}\npoint_speed={}\nheat_scale={}\nheat_nosignal={}\nheat_opacity={}\nnet_cols={}\n",
+            "# WiFi Analyzer – Einstellungen / settings\nlang={}\ndark={}\ninterval={}\nstale_after={}\nremove_after={}\ngroup_ssid={}\nshow_hidden={}\ncheck_updates={}\npinned={}\nlast_version={}\npoint_ping={}\npoint_speed={}\nheat_scale={}\nheat_nosignal={}\nheat_opacity={}\nnet_cols={}\nnav_collapsed={}\nzoom={}\n",
             self.lang.code(),
             self.dark as u8,
             self.interval,
@@ -119,7 +127,9 @@ impl Settings {
             self.heat_scale,
             self.heat_nosignal,
             self.heat_opacity,
-            self.net_cols
+            self.net_cols,
+            self.nav_collapsed as u8,
+            self.zoom
         );
         let _ = std::fs::create_dir_all(app_dir());
         // erst in eine temporäre Datei, dann umbenennen – nie eine halb geschriebene settings.ini

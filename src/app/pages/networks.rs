@@ -494,7 +494,7 @@ impl WifiApp {
                     if pts.len() >= 2 {
                         painter.add(egui::Shape::line(pts, egui::Stroke::new(1.6f32, signal_color(i.rssi))));
                     }
-                    ui.label(RichText::new(format!("{} dBm", i.rssi)).monospace().strong().color(signal_color(i.rssi)));
+                    ui.label(RichText::new(format!("{} dBm", i.rssi)).strong().color(signal_color(i.rssi)));
                     ui.label(RichText::new(tf!("{} Clients", "{} clients", i.stations.map(|v| v.to_string()).unwrap_or("–".into()))).color(p.weak));
                     match i.ch_util {
                         Some(u) => ui.label(RichText::new(tf!("Last {u:.0} %", "load {u:.0} %")).color(load_color(u as f64 * 0.6))),

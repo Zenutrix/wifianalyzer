@@ -9,7 +9,7 @@ use crate::app::{Page, Sev, WifiApp};
 use crate::ie::SecLevel;
 use crate::model::*;
 use crate::theme::pal;
-use crate::widgets::{bar_row, card, card_full, donut, kpi_tile, page_header, sec_color, signal_bar, signal_gauge};
+use crate::widgets::{bar_row, card, card_full, donut_sized, kpi_tile, page_header, score_ring, sec_color, signal_bar, signal_gauge};
 use crate::{t, tf};
 
 /// Zählen und stabil sortieren (Anzahl absteigend, dann Name)
@@ -42,7 +42,14 @@ fn card_head(ui: &mut Ui, title: &str, link: Option<&str>) -> bool {
 /// Gleich hohe Karten in einer Reihe
 const ROW_H: f32 = 236.0;
 /// erste Reihe: Platz für die Verbindungsdetails, damit alle drei Karten gleich hoch sind
-const ROW1_H: f32 = 266.0;
+const ROW1_H: f32 = 292.0;
+
+/// Gesamtbewertung des eigenen WLANs: Punkte, Farbe, Urteil und die wichtigsten Gründe
+struct Score {
+    points: u32,
+    label: &'static str,
+    reasons: Vec<(egui::Color32, String)>,
+}
 
 impl WifiApp {
     pub(crate) fn page_overview(&mut self, ui: &mut Ui) {
@@ -56,6 +63,7 @@ impl WifiApp {
         let crit = findings.iter().filter(|f| f.sev == Sev::Critical).count();
         let warn = findings.iter().filter(|f| f.sev == Sev::Warning).count();
         let (best24, best5) = self.best_channels();
+        let score = self.wlan_score(&findings);
 
         let sub = if self.scan_count == 0 {
             t!("Suche WLAN-Netze in der Umgebung …", "Searching for Wi-Fi networks nearby …").to_string()
@@ -171,51 +179,87 @@ impl WifiApp {
                     }
                 });
             };
-            let bands_card = |ui: &mut Ui, h: f32| {
-                card_full(ui, Some(t!("Frequenzbänder", "Frequency bands")), h, |ui| {
-                    ui.add_space(8.0);
-                    let segs = vec![
+            let mut go_score = false;
+            let mut score_card = |ui: &mut Ui, h: f32| {
+                // eigener Kartenkopf: dessen Höhe ausgleichen, damit die Reihe gleich hoch ist
+                card_full(ui, None, if h > 0.0 { h + 29.0 } else { 0.0 }, |ui| {
+                    go_score = card_head(ui, t!("WLAN-Bewertung", "Wi-Fi rating"), Some(t!("Befunde »", "Findings »")));
+                    let col = match score.points {
+                        85.. => p.success,
+                        70..=84 => egui::Color32::from_rgb(132, 204, 22),
+                        50..=69 => p.warning,
+                        _ => p.danger,
+                    };
+                    ui.horizontal(|ui| {
+                        score_ring(ui, score.points, col, 132.0);
+                        ui.add_space(6.0);
+                        ui.vertical(|ui| {
+                            ui.add_space(10.0);
+                            ui.label(RichText::new(score.label).size(20.0).family(crate::theme::semibold()).color(col));
+                            ui.add_space(2.0);
+                            for (c, text) in &score.reasons {
+                                ui.horizontal(|ui| {
+                                    crate::widgets::dot(ui, *c, 3.5);
+                                    ui.add(egui::Label::new(RichText::new(text).size(13.0).color(p.text)).truncate());
+                                });
+                            }
+                        });
+                    });
+                });
+            };
+            let env_card = |ui: &mut Ui, h: f32| {
+                card_full(ui, Some(t!("Umgebung", "Environment")), h, |ui| {
+                    let lvl = |l: SecLevel| vis.iter().filter(|r| r.info.sec_level == l).count();
+                    let bands = vec![
                         (t!("2,4 GHz", "2.4 GHz").to_string(), per_band(Band::B24), p.accent),
                         ("5 GHz".to_string(), per_band(Band::B5), p.purple),
                         ("6 GHz".to_string(), per_band(Band::B6), p.success),
                     ];
-                    donut(ui, &segs, &vis.len().to_string(), "APs");
-                });
-            };
-            let sec_card = |ui: &mut Ui, h: f32| {
-                card_full(ui, Some(t!("Sicherheit", "Security")), h, |ui| {
-                    ui.add_space(8.0);
-                    let lvl = |l: SecLevel| vis.iter().filter(|r| r.info.sec_level == l).count();
-                    let segs = vec![
-                        (t!("Stark (WPA3/OWE)", "Strong (WPA3/OWE)").to_string(), lvl(SecLevel::Strong), sec_color(ui, SecLevel::Strong)),
-                        (t!("Gut (WPA2)", "Good (WPA2)").to_string(), lvl(SecLevel::Ok), p.accent),
-                        (t!("Schwach (WEP/TKIP)", "Weak (WEP/TKIP)").to_string(), lvl(SecLevel::Weak), p.warning),
+                    let sec = vec![
+                        (t!("Stark", "Strong").to_string(), lvl(SecLevel::Strong), sec_color(ui, SecLevel::Strong)),
+                        (t!("Gut", "Good").to_string(), lvl(SecLevel::Ok), p.accent),
+                        (t!("Schwach", "Weak").to_string(), lvl(SecLevel::Weak), p.warning),
                         (t!("Offen", "Open").to_string(), lvl(SecLevel::Open), p.danger),
                     ];
                     let unsafe_n = lvl(SecLevel::Weak) + lvl(SecLevel::Open);
-                    donut(ui, &segs, &unsafe_n.to_string(), t!("unsicher", "insecure"));
+                    let sec_title = t!("Sicherheit (WPA3/OWE · WPA2 · WEP/TKIP · offen)", "Security (WPA3/OWE · WPA2 · WEP/TKIP · open)");
+                    if ui.available_width() >= 560.0 {
+                        ui.columns(2, |c| {
+                            c[0].label(RichText::new(t!("Frequenzbänder", "Frequency bands")).size(12.0).color(p.weak));
+                            donut_sized(&mut c[0], &bands, &vis.len().to_string(), "APs", 104.0);
+                            c[1].label(RichText::new(sec_title).size(12.0).color(p.weak));
+                            donut_sized(&mut c[1], &sec, &unsafe_n.to_string(), t!("unsicher", "insecure"), 104.0);
+                        });
+                    } else {
+                        // schmale Karte: untereinander, damit sich nichts überlappt
+                        donut_sized(ui, &bands, &vis.len().to_string(), "APs", 92.0);
+                        ui.add_space(2.0);
+                        donut_sized(ui, &sec, &unsafe_n.to_string(), t!("unsicher", "insecure"), 92.0).on_hover_text(sec_title);
+                    }
                 });
             };
             if avail >= 1080.0 {
                 ui.columns(3, |cols| {
-                    conn_card(&mut cols[0], ROW1_H);
-                    bands_card(&mut cols[1], ROW1_H);
-                    sec_card(&mut cols[2], ROW1_H);
+                    score_card(&mut cols[0], ROW1_H);
+                    conn_card(&mut cols[1], ROW1_H);
+                    env_card(&mut cols[2], ROW1_H);
                 });
+            } else if avail >= 760.0 {
+                ui.columns(2, |cols| {
+                    score_card(&mut cols[0], ROW1_H);
+                    conn_card(&mut cols[1], ROW1_H);
+                });
+                ui.add_space(12.0);
+                env_card(ui, 0.0);
             } else {
-                // schmal: Verbindung über die ganze Breite, Diagramme darunter
+                score_card(ui, 0.0);
+                ui.add_space(12.0);
                 conn_card(ui, 0.0);
                 ui.add_space(12.0);
-                if avail >= 760.0 {
-                    ui.columns(2, |cols| {
-                        bands_card(&mut cols[0], 200.0);
-                        sec_card(&mut cols[1], 200.0);
-                    });
-                } else {
-                    bands_card(ui, 0.0);
-                    ui.add_space(12.0);
-                    sec_card(ui, 0.0);
-                }
+                env_card(ui, 0.0);
+            }
+            if go_score {
+                go = Some(Page::Findings);
             }
             ui.add_space(12.0);
 
@@ -372,5 +416,57 @@ impl WifiApp {
         if let Some(s) = measure {
             self.start_measurement(s);
         }
+    }
+
+    /// Gesamtbewertung: Signal der Verbindung, abzüglich der Befunde im eigenen Netz (stark) und in der Umgebung (leicht)
+    fn wlan_score(&self, findings: &[crate::app::pages::findings::Finding]) -> Score {
+        let p_ok = egui::Color32::from_rgb(63, 185, 80);
+        let (p_warn, p_bad) = (egui::Color32::from_rgb(210, 153, 34), egui::Color32::from_rgb(248, 81, 73));
+        let mut reasons: Vec<(egui::Color32, String)> = Vec::new();
+        let own_ssid = self.conn.as_ref().map(|c| c.ssid.clone());
+        let mut pts: f32 = match self.conn.as_ref().and_then(|c| c.rssi) {
+            Some(r) => {
+                let (v, col, word) = match r {
+                    -55.. => (100.0, p_ok, t!("sehr gut", "excellent")),
+                    -67..=-56 => (88.0, p_ok, t!("gut", "good")),
+                    -75..=-68 => (65.0, p_warn, t!("ausreichend", "fair")),
+                    _ => (35.0, p_bad, t!("schwach", "weak")),
+                };
+                reasons.push((col, tf!("Signal {r} dBm – {word}", "Signal {r} dBm – {word}")));
+                v
+            }
+            None => {
+                reasons.push((p_warn, t!("Nicht verbunden – bewertet wird nur die Umgebung", "Not connected – rating the environment only").into()));
+                75.0
+            }
+        };
+        let is_own = |f: &crate::app::pages::findings::Finding| own_ssid.as_ref().is_some_and(|s| f.title.starts_with(&format!("{s}:")));
+        let (mut own_c, mut own_w, mut other) = (0usize, 0usize, 0usize);
+        for f in findings {
+            match (is_own(f), f.sev) {
+                (true, Sev::Critical) => own_c += 1,
+                (true, Sev::Warning) => own_w += 1,
+                (false, Sev::Critical | Sev::Warning) => other += 1,
+                _ => {}
+            }
+        }
+        pts -= (own_c as f32 * 15.0).min(45.0) + (own_w as f32 * 6.0).min(24.0) + (other as f32).min(8.0);
+        for f in findings.iter().filter(|f| is_own(f) && f.sev != Sev::Info).take(2) {
+            reasons.push((if f.sev == Sev::Critical { p_bad } else { p_warn }, f.title.clone()));
+        }
+        if own_c + own_w == 0 && own_ssid.is_some() {
+            reasons.push((p_ok, t!("Keine Auffälligkeiten im eigenen Netz", "Nothing unusual in your own network").into()));
+        }
+        if other > 0 && reasons.len() < 3 {
+            reasons.push((p_warn, tf!("{other} Auffälligkeiten in der Umgebung", "{other} issues in the environment")));
+        }
+        let points = pts.round().clamp(0.0, 100.0) as u32;
+        let label = match points {
+            85.. => t!("Sehr gut", "Excellent"),
+            70..=84 => t!("Gut", "Good"),
+            50..=69 => t!("Mittel", "Fair"),
+            _ => t!("Schwach", "Weak"),
+        };
+        Score { points, label, reasons }
     }
 }

@@ -16,7 +16,22 @@ const BOTTOM: f32 = PAGE_H - 52.0; // unterer Rand für Inhalt (darunter Fußzei
 
 const TEXT: Rgb = [31, 35, 40];
 const WEAK: Rgb = [89, 99, 110];
-const ACCENT: Rgb = [9, 105, 218];
+const ACCENT: Rgb = [79, 70, 229];
+/// Verlauf des Logos (Cyan -> Indigo -> Violett) für die Kopflinie
+const GRAD: [Rgb; 3] = [[34, 211, 238], [99, 102, 241], [217, 70, 239]];
+
+/// App-Logo auf Weiß als JPEG (für den Berichtskopf)
+fn logo_jpeg() -> Option<(Vec<u8>, u32, u32)> {
+    let icon = image::load_from_memory(crate::ICON_PNG).ok()?.to_rgba8();
+    let (w, h) = icon.dimensions();
+    let mut out = image::RgbImage::from_pixel(w, h, image::Rgb([255, 255, 255]));
+    for (x, y, px) in icon.enumerate_pixels() {
+        let a = px[3] as f32 / 255.0;
+        let mix = |c: u8| (c as f32 * a + 255.0 * (1.0 - a)).round() as u8;
+        out.put_pixel(x, y, image::Rgb([mix(px[0]), mix(px[1]), mix(px[2])]));
+    }
+    Some((heatmap::to_jpeg(&out), w, h))
+}
 const BORDER: Rgb = [208, 215, 222];
 const LIGHT: Rgb = [246, 248, 250];
 const WHITE: Rgb = [255, 255, 255];
@@ -64,9 +79,22 @@ impl WifiApp {
         let mut y = M;
 
         // ---------- Kopf
-        pdf.rect(M, y, CW, 3.0, ACCENT);
+        // Kopflinie im Verlauf des Logos
+        let strips = 90;
+        for i in 0..strips {
+            let t = i as f32 / (strips - 1) as f32 * 2.0;
+            let (a, b, f) = if t < 1.0 { (GRAD[0], GRAD[1], t) } else { (GRAD[1], GRAD[2], t - 1.0) };
+            let c = [0, 1, 2].map(|k| (a[k] as f32 + (b[k] as f32 - a[k] as f32) * f).round() as u8);
+            pdf.rect(M + CW * i as f32 / strips as f32, y, CW / strips as f32 + 0.3, 3.0, c);
+        }
         y += 30.0;
-        pdf.text(M, y, 22.0, true, TEXT, title);
+        let mut tx = M;
+        if let Some((jpeg, w, h)) = logo_jpeg() {
+            let idx = pdf.add_jpeg(jpeg, w, h);
+            pdf.image(idx, M, y - 19.0, 24.0, 24.0);
+            tx += 32.0;
+        }
+        pdf.text(tx, y, 22.0, true, TEXT, title);
         let meta = [
             tf!("Datum: {}", "Date: {}", m.started_wall.format("%d.%m.%Y, %H:%M")),
             tf!("Dauer: {}", "Duration: {}", fmt_mmss(s.duration)),

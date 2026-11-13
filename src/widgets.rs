@@ -116,14 +116,16 @@ pub fn kpi_tile(ui: &mut Ui, icon: &str, title: &str, value: &str, sub: &str, co
 }
 
 /// Ringdiagramm mit Wert in der Mitte und Legende rechts
-pub fn donut(ui: &mut Ui, segments: &[(String, usize, Color32)], center: &str, center_sub: &str) {
+/// Ringdiagramm mit Durchmesser `d` (150 = Standard)
+pub fn donut_sized(ui: &mut Ui, segments: &[(String, usize, Color32)], center: &str, center_sub: &str, d: f32) -> Response {
     let p = pal(ui);
+    let k = d / 150.0;
     let total: usize = segments.iter().map(|s| s.1).sum();
     ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(150.0), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(d), Sense::hover());
         let painter = ui.painter();
         let c = rect.center();
-        let (r, w) = (58.0f32, 16.0f32);
+        let (r, w) = (58.0f32 * k, 16.0f32 * k);
         if total == 0 {
             painter.circle_stroke(c, r, Stroke::new(w, p.surface2));
         } else {
@@ -143,12 +145,12 @@ pub fn donut(ui: &mut Ui, segments: &[(String, usize, Color32)], center: &str, c
                 a += sweep;
             }
         }
-        painter.text(c - Vec2::new(0.0, 7.0), Align2::CENTER_CENTER, center, FontId::proportional(24.0), p.text);
-        painter.text(c + Vec2::new(0.0, 15.0), Align2::CENTER_CENTER, center_sub, FontId::proportional(11.5), p.weak);
+        painter.text(c - Vec2::new(0.0, 7.0 * k), Align2::CENTER_CENTER, center, FontId::proportional(24.0 * k.max(0.8)), p.text);
+        painter.text(c + Vec2::new(0.0, 15.0 * k), Align2::CENTER_CENTER, center_sub, FontId::proportional(11.5 * k.max(0.87)), p.weak);
 
-        ui.add_space(8.0);
+        ui.add_space(8.0 * k);
         ui.vertical(|ui| {
-            ui.add_space(20.0);
+            ui.add_space(20.0 * k);
             for (label, n, col) in segments {
                 ui.horizontal(|ui| {
                     dot(ui, *col, 5.0);
@@ -158,7 +160,32 @@ pub fn donut(ui: &mut Ui, segments: &[(String, usize, Color32)], center: &str, c
                 });
             }
         });
-    });
+    })
+    .response
+}
+
+/// Bewertungsring 0…100 mit Zahl in der Mitte
+pub fn score_ring(ui: &mut Ui, score: u32, color: Color32, d: f32) {
+    let p = pal(ui);
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(d), Sense::hover());
+    let painter = ui.painter();
+    let c = rect.center();
+    let (r, w) = (d * 0.40, d * 0.105);
+    painter.circle_stroke(c, r, Stroke::new(w, p.surface2));
+    let frac = (score.min(100) as f32 / 100.0).max(0.02);
+    let steps = (frac * 90.0).ceil() as usize + 1;
+    let pts: Vec<egui::Pos2> = (0..=steps)
+        .map(|i| {
+            let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * frac * i as f32 / steps as f32;
+            egui::pos2(c.x + r * a.cos(), c.y + r * a.sin())
+        })
+        .collect();
+    for end in [pts[0], pts[pts.len() - 1]] {
+        painter.circle_filled(end, w / 2.0, color);
+    }
+    painter.add(egui::Shape::line(pts, Stroke::new(w, color)));
+    painter.text(c - Vec2::new(0.0, d * 0.03), Align2::CENTER_CENTER, score.to_string(), FontId::new(d * 0.30, crate::theme::semibold()), p.text);
+    painter.text(c + Vec2::new(0.0, d * 0.17), Align2::CENTER_CENTER, crate::t!("von 100", "of 100"), FontId::proportional(d * 0.085), p.weak);
 }
 
 /// Kleines farbiges Etikett (z. B. Zähler in der Navigation)
@@ -204,7 +231,7 @@ pub fn signal_bar(ui: &mut Ui, rssi: i32, stale: bool) {
     let p = pal(ui);
     let col = if stale { p.weak } else { signal_color(rssi) };
     let painter = ui.painter();
-    painter.text(rect.left_center(), Align2::LEFT_CENTER, format!("{rssi} dBm"), FontId::monospace(12.5), col);
+    painter.text(rect.left_center(), Align2::LEFT_CENTER, format!("{rssi} dBm"), FontId::proportional(13.0), col);
     let bar_left = rect.left() + 64.0;
     if rect.right() - bar_left > 12.0 {
         let track = egui::Rect::from_min_max(
@@ -309,9 +336,58 @@ pub fn fmt_mmss(t: f64) -> String {
     }
 }
 
-/// Primärer (gefüllter) Button
+/// Rechteck mit waagrechtem Farbverlauf und runden Ecken (Enden einfarbig, Mitte in Streifen)
+pub fn gradient_rect(painter: &egui::Painter, rect: egui::Rect, rounding: f32, c: [Color32; 2]) {
+    let r = rounding.min(rect.width() / 2.0).min(rect.height() / 2.0);
+    let mix = |t: f32| {
+        let m = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+        Color32::from_rgb(m(c[0].r(), c[1].r()), m(c[0].g(), c[1].g()), m(c[0].b(), c[1].b()))
+    };
+    let w = rect.width().max(1.0);
+    painter.rect_filled(egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + 2.0 * r, rect.max.y)), r, mix(r / w));
+    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.max.x - 2.0 * r, rect.min.y), rect.max), r, mix(1.0 - r / w));
+    let (x0, x1) = (rect.min.x + r, rect.max.x - r);
+    let n = (((x1 - x0) / 6.0).ceil() as usize).clamp(1, 80);
+    for i in 0..n {
+        let (a, b) = (x0 + (x1 - x0) * i as f32 / n as f32, x0 + (x1 - x0) * (i + 1) as f32 / n as f32);
+        painter.rect_filled(egui::Rect::from_min_max(egui::pos2(a, rect.min.y), egui::pos2(b + 0.5, rect.max.y)), 0.0, mix(((a + b) / 2.0 - rect.min.x) / w));
+    }
+}
+
+/// Primärer (gefüllter) Button. In der Akzentfarbe mit dem Verlauf des Logos, sonst einfarbig.
 pub fn primary_button(ui: &mut Ui, text: &str, color: Color32) -> Response {
-    ui.add(egui::Button::new(RichText::new(text).color(Color32::WHITE).strong()).fill(color).min_size(Vec2::new(0.0, 28.0)))
+    let p = pal(ui);
+    if color != p.accent {
+        return ui.add(egui::Button::new(RichText::new(text).color(Color32::WHITE).strong()).fill(color).min_size(Vec2::new(0.0, 28.0)));
+    }
+    let galley = egui::WidgetText::from(RichText::new(text).color(Color32::WHITE).strong()).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+    let pad = ui.spacing().button_padding;
+    let size = Vec2::new(galley.size().x + 2.0 * pad.x + 4.0, (galley.size().y + 2.0 * pad.y).max(28.0));
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    if ui.is_rect_visible(rect) {
+        let enabled = ui.is_enabled();
+        let mut c = crate::theme::GRAD;
+        if !enabled {
+            c = [p.surface2, p.surface2];
+        } else if resp.is_pointer_button_down_on() {
+            c = [c[0].gamma_multiply(0.85), c[1].gamma_multiply(0.85)];
+        } else if resp.hovered() {
+            c = [c[0].lerp_to_gamma(Color32::WHITE, 0.12), c[1].lerp_to_gamma(Color32::WHITE, 0.12)];
+        }
+        gradient_rect(ui.painter(), rect, 7.0, c);
+        if !enabled {
+            // ausgegraut: Rahmen, damit der Knopf auch im hellen Design erkennbar bleibt
+            ui.painter().rect_stroke(rect, 7.0, Stroke::new(1.0f32, p.border));
+        }
+        let pos = rect.center() - galley.size() / 2.0;
+        ui.painter().galley_with_override_text_color(pos, galley, if enabled { Color32::WHITE } else { p.weak });
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Umrandeter Button für „gefährliche“ Aktionen (Stoppen, Entfernen)
+pub fn outline_button(ui: &mut Ui, text: &str, color: Color32) -> Response {
+    ui.add(egui::Button::new(RichText::new(text).color(color).strong()).fill(color.gamma_multiply(0.10)).stroke(Stroke::new(1.0f32, color.gamma_multiply(0.8))).min_size(Vec2::new(0.0, 28.0)))
 }
 
 /// Segment-Umschalter (wie Tabs), liefert true bei Änderung
