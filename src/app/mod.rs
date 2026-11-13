@@ -250,6 +250,13 @@ pub struct WifiApp {
     plan_zoom: f32,
     plan_pan: egui::Vec2,
     plan_view_key: (usize, usize),
+    /// scharf nachgerenderter Ausschnitt eines PDF-Grundrisses
+    plan_sharp: Option<plan::SharpTex>,
+    plan_sharp_job: Option<(plan::SharpReq, Receiver<Option<image::RgbaImage>>)>,
+    /// gewünschter Ausschnitt und seit wann (erst rendern, wenn die Ansicht ruht)
+    plan_sharp_want: Option<(plan::SharpReq, Instant)>,
+    /// Grundriss, dessen PDF nicht (mehr) lesbar ist
+    plan_sharp_off: Option<(usize, String, usize)>,
     /// Rückgängig für Messpunkte: (Messung, Beschreibung, Punkte vorher)
     plan_undo: Vec<(chrono::DateTime<chrono::Local>, String, Vec<crate::measure::MeasPoint>)>,
     /// Stockwerk, dessen Entfernen bestätigt werden muss
@@ -364,6 +371,10 @@ impl WifiApp {
             plan_zoom: 1.0,
             plan_pan: egui::Vec2::ZERO,
             plan_view_key: (usize::MAX, 0),
+            plan_sharp: None,
+            plan_sharp_job: None,
+            plan_sharp_want: None,
+            plan_sharp_off: None,
             plan_undo: Vec::new(),
             floor_remove_confirm: None,
             plan_full_table: false,

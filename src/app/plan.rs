@@ -8,13 +8,13 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::mpsc::{channel, Receiver};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, TextureHandle, TextureOptions, Ui, Vec2};
 
 use crate::app::{Page, Sev, WifiApp};
 use crate::heatmap;
-use crate::measure::{FloorPlan, Layer, Quality};
+use crate::measure::{FloorPlan, Layer, PdfSource, Quality};
 use crate::nettest::{self, NetTest, NetTestPlan};
 use crate::theme::pal;
 use crate::widgets::primary_button;
@@ -49,7 +49,22 @@ pub(crate) struct PdfPick {
 }
 
 /// Geladener Grundriss: Dateiname, Stockwerk-Bezeichnung, Bilddaten
-type PlanLoad = (String, String, Result<(Vec<u8>, u32, u32), String>);
+type PlanLoad = (String, String, Result<(Vec<u8>, u32, u32), String>, Option<PdfSource>);
+
+/// Auftrag für einen scharf gerenderten Ausschnitt: Grundriss, Quelle, Ausschnitt (0..1), Breite in Pixeln
+#[derive(Clone, PartialEq)]
+pub(crate) struct SharpReq {
+    plan: (usize, String, usize),
+    src: PdfSource,
+    rect: [f32; 4],
+    px: u32,
+}
+
+/// Scharf gerenderter Ausschnitt eines PDF-Grundrisses
+pub(crate) struct SharpTex {
+    req: SharpReq,
+    tex: TextureHandle,
+}
 
 /// Grundriss-Textur (Schlüssel: Name + Größe der Bilddaten)
 pub(crate) struct PlanTex {
@@ -297,7 +312,7 @@ impl WifiApp {
         }
         let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let res = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| heatmap::prepare_plan(&b));
-        self.apply_plans(vec![(name, stem, res)], add);
+        self.apply_plans(vec![(name, stem, res, None)], add);
     }
 
     /// PDF: einseitig direkt übernehmen, sonst Seitenauswahl mit Vorschaubildern
@@ -326,14 +341,16 @@ impl WifiApp {
     /// PDF-Seiten in voller Auflösung rendern und als Grundrisse übernehmen (je Seite ein Stockwerk)
     fn load_pdf_pages(&mut self, path: std::path::PathBuf, name: String, pages: Vec<u32>, total: u32, add: bool) {
         let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let items = pages
             .into_iter()
             .map(|page| {
                 let res = crate::pdfimport::render_page(path.clone(), page, 2400).and_then(|png| heatmap::prepare_plan(&png));
+                let src = Some(PdfSource { path: path.to_string_lossy().to_string(), page, size: file_size });
                 if total > 1 {
-                    (tf!("{name} – Seite {}", "{name} – page {}", page + 1), tf!("Seite {}", "Page {}", page + 1), res)
+                    (tf!("{name} – Seite {}", "{name} – page {}", page + 1), tf!("Seite {}", "Page {}", page + 1), res, src)
                 } else {
-                    (name.clone(), stem.clone(), res)
+                    (name.clone(), stem.clone(), res, src)
                 }
             })
             .collect();
@@ -345,11 +362,12 @@ impl WifiApp {
     fn apply_plans(&mut self, items: Vec<PlanLoad>, add: bool) {
         let mut errors = Vec::new();
         let mut loaded: Vec<(FloorPlan, u32, u32)> = Vec::new();
-        for (name, label, res) in items {
+        for (name, label, res, src) in items {
             match res {
                 Ok((data, w, h)) => {
                     let mut plan = FloorPlan::new(name, data);
                     plan.label = label;
+                    plan.pdf = src;
                     loaded.push((plan, w, h));
                 }
                 Err(e) => errors.push(e),
@@ -640,6 +658,98 @@ impl WifiApp {
         self.plan_tex.as_ref().map(|t| (t.tex.id(), t.size))
     }
 
+    /// PDF-Grundriss beim Zoomen scharf: rendert den sichtbaren Ausschnitt im Hintergrund direkt
+    /// aus dem PDF nach, sobald die Ansicht ruht. Liefert Textur und Lage auf dem Bildschirm.
+    fn sharp_plan(&mut self, ctx: &egui::Context, img: Rect, visible: Rect, base_px: usize) -> Option<(egui::TextureId, Rect)> {
+        let ident = self.meas.as_ref().and_then(|m| m.plan().map(|p| ((m.floor, p.name.clone(), p.data.len()), p.pdf.clone())));
+        let Some((plan_key, Some(src))) = ident else {
+            self.plan_sharp = None;
+            self.plan_sharp_want = None;
+            return None;
+        };
+        // fertigen Auftrag übernehmen
+        if let Some((req, rx)) = &self.plan_sharp_job {
+            if let Ok(res) = rx.try_recv() {
+                match res {
+                    Some(im) => {
+                        let color = egui::ColorImage::from_rgba_unmultiplied([im.width() as usize, im.height() as usize], im.as_raw());
+                        self.plan_sharp = Some(SharpTex { req: req.clone(), tex: ctx.load_texture("floor_plan_sharp", color, TextureOptions::LINEAR) });
+                    }
+                    None => self.plan_sharp_off = Some(req.plan.clone()),
+                }
+                self.plan_sharp_job = None;
+            }
+        }
+        if self.plan_sharp.as_ref().is_some_and(|s| s.req.plan != plan_key || s.req.src != src) {
+            self.plan_sharp = None;
+        }
+        let ppp = ctx.pixels_per_point();
+        // nur nötig, wenn das gespeicherte Bild vergrößert gezeigt wird
+        let upscaled = img.width() * ppp > base_px as f32 * 1.15;
+        if !upscaled || visible.width() < 8.0 || visible.height() < 8.0 || self.plan_sharp_off.as_ref() == Some(&plan_key) {
+            self.plan_sharp = None;
+            self.plan_sharp_want = None;
+            return None;
+        }
+        // sichtbarer Ausschnitt in Plan-Anteilen
+        let vis = [
+            ((visible.min.x - img.min.x) / img.width()).clamp(0.0, 1.0),
+            ((visible.min.y - img.min.y) / img.height()).clamp(0.0, 1.0),
+            ((visible.max.x - img.min.x) / img.width()).clamp(0.0, 1.0),
+            ((visible.max.y - img.min.y) / img.height()).clamp(0.0, 1.0),
+        ];
+        // passt der vorhandene Ausschnitt noch? (deckt die Ansicht ab, Auflösung stimmt ungefähr)
+        let fits = self.plan_sharp.as_ref().is_some_and(|s| {
+            let r = s.req.rect;
+            let density = s.req.px as f32 / ((r[2] - r[0]) * img.width() * ppp);
+            r[0] <= vis[0] + 1e-4 && r[1] <= vis[1] + 1e-4 && r[2] >= vis[2] - 1e-4 && r[3] >= vis[3] - 1e-4 && (0.85..=2.5).contains(&density)
+        });
+        if fits {
+            self.plan_sharp_want = None;
+        } else {
+            // Ausschnitt mit Rand, damit kleines Verschieben nicht sofort neu rendert
+            let (mx, my) = ((vis[2] - vis[0]) * 0.2, (vis[3] - vis[1]) * 0.2);
+            let q = 400.0;
+            let rect = [
+                ((vis[0] - mx).max(0.0) * q).floor() / q,
+                ((vis[1] - my).max(0.0) * q).floor() / q,
+                ((vis[2] + mx).min(1.0) * q).ceil() / q,
+                ((vis[3] + my).min(1.0) * q).ceil() / q,
+            ];
+            let (w, h) = ((rect[2] - rect[0]) * img.width() * ppp, (rect[3] - rect[1]) * img.height() * ppp);
+            let limit = 4096.0 / w.max(h).max(1.0);
+            let px = ((w * limit.min(1.0) / 32.0).ceil() * 32.0).max(64.0) as u32;
+            let req = SharpReq { plan: plan_key, src, rect, px };
+            if self.plan_sharp_want.as_ref().map(|w| &w.0) != Some(&req) {
+                self.plan_sharp_want = Some((req.clone(), Instant::now()));
+            }
+            let rested = self.plan_sharp_want.as_ref().is_some_and(|w| w.1.elapsed() >= Duration::from_millis(160));
+            // genau dieser Ausschnitt liegt schon vor (z. B. an der Auflösungsgrenze): nichts zu tun
+            let have = self.plan_sharp.as_ref().is_some_and(|s| s.req == req);
+            if have {
+                self.plan_sharp_want = None;
+            } else if self.plan_sharp_job.is_none() && rested {
+                let (tx, rx) = channel();
+                let (job, c) = (req.clone(), ctx.clone());
+                std::thread::spawn(move || {
+                    let path = std::path::PathBuf::from(&job.src.path);
+                    let same = std::fs::metadata(&path).map(|m| m.len() == job.src.size).unwrap_or(false);
+                    let res = if same { crate::pdfimport::render_region(path, job.src.page, job.rect, job.px).ok() } else { None };
+                    let _ = tx.send(res);
+                    c.request_repaint();
+                });
+                self.plan_sharp_job = Some((req, rx));
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(80));
+            }
+        }
+        self.plan_sharp.as_ref().map(|s| {
+            let r = s.req.rect;
+            let at = |x: f32, y: f32| Pos2::new(img.min.x + x * img.width(), img.min.y + y * img.height());
+            (s.tex.id(), Rect::from_min_max(at(r[0], r[1]), at(r[2], r[3])))
+        })
+    }
+
     /// Heatmap-Textur passend zu den platzierten Messpunkten
     fn heat_texture(&mut self, ctx: &egui::Context, size: [usize; 2]) -> Option<egui::TextureId> {
         let m = self.meas.as_ref()?;
@@ -848,6 +958,10 @@ impl WifiApp {
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 10.0, p.surface);
         painter.image(tex, img, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        // PDF-Grundriss: gezoomten Ausschnitt scharf darüberlegen
+        if let Some((st, at)) = self.sharp_plan(&ctx, img, visible, size[0]) {
+            painter.image(st, at, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        }
         if let Some(ht) = heat_tex {
             painter.image(ht, img, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
         }

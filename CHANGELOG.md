@@ -47,6 +47,7 @@ Erste öffentliche Version.
 - **Kein Signal = grau**: Bereiche schwächer als die unterste Farbschwelle und Messpunkte ganz ohne Empfang werden grau statt rot dargestellt, mit weichem Übergang. Farbe einstellbar oder durchsichtig (Farbskala).
 - **Mehrere Stockwerke** pro Messung: je Stockwerk ein Grundriss mit eigenen Messpunkten und eigener Heatmap. Reiter zum Wechseln, Rechtsklick zum Umbenennen (z. B. „EG“) oder Entfernen, „+ Stockwerk“ zum Hinzufügen. Bericht (PDF/HTML) und CSV enthalten alle Stockwerke.
 - **PDF-Pläne**: Bei mehrseitigen PDFs erscheint eine Seitenauswahl mit Vorschaubildern; jede gewählte Seite wird ein Stockwerk. Gerendert wird mit dem in Windows eingebauten PDF-Renderer, ohne zusätzliche Bibliothek.
+- **PDF-Pläne bleiben beim Zoomen scharf**: Der sichtbare Ausschnitt wird direkt aus dem PDF nachgerendert, solange die PDF-Datei am ursprünglichen Ort liegt. Die Messungsdatei merkt sich dafür den Pfad des PDFs.
 - **Heatmap** der Ausleuchtung zwischen den Messpunkten; Punkte lassen sich verschieben, schwache Stellen sind sofort sichtbar.
 - Der Grundriss wird in der Messungsdatei gespeichert und für die nächste Grundriss-Messung übernommen.
 - Gespeicherte Messungen erscheinen jeweils bei ihrer Messart.

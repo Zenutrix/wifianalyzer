@@ -184,6 +184,16 @@ pub struct MeasPoint {
     pub net: Option<NetTest>,
 }
 
+/// PDF, aus dem ein Grundriss stammt – damit lässt sich beim Zoomen scharf nachrendern
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PdfSource {
+    pub path: String,
+    /// Seite (ab 0)
+    pub page: u32,
+    /// Dateigröße beim Laden (anderes PDF unter gleichem Namen wird so erkannt)
+    pub size: u64,
+}
+
 /// Grundriss (Bilddatei) einer Messung – wird in der Messungsdatei mitgespeichert
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FloorPlan {
@@ -203,11 +213,14 @@ pub struct FloorPlan {
     /// eingegebene Länge dieser Linie in Metern
     #[serde(default)]
     pub scale_len_m: Option<f32>,
+    /// Quelle, wenn der Plan aus einem PDF stammt
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf: Option<PdfSource>,
 }
 
 impl FloorPlan {
     pub fn new(name: String, data: Vec<u8>) -> Self {
-        Self { name, label: String::new(), data, width_m: None, scale_line: None, scale_len_m: None }
+        Self { name, label: String::new(), data, width_m: None, scale_line: None, scale_len_m: None, pdf: None }
     }
 
     /// Anzeigename: Bezeichnung oder Dateiname

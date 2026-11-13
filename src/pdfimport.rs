@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
 use windows::core::HSTRING;
-use windows::Data::Pdf::{PdfDocument, PdfPageRenderOptions};
+use windows::Data::Pdf::{PdfDocument, PdfPage, PdfPageRenderOptions};
+use windows::Foundation::Rect;
 use windows::Storage::StorageFile;
 use windows::Storage::Streams::{DataReader, InMemoryRandomAccessStream};
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
@@ -52,14 +53,38 @@ fn render(doc: &PdfDocument, idx: u32, long_px: u32) -> windows::core::Result<Ve
     } else {
         opts.SetDestinationHeight(long_px)?;
     }
+    to_png(&page, &opts)
+}
+
+fn to_png(page: &PdfPage, opts: &PdfPageRenderOptions) -> windows::core::Result<Vec<u8>> {
     let stream = InMemoryRandomAccessStream::new()?;
-    page.RenderWithOptionsToStreamAsync(&stream, &opts)?.get()?;
+    page.RenderWithOptionsToStreamAsync(&stream, opts)?.get()?;
     let len = stream.Size()? as u32;
     let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0)?)?;
     reader.LoadAsync(len)?.get()?;
     let mut buf = vec![0u8; len as usize];
     reader.ReadBytes(&mut buf)?;
     Ok(buf)
+}
+
+/// Ausschnitt einer Seite rendern (für scharfes Zoomen): `rect` = [x0, y0, x1, y1] in
+/// Seitenanteilen 0..1, Ergebnis `out_w` Pixel breit
+pub fn render_region(path: PathBuf, idx: u32, rect: [f32; 4], out_w: u32) -> Result<RgbaImage, String> {
+    in_mta(move || {
+        let doc = open(&path)?;
+        let png = (|| {
+            let page = doc.GetPage(idx)?;
+            let size = page.Size()?;
+            let src = Rect { X: rect[0] * size.Width, Y: rect[1] * size.Height, Width: ((rect[2] - rect[0]) * size.Width).max(1.0), Height: ((rect[3] - rect[1]) * size.Height).max(1.0) };
+            let opts = PdfPageRenderOptions::new()?;
+            opts.SetSourceRect(src)?;
+            opts.SetDestinationWidth(out_w)?;
+            opts.SetDestinationHeight(((out_w as f32 * src.Height / src.Width).round() as u32).max(1))?;
+            to_png(&page, &opts)
+        })()
+        .map_err(|e: windows::core::Error| e.message().to_string())?;
+        Ok(image::load_from_memory(&png).map_err(|e| e.to_string())?.to_rgba8())
+    })
 }
 
 /// Seitenzahl und Vorschaubilder (höchstens `MAX_THUMBS`)
