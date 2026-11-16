@@ -3,6 +3,21 @@
 Alle wichtigen Änderungen an diesem Projekt. Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionen nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [2.1.0] – 2026-11-16
+
+### Grundriss-Messung neu aufgebaut
+- **Geführter Ablauf in vier Schritten** mit Schrittleiste oben (zurückspringen jederzeit möglich):
+  1. **Projekt**: Projektname (steht im Dateinamen), WLAN, Latenz/Speedtest pro Punkt; daneben die gespeicherten Projekte.
+  2. **Pläne**: Grundriss ins Fenster ziehen oder auswählen; jedes Stockwerk als Kachel mit Vorschau zum Umbenennen, Umsortieren (Messpunkte wandern mit), Ersetzen und Entfernen. Pläne des letzten Projekts lassen sich übernehmen.
+  3. **Maßstab**: Stockwerke mit Status links, mitlaufende Anleitung und Eingabe der Länge; danach geht es automatisch zum nächsten Stockwerk ohne Maßstab.
+  4. **Messen**: eine Aktionsleiste (Start/Stopp, Live-Wert, Stockwerke, Export, Menü) und eine **Werkzeugleiste im Plan**: Messpunkt, Hand (nur verschieben), Löschen, Rückgängig, Heatmap mit Ebene/Deckkraft/Farbskala, Zoom und Vollbild. Ein Hinweis im Plan sagt, was ein Klick gerade bewirkt.
+- **Weniger Fehlklicks**: Ein angeklickter Messpunkt springt beim nächsten Klick nicht mehr an diese Stelle – platzierte Punkte verschiebt man durch Ziehen. Entf löscht den ausgewählten Punkt. Die Grundrisse bleiben auch nach einem Neustart erhalten.
+- **Projektname** in der Messung: steht im Dateinamen der Messung und in der Übersicht der gespeicherten Projekte.
+
+### Geändert
+- Neue Webadresse: **https://schoepf-tirol.at/Project/WifiAnalyzer** (App, Berichte, Installer, Website).
+- Website mit neuen Screenshots im aktuellen Design.
+
 ## [2.0.0] – 2026-11-04
 
 Erste öffentliche Version.
@@ -43,12 +58,7 @@ Erste öffentliche Version.
 
 ### Grundriss-Messung (neu)
 - Eigene Seite **Grundriss-Messung**, getrennt von der normalen Messung (Rundgang): Grundriss laden (PNG/JPG oder PDF), an der eigenen Position in den Plan klicken – dort wird gemessen.
-- **Geführter Ablauf in vier Schritten** mit Schrittleiste oben (zurückspringen jederzeit möglich):
-  1. **Projekt**: Projektname (steht im Dateinamen), WLAN, Latenz/Speedtest pro Punkt; daneben die gespeicherten Projekte.
-  2. **Pläne**: Grundriss ins Fenster ziehen oder auswählen; jedes Stockwerk als Kachel mit Vorschau zum Umbenennen, Umsortieren (Messpunkte wandern mit), Ersetzen und Entfernen. Pläne des letzten Projekts lassen sich übernehmen.
-  3. **Maßstab**: Stockwerke mit Status links, mitlaufende Anleitung und Eingabe der Länge; danach geht es automatisch zum nächsten Stockwerk ohne Maßstab.
-  4. **Messen**: eine Aktionsleiste (Start/Stopp, Live-Wert, Stockwerke, Export, Menü) und eine **Werkzeugleiste im Plan**: Messpunkt, Hand (nur verschieben), Löschen, Rückgängig, Heatmap mit Ebene/Deckkraft/Farbskala, Zoom und Vollbild. Ein Hinweis im Plan sagt, was ein Klick gerade bewirkt.
-- Ein angeklickter Messpunkt springt beim nächsten Klick nicht mehr an diese Stelle – platzierte Punkte verschiebt man durch Ziehen. Entf löscht den ausgewählten Punkt. Die Grundrisse bleiben auch nach einem Neustart erhalten.
+- **Vorbereitung vor dem Start**: Pläne laden und je Stockwerk den Maßstab setzen (z. B. eine Tür abmessen), bevor die Messung läuft. Eine Leiste zeigt die drei Schritte; nach dem Laden öffnet sich das Maßstab-Werkzeug automatisch und springt zum nächsten Stockwerk ohne Maßstab. Die Grundrisse bleiben auch nach einem Neustart erhalten.
 - **Kein Signal = grau**: Bereiche schwächer als die unterste Farbschwelle und Messpunkte ganz ohne Empfang werden grau statt rot dargestellt, mit weichem Übergang. Farbe einstellbar oder durchsichtig (Farbskala).
 - **Mehrere Stockwerke** pro Messung: je Stockwerk ein Grundriss mit eigenen Messpunkten und eigener Heatmap. Reiter zum Wechseln, Rechtsklick zum Umbenennen (z. B. „EG“) oder Entfernen, „+ Stockwerk“ zum Hinzufügen. Bericht (PDF/HTML) und CSV enthalten alle Stockwerke.
 - **PDF-Pläne**: Bei mehrseitigen PDFs erscheint eine Seitenauswahl mit Vorschaubildern; jede gewählte Seite wird ein Stockwerk. Gerendert wird mit dem in Windows eingebauten PDF-Renderer, ohne zusätzliche Bibliothek.

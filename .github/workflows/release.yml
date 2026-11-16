@@ -1,7 +1,7 @@
 name: Release
 
 # Neues Release:  Version in Cargo.toml anheben, CHANGELOG ergänzen, dann
-#   git tag v2.0.0 && git push origin v2.0.0
+#   git tag v2.1.0 && git push origin v2.1.0
 on:
   push:
     tags: ["v*"]
