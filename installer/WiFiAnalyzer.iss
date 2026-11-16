@@ -1,7 +1,7 @@
 ; WiFi Analyzer – Installer (Inno Setup 6.7+)
 ;
 ; Bauen:   tools\package.ps1  (ruft ISCC automatisch auf)
-;   oder   ISCC.exe /DAppVersion=2.1.0 /DSourceExe=..\target\release\wifi-analyzer.exe installer\WiFiAnalyzer.iss
+;   oder   ISCC.exe /DAppVersion=2.1.1 /DSourceExe=..\target\release\wifi-analyzer.exe installer\WiFiAnalyzer.iss
 ;
 ; Standard: Installation nur für den aktuellen Benutzer (%LOCALAPPDATA%\Programs\WiFi Analyzer),
 ; ohne Administratorrechte. Im Setup kann alternativ „für alle Benutzer“ gewählt werden.
