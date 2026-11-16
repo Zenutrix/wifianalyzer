@@ -296,6 +296,8 @@ pub struct WifiApp {
     perm_last_check: Instant,
 
     show_settings: bool,
+    /// gewählter Bereich im Einstellungsfenster
+    settings_tab: settings_ui::SettingsTab,
     show_about: bool,
     show_update: bool,
     show_whats_new: bool,
@@ -419,6 +421,7 @@ impl WifiApp {
             perm_dismissed: false,
             perm_last_check: Instant::now(),
             show_settings: false,
+            settings_tab: settings_ui::SettingsTab::Look,
             show_about: false,
             show_update: false,
             show_whats_new: false,

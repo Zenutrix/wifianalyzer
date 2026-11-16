@@ -3,6 +3,11 @@
 Alle wichtigen Änderungen an diesem Projekt. Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionen nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Geändert
+- **Einstellungen neu gestaltet**: Bereiche links (Darstellung, Scan, Messung, Daten, Programm), rechts nur die passenden Einstellungen in Karten mit kurzer Erklärung; Schalter statt Häkchen. Neu im Fenster: Latenz/Speedtest pro Messpunkt, Deckkraft der Heatmap, Ordner der gespeicherten Messungen und „Nach Updates suchen“ mit Versionsanzeige.
+
 ## [2.1.0] – 2026-11-16
 
 ### Grundriss-Messung neu aufgebaut
