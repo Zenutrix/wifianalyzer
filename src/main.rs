@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //! WiFi Analyzer – WLAN-Analyse für Windows.
-//! © Thomas Schöpf · https://wifianalyzer.schoepf-tirol.at · GPL-3.0-or-later
+//! © Thomas Schöpf · https://schoepf-tirol.at/Project/WifiAnalyzer · GPL-3.0-or-later
 
 mod app;
 mod beeper;
@@ -35,7 +35,9 @@ fn main() -> eframe::Result<()> {
         .with_inner_size(SPLASH_SIZE)
         .with_decorations(false)
         .with_resizable(false)
-        .with_transparent(true);
+        .with_transparent(true)
+        // Grundrisse per Drag & Drop ins Fenster ziehen
+        .with_drag_and_drop(true);
     if let Ok(icon) = eframe::icon_data::from_png_bytes(ICON_PNG) {
         viewport = viewport.with_icon(icon);
     }

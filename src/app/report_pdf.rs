@@ -345,7 +345,7 @@ impl WifiApp {
             pdf.select_page(i);
             let fy = PAGE_H - 30.0;
             pdf.line(M, fy - 10.0, M + CW, fy - 10.0, BORDER, 0.6, false);
-            pdf.text(M, fy, 7.5, false, WEAK, &format!("WiFi Analyzer {} · wifianalyzer.schoepf-tirol.at", env!("CARGO_PKG_VERSION")));
+            pdf.text(M, fy, 7.5, false, WEAK, &format!("WiFi Analyzer {} · schoepf-tirol.at/Project/WifiAnalyzer", env!("CARGO_PKG_VERSION")));
             pdf.text_center(PAGE_W / 2.0 + 40.0, fy, 7.5, false, WEAK, &created);
             pdf.text_right(M + CW, fy, 7.5, false, WEAK, &tf!("Seite {} / {n}", "Page {} / {n}", i + 1));
         }

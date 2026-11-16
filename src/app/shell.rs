@@ -604,7 +604,7 @@ impl WifiApp {
                         ui.label(RichText::new(t!("Messung läuft", "Survey running")).size(12.5).color(p.danger));
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.hyperlink_to(RichText::new("wifianalyzer.schoepf-tirol.at").size(12.0).color(p.weak), WEBSITE);
+                        ui.hyperlink_to(RichText::new("schoepf-tirol.at/Project/WifiAnalyzer").size(12.0).color(p.weak), WEBSITE);
                         ui.label(RichText::new(format!("© {} {AUTHOR} · GPL-3.0 ·", chrono::Local::now().format("%Y"))).size(12.0).color(p.weak));
                     });
                 });

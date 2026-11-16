@@ -2,7 +2,7 @@ WiFi Analyzer
 =============
 WLAN-Analyse fuer Techniker unter Windows / Wi-Fi analysis for technicians on Windows
 
-(c) 2026 Thomas Schoepf - https://wifianalyzer.schoepf-tirol.at
+(c) 2026 Thomas Schoepf - https://schoepf-tirol.at/Project/WifiAnalyzer
 Quellcode / Source: https://github.com/zenutrix/wifianalyzer
 Lizenz / License: GNU GPL v3 or later (siehe/see LICENSE.txt) - ohne Gewaehrleistung / without warranty
 

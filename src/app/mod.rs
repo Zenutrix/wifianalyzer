@@ -30,7 +30,7 @@ use crate::wlan::{self, ConnInfo, IfaceInfo, ScanCmd, ScanMsg};
 use crate::{t, tf};
 
 pub const AUTHOR: &str = "Thomas Schöpf";
-pub const WEBSITE: &str = "https://wifianalyzer.schoepf-tirol.at";
+pub const WEBSITE: &str = "https://schoepf-tirol.at/Project/WifiAnalyzer";
 pub const REPO: &str = "https://github.com/zenutrix/wifianalyzer";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -270,6 +270,14 @@ pub struct WifiApp {
     page_shown: (Page, Instant),
     /// Grundriss-Seite im Vollbild (F11)
     plan_fullscreen: bool,
+    /// Grundriss-Messung: aktueller Schritt (Projekt → Pläne → Maßstab → Messen)
+    plan_step: plan::PlanStep,
+    /// Werkzeug beim Messen (Messpunkt, Hand, Löschen)
+    plan_tool: plan::PlanTool,
+    /// Vorschaubilder der Stockwerke (Schlüssel: Name + Größe der Bilddaten)
+    plan_thumbs: HashMap<(String, usize), (egui::TextureHandle, [usize; 2])>,
+    /// Rückfrage „Neues Projekt?“, solange eine Messung offen ist
+    plan_new_confirm: bool,
     /// Rückfrage „Wirklich deinstallieren?“ in den Einstellungen
     uninstall_confirm: bool,
 
@@ -382,6 +390,10 @@ impl WifiApp {
             show_shortcuts: false,
             page_shown: (Page::Overview, Instant::now()),
             plan_fullscreen: false,
+            plan_step: plan::PlanStep::Project,
+            plan_tool: plan::PlanTool::Measure,
+            plan_thumbs: HashMap::new(),
+            plan_new_confirm: false,
             uninstall_confirm: false,
             splash_done: false,
             splash_progress: 0.0,
@@ -853,8 +865,16 @@ impl WifiApp {
         } else {
             Vec::new()
         };
+        // Projektname und angezeigtes Stockwerk der Vorbereitung bzw. vorherigen Messung übernehmen
+        let (project, floor) = if plan_mode { self.meas.as_ref().filter(|m| m.plan_mode).map(|m| (m.project.clone(), m.floor)).unwrap_or_default() } else { Default::default() };
         let mut m = Measurement::new(ssid.clone(), self.now_t());
+        m.floor = floor.min(plans.len().saturating_sub(1));
         m.plans = plans;
+        m.project = project;
+        if plan_mode {
+            self.plan_step = plan::PlanStep::Measure;
+            self.plan_tool = plan::PlanTool::Measure;
+        }
         m.plan_mode = plan_mode;
         self.meas = Some(m);
         self.net_jobs.clear();
@@ -1019,7 +1039,7 @@ impl WifiApp {
         let typing = ctx.wants_keyboard_input();
         let on_meas = matches!(self.page, Page::Measure | Page::PlanSurvey);
         let dialog_open = self.meas_point.is_some() || self.show_settings || self.pdf_pick.is_some();
-        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) && (self.page == Page::PlanSurvey || self.plan_fullscreen) {
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) && ((self.page == Page::PlanSurvey && self.plan_step == plan::PlanStep::Measure) || self.plan_fullscreen) {
             self.set_plan_fullscreen(ctx, !self.plan_fullscreen);
         }
         // Seite gewechselt: Vollbild beenden

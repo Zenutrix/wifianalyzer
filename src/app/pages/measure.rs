@@ -31,6 +31,11 @@ impl WifiApp {
             self.other_survey_notice(ui, plan_mode, other_running, &other_name);
             return;
         }
+        // Grundriss-Messung: geführter Ablauf in eigenen Schritten
+        if plan_mode {
+            self.page_plan_survey(ui);
+            return;
+        }
         let running = self.meas.as_ref().is_some_and(|m| m.running);
         let choices = self.ssid_choices();
         if self.meas_ssid.is_none() {
@@ -267,13 +272,7 @@ impl WifiApp {
         let best = self.best_ap_of(&ssid);
         let live_rssi = conn_here.and_then(|c| c.rssi).or(best.map(|b| b.info.rssi));
         let mut start_cta = false;
-        if plan_mode && draft {
-            if self.plan_setup_strip(ui, !ssid.is_empty()) {
-                self.start_survey(ssid.clone(), true);
-            }
-        } else if plan_mode {
-            // Live-Wert steht bereits in der Messpunkt-Zeile
-        } else {
+        {
         ui.horizontal(|ui| {
             card(ui, None, |ui| {
                 ui.set_width(270.0);
@@ -391,35 +390,7 @@ impl WifiApp {
             return;
         }
         ui.add_space(6.0);
-        if plan_mode {
-            let draft = self.meas.as_ref().is_some_and(|m| m.draft);
-            if draft {
-                self.plan_view(ui, ui.available_height() - 8.0);
-                return;
-            }
-            let avail_w = ui.available_width();
-            if !self.plan_full_table && avail_w >= 900.0 {
-                // breiter Bildschirm: kompakte Messpunkt-Liste rechts neben dem Plan
-                let h = ui.available_height() - 4.0;
-                let list_w = 280.0;
-                ui.horizontal_top(|ui| {
-                    ui.allocate_ui_with_layout(egui::Vec2::new(avail_w - list_w - 14.0, h), egui::Layout::top_down(egui::Align::Min), |ui| {
-                        self.plan_view(ui, h);
-                    });
-                    ui.allocate_ui_with_layout(egui::Vec2::new(list_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
-                        ui.set_min_size(egui::Vec2::new(list_w, h));
-                        self.plan_points_list(ui);
-                    });
-                });
-                return;
-            }
-            // Tabelle darunter soll mindestens ~4 Zeilen zeigen
-            let avail = ui.available_height();
-            let h = (avail - 190.0).clamp(240.0, (avail * 0.70).max(240.0));
-            self.plan_view(ui, h);
-        } else {
-            self.meas_chart(ui);
-        }
+        self.meas_chart(ui);
 
         // ---------- Messpunkte | Ereignisse (Reiter) ----------
         ui.add_space(6.0);

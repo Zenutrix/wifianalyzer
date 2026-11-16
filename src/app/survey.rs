@@ -105,7 +105,9 @@ fn safe_name(s: &str) -> String {
 
 /// „2026-11-06 14-30 Firmen-WLAN“
 pub(super) fn base_name(m: &Measurement) -> String {
-    format!("{} {}", m.started_wall.format("%Y-%m-%d %H-%M"), safe_name(&m.ssid))
+    // Grundriss-Messung mit Projektname: danach benennen, sonst nach der SSID
+    let name = if m.project.trim().is_empty() { &m.ssid } else { m.project.trim() };
+    format!("{} {}", m.started_wall.format("%Y-%m-%d %H-%M"), safe_name(name))
 }
 
 /// Freier Dateiname: „name.ext“, sonst „name (2).ext“, „name (3).ext“ …
@@ -827,6 +829,9 @@ impl WifiApp {
                     self.last_plans = m.plans.clone();
                 }
                 self.page = if m.plan_mode { super::Page::PlanSurvey } else { super::Page::Measure };
+                if m.plan_mode {
+                    self.plan_step = super::plan::PlanStep::Measure;
+                }
                 self.meas = Some(m);
                 self.meas_file = Some(path.to_path_buf());
                 self.meas_dirty_since = None;
@@ -1176,7 +1181,7 @@ footer{{margin-top:32px;padding-top:10px;border-top:1px solid var(--line);font-s
 
         let _ = write!(
             h,
-            r#"<footer><span>{} {}</span><span>WiFi Analyzer {} · wifianalyzer.schoepf-tirol.at</span></footer></div>
+            r#"<footer><span>{} {}</span><span>WiFi Analyzer {} · schoepf-tirol.at/Project/WifiAnalyzer</span></footer></div>
 <button class="print" onclick="window.print()">{}</button></body></html>"#,
             t!("Erstellt am", "Created on"),
             chrono::Local::now().format("%d.%m.%Y %H:%M"),

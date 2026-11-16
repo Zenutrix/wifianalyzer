@@ -29,9 +29,36 @@ pub(crate) struct NetJob {
 /// Maßstab setzen: zwei Punkte einer bekannten Strecke + deren Länge
 #[derive(Default)]
 pub(crate) struct ScaleDraft {
-    a: Option<[f32; 2]>,
-    b: Option<[f32; 2]>,
-    meters: String,
+    pub a: Option<[f32; 2]>,
+    pub b: Option<[f32; 2]>,
+    pub meters: String,
+}
+
+/// Schritt der Grundriss-Messung
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum PlanStep {
+    Project,
+    Plans,
+    Scale,
+    Measure,
+}
+
+/// Werkzeug beim Messen im Grundriss
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum PlanTool {
+    /// Klick = Messpunkt an dieser Stelle, Punkte ziehen = verschieben
+    Measure,
+    /// nur verschieben/zoomen, Klicks messen nicht
+    Hand,
+    /// Klick auf einen Punkt = löschen
+    Erase,
+}
+
+/// Wofür der Grundriss angezeigt wird
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CanvasMode {
+    Scale,
+    Measure,
 }
 
 /// Seitenauswahl für einen mehrseitigen PDF-Grundriss
@@ -47,6 +74,9 @@ pub(crate) struct PdfPick {
     /// als neue Stockwerke hinzufügen (sonst ersetzt die erste Seite das aktuelle)
     add: bool,
 }
+
+/// Dateitypen für Grundrisse
+const PLAN_EXT: [&str; 5] = ["png", "jpg", "jpeg", "bmp", "pdf"];
 
 /// Geladener Grundriss: Dateiname, Stockwerk-Bezeichnung, Bilddaten
 type PlanLoad = (String, String, Result<(Vec<u8>, u32, u32), String>, Option<PdfSource>);
@@ -70,7 +100,7 @@ pub(crate) struct SharpTex {
 pub(crate) struct PlanTex {
     key: (usize, String, usize),
     tex: TextureHandle,
-    size: [usize; 2],
+    pub size: [usize; 2],
 }
 
 /// Farbe eines Messpunkts nach Bewertung (Heatmap-Farben, unabhängig vom Theme)
@@ -136,11 +166,16 @@ pub(crate) fn plans_sig(plans: &[FloorPlan]) -> u64 {
     h.finish()
 }
 
-/// Schritt der Vorbereitung: Nummer bzw. Häkchen + Text
-fn setup_step(ui: &mut Ui, p: &crate::theme::Palette, n: usize, done: bool, text: &str) {
-    let (mark, col) = if done { ("\u{E182}".to_string(), p.success) } else { (format!("{n}."), p.accent) };
-    ui.label(RichText::new(mark).strong().color(col));
-    ui.label(RichText::new(text).strong().color(p.text));
+/// Knopf der Werkzeugleiste im Plan (nur Symbol, quadratisch)
+fn tool_button(ui: &mut Ui, icon: &str, selected: bool, tip: &str) -> egui::Response {
+    let p = pal(ui);
+    let text = RichText::new(icon).size(18.0).color(if selected { Color32::WHITE } else { p.text });
+    let b = egui::Button::new(text)
+        .min_size(Vec2::splat(38.0))
+        .fill(if selected { p.accent } else { Color32::TRANSPARENT })
+        .stroke(if selected { Stroke::new(1.0f32, p.accent) } else { Stroke::NONE })
+        .rounding(8.0);
+    ui.add(b).on_hover_text(tip)
 }
 
 impl WifiApp {
@@ -177,63 +212,6 @@ impl WifiApp {
         self.plan_scale = Some(ScaleDraft::default());
         self.plan_sel = None;
         self.heat_tex = None;
-    }
-
-    /// Vorbereitung der Grundriss-Messung: Pläne laden → Maßstab je Stockwerk → starten.
-    /// Liefert true, wenn „ohne Maßstab starten“ geklickt wurde.
-    pub(super) fn plan_setup_strip(&mut self, ui: &mut Ui, ssid_ok: bool) -> bool {
-        let p = pal(ui);
-        let Some(m) = &self.meas else { return false };
-        let floors: Vec<(String, Option<f32>)> = m.plans.iter().map(|f| (f.title().to_string(), f.width_m)).collect();
-        let n = floors.len();
-        let all_scaled = n > 0 && floors.iter().all(|f| f.1.is_some());
-        let (mut goto_scale, mut load, mut start_anyway) = (None, false, false);
-        crate::widgets::card(ui, None, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal_wrapped(|ui| {
-                setup_step(ui, &p, 1, n > 0, t!("Grundrisse laden", "Load floor plans"));
-                if n == 0 {
-                    if ui.button(t!("\u{E31A} Bild oder PDF …", "\u{E31A} Image or PDF …")).clicked() {
-                        load = true;
-                    }
-                } else {
-                    ui.label(RichText::new(if n == 1 { t!("1 Stockwerk", "1 floor").to_string() } else { tf!("{n} Stockwerke", "{n} floors") }).color(p.weak));
-                }
-                ui.separator();
-                setup_step(ui, &p, 2, all_scaled, t!("Maßstab je Stockwerk", "Scale per floor"));
-                if n == 0 {
-                    ui.label(RichText::new("–").color(p.weak));
-                }
-                for (i, (title, w)) in floors.iter().enumerate() {
-                    let (txt, col, tip) = match w {
-                        Some(w) => (format!("\u{E182} {title}"), p.success, tf!("Plan ist {w:.1} m breit – klicken, um den Maßstab neu zu setzen", "Plan is {w:.1} m wide – click to set the scale again")),
-                        None => (format!("\u{E6B8} {title}"), p.warning, t!("Noch kein Maßstab – klicken und eine bekannte Strecke abmessen, z. B. eine Tür", "No scale yet – click and measure a known distance, e.g. a door").to_string()),
-                    };
-                    if ui.add(egui::Button::new(RichText::new(txt).color(col)).small()).on_hover_text(tip).clicked() {
-                        goto_scale = Some(i);
-                    }
-                }
-                ui.separator();
-                setup_step(ui, &p, 3, false, t!("Messung starten", "Start the survey"));
-                ui.label(RichText::new(t!("dann an deiner Position in den Plan klicken", "then click your position on the plan")).color(p.weak));
-                if n > 0 && !all_scaled && ssid_ok && ui.link(RichText::new(t!("ohne Maßstab starten", "start without scale")).small()).clicked() {
-                    start_anyway = true;
-                }
-                // im Fluss (nicht rechtsbündig), damit beim Umbrechen nichts überlappt
-                ui.separator();
-                ui.menu_button(t!("\u{E256} Gespeicherte Messungen", "\u{E256} Saved surveys"), |ui| {
-                    ui.set_min_width(420.0);
-                    self.recent_surveys_ui(ui, true);
-                });
-            });
-        });
-        if let Some(i) = goto_scale {
-            self.plan_start_scale(i);
-        }
-        if load {
-            self.load_plan(&ui.ctx().clone(), true);
-        }
-        start_anyway
     }
 
     // ---------------------------------------------------------------- Netzwerktests
@@ -298,13 +276,27 @@ impl WifiApp {
             return;
         }
         let Some(path) = rfd::FileDialog::new()
-            .add_filter(t!("Grundriss (Bild oder PDF)", "Floor plan (image or PDF)"), &["png", "jpg", "jpeg", "bmp", "pdf"])
+            .add_filter(t!("Grundriss (Bild oder PDF)", "Floor plan (image or PDF)"), &PLAN_EXT)
             .add_filter("PDF", &["pdf"])
             .add_filter(t!("Bilder", "Images"), &["png", "jpg", "jpeg", "bmp"])
             .pick_file()
         else {
             return;
         };
+        self.load_plan_path(ctx, path, add);
+    }
+
+    /// Grundriss aus einer Datei laden (Dateiauswahl oder ins Fenster gezogen)
+    pub(super) fn load_plan_path(&mut self, ctx: &egui::Context, path: std::path::PathBuf, add: bool) {
+        if self.meas.is_none() {
+            return;
+        }
+        let ok = path.extension().and_then(|e| e.to_str()).is_some_and(|e| PLAN_EXT.iter().any(|x| x.eq_ignore_ascii_case(e)));
+        if !ok {
+            let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            self.toast(Sev::Warning, tf!("„{name}“ ist kein Grundriss – erlaubt sind PNG, JPG, BMP und PDF.", "\"{name}\" is not a floor plan – PNG, JPG, BMP and PDF are allowed."));
+            return;
+        }
         let name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "plan".into());
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
             self.open_pdf_plan(ctx, path, name, add);
@@ -395,8 +387,6 @@ impl WifiApp {
         }
         self.plan_sel = m.points.iter().find(|p| p.pos.is_none()).map(|p| p.id);
         self.last_plans = m.plans.clone();
-        // ohne Maßstab: gleich das Maßstab-Werkzeug öffnen
-        self.plan_scale = m.plan().filter(|p| p.width_m.is_none()).map(|_| ScaleDraft::default());
         self.heat_tex = None;
         self.survey_changed();
         let (title, w, h) = first;
@@ -408,7 +398,7 @@ impl WifiApp {
     }
 
     /// Fenster: Seiten eines mehrseitigen PDFs wählen (jede gewählte Seite = ein Stockwerk)
-    fn pdf_pick_window(&mut self, ctx: &egui::Context) {
+    pub(super) fn pdf_pick_window(&mut self, ctx: &egui::Context) {
         let Some(pick) = self.pdf_pick.as_mut() else { return };
         let mut open = true;
         let mut chosen: Option<Vec<u32>> = None;
@@ -551,7 +541,7 @@ impl WifiApp {
     }
 
     /// Aktuelles Stockwerk samt Grundriss entfernen
-    fn remove_plan(&mut self) {
+    pub(super) fn remove_plan(&mut self) {
         if let Some(m) = self.meas.as_mut() {
             let f = m.floor;
             m.remove_floor(f);
@@ -561,85 +551,6 @@ impl WifiApp {
         self.heat_tex = None;
         self.plan_scale = None;
         self.survey_changed();
-    }
-
-    /// Reiter für die Stockwerke (Wechseln, Umbenennen, Hinzufügen, Entfernen)
-    fn floor_tabs(&mut self, ui: &mut Ui) {
-        let p = pal(ui);
-        let Some(m) = self.meas.as_mut() else { return };
-        let mut switch: Option<usize> = None;
-        let mut remove: Option<usize> = None;
-        let mut add = false;
-        let mut changed = false;
-        let cur = m.floor;
-        let n = m.plans.len();
-        let counts: Vec<usize> = (0..n).map(|f| m.points.iter().filter(|pt| pt.floor == f && pt.pos.is_some()).count()).collect();
-        let confirm = self.floor_remove_confirm;
-        let mut ask_confirm: Option<usize> = None;
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t!("\u{E466} Stockwerk", "\u{E466} Floor")).color(p.weak));
-            for (i, fp) in m.plans.iter_mut().enumerate() {
-                let sel = i == cur;
-                let label = if counts[i] > 0 { format!("{}  {}", fp.title(), counts[i]) } else { fp.title().to_string() };
-                let text = RichText::new(label).color(if sel { Color32::WHITE } else { p.text });
-                let b = egui::Button::new(text).fill(if sel { p.accent } else { p.surface2 }).stroke(Stroke::new(1.0f32, if sel { p.accent } else { p.border }));
-                let resp = ui.add(b).on_hover_text(tf!(
-                    "{}\n{} Messpunkte platziert · Rechtsklick: umbenennen / entfernen",
-                    "{}\n{} points placed · right-click: rename / remove",
-                    fp.name,
-                    counts[i]
-                ));
-                if resp.clicked() {
-                    switch = Some(i);
-                }
-                resp.context_menu(|ui| {
-                    ui.label(RichText::new(t!("Bezeichnung", "Name")).small().color(p.weak));
-                    let r = ui.add(egui::TextEdit::singleline(&mut fp.label).desired_width(180.0).hint_text(t!("z. B. EG, 1. OG", "e.g. Ground floor")));
-                    if r.changed() {
-                        changed = true;
-                    }
-                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if confirm == Some(i) {
-                        ui.label(RichText::new(tf!("{} Messpunkte verlieren ihre Position.", "{} points will lose their position.", counts[i])).small().color(p.warning));
-                        if ui.button(RichText::new(t!("\u{E4A6} Wirklich entfernen", "\u{E4A6} Really remove")).color(p.danger)).clicked() {
-                            remove = Some(i);
-                            ui.close_menu();
-                        }
-                    } else if ui.button(t!("\u{E4A6} Stockwerk entfernen …", "\u{E4A6} Remove floor …")).clicked() {
-                        ask_confirm = Some(i);
-                    }
-                });
-            }
-            if ui.button(t!("+ Stockwerk", "+ Floor")).on_hover_text(t!("Weiteren Grundriss (Bild oder PDF-Seiten) als Stockwerk hinzufügen", "Add another floor plan (image or PDF pages) as a floor")).clicked() {
-                add = true;
-            }
-        });
-        if ask_confirm.is_some() || remove.is_some() || switch.is_some() {
-            self.floor_remove_confirm = ask_confirm;
-        }
-        if let Some(i) = switch {
-            if i != m.floor {
-                m.floor = i;
-                self.plan_scale = None;
-                self.heat_tex = None;
-            }
-        }
-        if changed {
-            self.last_plans = m.plans.clone();
-            self.survey_changed();
-        }
-        if let Some(i) = remove {
-            if let Some(m) = self.meas.as_mut() {
-                m.floor = i;
-            }
-            self.remove_plan();
-        }
-        if add {
-            self.load_plan(&ui.ctx().clone(), true);
-        }
     }
 
     /// Textur des Grundrisses (wird bei Bedarf neu erzeugt)
@@ -787,141 +698,23 @@ impl WifiApp {
 
     // ---------------------------------------------------------------- Grundriss-Ansicht
 
-    pub(super) fn plan_view(&mut self, ui: &mut Ui, height: f32) {
+    /// Grundriss mit Zoom, Heatmap und Messpunkten.
+    /// `Scale`: Klicks setzen die Maßstab-Strecke. `Measure`: Werkzeugleiste links, Klick je nach Werkzeug.
+    /// Liefert true, wenn im Plan „Messung starten“ geklickt wurde.
+    pub(super) fn plan_canvas(&mut self, ui: &mut Ui, avail: Vec2, mode: CanvasMode) -> bool {
         let p = pal(ui);
-        let top = ui.cursor().top();
-        self.pdf_pick_window(&ui.ctx().clone());
-        let Some(m) = &self.meas else { return };
-        if m.plans.is_empty() {
-            let rect = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover()).0;
-            ui.painter().rect(rect, 12.0, p.surface, Stroke::new(1.0f32, p.border));
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(20.0)).layout(egui::Layout::top_down(egui::Align::Center)));
-            child.add_space((height / 2.0 - 90.0).max(10.0));
-            child.label(RichText::new("\u{E31A}").size(38.0).color(p.weak));
-            child.label(RichText::new(t!("Noch kein Grundriss", "No floor plan yet")).size(18.0).strong().color(p.text));
-            child.label(
-                RichText::new(t!(
-                    "Plan als Bild oder PDF laden (PNG, JPG, Foto vom Fluchtplan oder PDF). Bei mehreren Seiten wird jede gewählte Seite ein Stockwerk; weitere Stockwerke lassen sich jederzeit hinzufügen. Danach die Messpunkte per Klick platzieren – die App färbt die Ausleuchtung ein.",
-                    "Load a plan as image or PDF (PNG, JPG, a photo of the evacuation plan or PDF). With several pages each selected page becomes a floor; more floors can be added at any time. Then place the points by clicking – the app colours the coverage."
-                ))
-                .color(p.weak),
-            );
-            child.add_space(10.0);
-            if primary_button(&mut child, t!("\u{E31A} Grundriss laden", "\u{E31A} Load floor plan"), p.accent).clicked() {
-                self.load_plan(&ui.ctx().clone(), true);
-            }
-            return;
-        }
-
-        // Werkzeugleiste
-        let draft = m.draft;
-        let unplaced = m.points.iter().filter(|pt| pt.pos.is_none()).count();
-        let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id)).map(|i| i + 1);
-        let with_data = m.layers_with_data(m.floor);
-        let (width_m, plan_px) = (m.plan().and_then(|p| p.width_m), self.plan_tex.as_ref().map(|t| t.size));
-        // Statuszeile: Maßstab bzw. Hinweis
-        let mut apply_scale: Option<f32> = None;
-        let mut cancel_scale = false;
-        let mut zoom_to: Option<f32> = None;
-        ui.horizontal(|ui| {
-            // Stockwerke und Hinweis teilen sich eine Zeile – der Plan bekommt den Platz
-            self.floor_tabs(ui);
-            ui.separator();
-            if let Some(sd) = self.plan_scale.as_mut() {
-                ui.label(RichText::new("\u{E6B8}").color(p.accent));
-                match (sd.a, sd.b) {
-                    (None, _) => {
-                        ui.add(egui::Label::new(RichText::new(t!("Maßstab: Anfang einer bekannten Strecke anklicken – z. B. eine Tür (meist 0,80–1,00 m)", "Scale: click the start of a known distance – e.g. a door (usually 0.80–1.00 m)")).color(p.accent)).truncate());
-                    }
-                    (Some(_), None) => {
-                        ui.label(RichText::new(t!("Jetzt auf das Ende der Strecke klicken", "Now click the end of the distance")).color(p.accent));
-                    }
-                    (Some(_), Some(_)) => {
-                        ui.label(RichText::new(t!("Länge der Strecke:", "Length of the distance:")).color(p.text));
-                        let r = ui.add(egui::TextEdit::singleline(&mut sd.meters).desired_width(70.0).hint_text(t!("z. B. 0,9", "e.g. 0.9")));
-                        if sd.meters.is_empty() && !r.has_focus() {
-                            r.request_focus();
-                        }
-                        ui.label("m");
-                        let parsed = sd.meters.trim().replace(',', ".").parse::<f32>().ok().filter(|v| *v > 0.05 && *v < 10_000.0);
-                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if ui.add_enabled(parsed.is_some(), egui::Button::new(t!("Übernehmen", "Apply"))).clicked() || (enter && parsed.is_some()) {
-                            apply_scale = parsed;
-                        }
-                    }
-                }
-                if ui.button(t!("Abbrechen", "Cancel")).clicked() {
-                    cancel_scale = true;
-                }
-            } else {
-                match width_m {
-                    Some(wm) => {
-                        let hm = plan_px.map(|s| wm * s[1] as f32 / s[0].max(1) as f32).unwrap_or(0.0);
-                        ui.label(RichText::new(tf!("\u{E6B8} {wm:.1} × {hm:.1} m", "\u{E6B8} {wm:.1} × {hm:.1} m")).color(p.weak)).on_hover_text(t!("Größe des Plans laut Maßstab", "Plan size according to the scale"));
-                    }
-                    None => {
-                        ui.label(RichText::new(t!("\u{E6B8} Kein Maßstab", "\u{E6B8} No scale")).color(p.warning))
-                            .on_hover_text(t!("Angenommen werden 40 m Breite. Für eine genaue Heatmap „Maßstab“ setzen.", "Assuming 40 m width. Set the \"Scale\" for an accurate heatmap."));
-                    }
-                }
-                ui.separator();
-                let hint = if draft {
-                    t!("Maßstab je Stockwerk setzen, dann „Messung starten“", "Set the scale per floor, then \"Start survey\"").into()
-                } else {
-                    match sel_no {
-                    Some(n) => tf!("Klick in den Plan setzt Messpunkt {n}", "Click into the plan to place point {n}"),
-                    None if unplaced > 0 => tf!("{unplaced} Messpunkte ohne Position – in der Liste anklicken und dann im Plan setzen", "{unplaced} points without position – click one in the list, then place it"),
-                    None => t!("Klick in den Plan = Messpunkt · Punkte lassen sich verschieben", "Click into the plan = point · points can be dragged").into(),
-                    }
-                };
-                ui.add(egui::Label::new(RichText::new(hint).color(if sel_no.is_some() { p.accent } else { p.weak })).truncate());
-            }
-        });
-        if cancel_scale {
-            self.plan_scale = None;
-        }
-        if let (Some(meters), Some(size)) = (apply_scale, plan_px) {
-            if let Some(sd) = self.plan_scale.take() {
-                if let (Some(a), Some(b)) = (sd.a, sd.b) {
-                    let len_px = (((b[0] - a[0]) * size[0] as f32).powi(2) + ((b[1] - a[1]) * size[1] as f32).powi(2)).sqrt();
-                    if len_px > 2.0 {
-                        let wm = meters * size[0] as f32 / len_px;
-                        if let Some(m) = self.meas.as_mut() {
-                            if let Some(pl) = m.plan_mut() {
-                                pl.width_m = Some(wm);
-                                pl.scale_line = Some([a, b]);
-                                pl.scale_len_m = Some(meters);
-                            }
-                            self.last_plans = m.plans.clone();
-                        }
-                        self.heat_tex = None;
-                        self.survey_changed();
-                        // Vorbereitung: weiter mit dem nächsten Stockwerk ohne Maßstab
-                        let next = self.meas.as_ref().filter(|m| m.draft).and_then(|m| m.plans.iter().position(|f| f.width_m.is_none()).map(|i| (i, m.plans[i].title().to_string())));
-                        match next {
-                            Some((i, name)) => {
-                                self.plan_start_scale(i);
-                                self.toast(Sev::Info, tf!("Maßstab gesetzt ({wm:.1} m breit) – jetzt „{name}“", "Scale set ({wm:.1} m wide) – now \"{name}\""));
-                            }
-                            None => self.toast(Sev::Info, tf!("Maßstab gesetzt: Plan ist {wm:.1} m breit", "Scale set: plan is {wm:.1} m wide")),
-                        }
-                    }
-                }
-            }
-        }
-        self.scale_editor_window(ui.ctx());
-
         let ctx = ui.ctx().clone();
+        let mut start_clicked = false;
         let Some((tex, size)) = self.plan_texture(&ctx) else {
             ui.label(RichText::new(t!("Grundriss kann nicht angezeigt werden", "Floor plan cannot be shown")).color(p.danger));
-            return;
+            return false;
         };
-        let heat_tex = if self.plan_heat { self.heat_texture(&ctx, size) } else { None };
-        // Höhe abzüglich der Zeile mit Reitern und Hinweis
-        let h = (height - (ui.cursor().top() - top) - 4.0).max(160.0);
-        let (area, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
-        // oben Platz für die schwebende Werkzeugleiste lassen, damit sie den Plan nicht verdeckt
-        let base = fit_rect(Rect::from_min_max(Pos2::new(area.min.x, area.min.y + 50.0), area.max), size);
+        let measuring = mode == CanvasMode::Measure;
+        let heat_tex = if measuring && self.plan_heat { self.heat_texture(&ctx, size) } else { None };
+        let (area, resp) = ui.allocate_exact_size(Vec2::new(avail.x.max(200.0), avail.y.max(160.0)), Sense::click_and_drag());
+        // links Platz für die Werkzeugleiste, damit sie den eingepassten Plan nicht verdeckt
+        let inset_l = 62.0;
+        let base = fit_rect(Rect::from_min_max(Pos2::new(area.min.x + inset_l, area.min.y + 10.0), Pos2::new(area.max.x - 10.0, area.max.y - 10.0)), size);
         // anderes Stockwerk: wieder eingepasst anzeigen
         let view_key = self.meas.as_ref().map(|m| (m.floor, m.plans.len())).unwrap_or_default();
         if self.plan_view_key != view_key {
@@ -929,7 +722,9 @@ impl WifiApp {
             self.plan_zoom = 1.0;
             self.plan_pan = Vec2::ZERO;
         }
-        if !ui.ctx().wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Num0) && i.modifiers.is_none()) {
+        let typing = ctx.wants_keyboard_input();
+        let mut zoom_to: Option<f32> = None;
+        if !typing && ui.input(|i| i.key_pressed(egui::Key::Num0) && i.modifiers.is_none()) {
             zoom_to = Some(1.0);
         }
         // Zoom per Mausrad: der Punkt unter dem Mauszeiger bleibt stehen
@@ -939,17 +734,11 @@ impl WifiApp {
             let f = zd * (scroll * 0.0015).exp();
             if (f - 1.0).abs() > 1e-4 {
                 zoom_at = Some((self.plan_zoom * f, hp));
-                ui.ctx().input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
+                ctx.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
             }
         }
         if let Some((z, at)) = zoom_at {
-            let (old, new) = (self.plan_zoom, z.clamp(1.0, 8.0));
-            let rel = at - (base.center() + self.plan_pan);
-            self.plan_pan += rel - rel * (new / old);
-            self.plan_zoom = new;
-            if new <= 1.0 {
-                self.plan_pan = Vec2::ZERO;
-            }
+            self.zoom_plan_at(z, at - base.center());
         }
         let max_pan = base.size() * (self.plan_zoom - 1.0) / 2.0;
         self.plan_pan = Vec2::new(self.plan_pan.x.clamp(-max_pan.x, max_pan.x), self.plan_pan.y.clamp(-max_pan.y, max_pan.y));
@@ -970,7 +759,7 @@ impl WifiApp {
             legend_overlay(&painter, visible);
         }
 
-        let Some(m) = &self.meas else { return };
+        let Some(m) = &self.meas else { return false };
         let markers: Vec<(u64, usize, Pos2, Option<f64>, String)> = m
             .points
             .iter()
@@ -981,19 +770,28 @@ impl WifiApp {
         let floor = m.floor;
         let heat_pts = m.heat_points(floor, self.plan_layer);
         let plan_m = m.plan().map(|pl| (pl.width_m, pl.scale_line)).unwrap_or((None, None));
-        let scaling = self.plan_scale.is_some();
         let next_ids: Vec<u64> = m.points.iter().filter(|pt| pt.pos.is_none()).map(|pt| pt.id).collect();
-        let running = m.running;
+        let unplaced = next_ids.len();
+        let (running, draft) = (m.running, m.draft);
+        // Hinweis „Klick setzt Punkt n“ nur für einen ausgewählten Punkt ohne Position
+        let sel_no = self.plan_sel.and_then(|id| m.points.iter().position(|pt| pt.id == id && pt.pos.is_none())).map(|i| i + 1);
+        let with_data = m.layers_with_data(floor);
+        let tool = self.plan_tool;
         let mut click_measure: Option<[f32; 2]> = None;
         let r = 11.0;
+        // beim Maßstab setzen sind die Messpunkte nur Orientierung
         for (id, no, c, rssi, _) in &markers {
-            draw_marker(&painter, *c, r, *no, *rssi, self.plan_sel == Some(*id) || self.plan_drag == Some(*id));
+            if measuring {
+                draw_marker(&painter, *c, r, *no, *rssi, self.plan_sel == Some(*id) || self.plan_drag == Some(*id));
+            } else {
+                painter.circle(*c, 6.0, point_color(*rssi).gamma_multiply(0.5), Stroke::new(1.0f32, Color32::WHITE.gamma_multiply(0.6)));
+            }
         }
-        // Maßstabsleiste unten links
-        if let Some(wm) = plan_m.0 {
+        // Maßstabsleiste unten links (rechts der Werkzeugleiste)
+        if let Some(wm) = plan_m.0.filter(|_| measuring) {
             let len = heatmap::nice_length(wm * 0.18);
             let px = len / wm * img.width();
-            let base = Pos2::new(visible.min.x + 14.0, visible.max.y - 14.0);
+            let base = Pos2::new(visible.min.x.max(area.min.x + inset_l) + 14.0, visible.max.y - 14.0);
             let bg = Rect::from_min_max(Pos2::new(base.x - 8.0, base.y - 22.0), Pos2::new(base.x + px + 8.0, base.y + 6.0));
             painter.rect_filled(bg, 4.0, Color32::from_white_alpha(225));
             let ink = Color32::from_rgb(40, 44, 52);
@@ -1004,26 +802,42 @@ impl WifiApp {
             let label = if len < 1.0 { format!("{:.0} cm", len * 100.0) } else { format!("{len:.0} m") };
             painter.text(base + Vec2::new(px / 2.0, -12.0), Align2::CENTER_CENTER, label, FontId::proportional(11.5), ink);
         }
-        // Maßstab setzen: Linie zeichnen
-        if let Some(sd) = &self.plan_scale {
+        // Maßstab setzen: bisherige und neue Strecke zeichnen
+        if !measuring {
             let accent = Color32::from_rgb(59, 130, 246);
-            if let Some([a, b]) = plan_m.1 {
-                painter.line_segment([to_screen(img, a), to_screen(img, b)], Stroke::new(1.5f32, accent.gamma_multiply(0.35)));
-            }
-            let end = sd.b.map(|b| to_screen(img, b)).or_else(|| resp.hover_pos().filter(|h| img.contains(*h)));
-            if let Some(a) = sd.a.map(|a| to_screen(img, a)) {
-                if let Some(e) = end {
-                    painter.line_segment([a, e], Stroke::new(3.0f32, accent));
-                    painter.circle(e, 5.0, Color32::WHITE, Stroke::new(2.0f32, accent));
+            let drawing = self.plan_scale.as_ref().is_some_and(|sd| sd.a.is_some());
+            if let (Some([a, b]), false) = (plan_m.1, drawing) {
+                let (a, b) = (to_screen(img, a), to_screen(img, b));
+                painter.line_segment([a, b], Stroke::new(3.0f32, Color32::from_rgb(34, 197, 94)));
+                for c in [a, b] {
+                    painter.circle(c, 5.0, Color32::WHITE, Stroke::new(2.0f32, Color32::from_rgb(34, 197, 94)));
                 }
-                painter.circle(a, 5.0, Color32::WHITE, Stroke::new(2.0f32, accent));
+            }
+            if let Some(sd) = &self.plan_scale {
+                let end = sd.b.map(|b| to_screen(img, b)).or_else(|| resp.hover_pos().filter(|h| img.contains(*h)));
+                if let Some(a) = sd.a.map(|a| to_screen(img, a)) {
+                    if let Some(e) = end {
+                        painter.line_segment([a, e], Stroke::new(3.0f32, accent));
+                        painter.circle(e, 5.0, Color32::WHITE, Stroke::new(2.0f32, accent));
+                        // Länge in Bildpunkten als Orientierung an der Linie
+                        if sd.b.is_some() {
+                            if let Some(meters) = sd.meters.trim().replace(',', ".").parse::<f32>().ok().filter(|v| *v > 0.0) {
+                                let mid = a + (e - a) / 2.0;
+                                painter.text(mid + Vec2::new(0.0, -14.0), Align2::CENTER_CENTER, format!("{meters} m"), FontId::proportional(13.0), accent);
+                            }
+                        }
+                    }
+                    painter.circle(a, 5.0, Color32::WHITE, Stroke::new(2.0f32, accent));
+                }
             }
         }
 
-        // Interaktion: Marker ziehen, klicken = auswählen, Klick ins Leere = ausgewählten Punkt setzen
+        // ---------------------------------------------------------------- Interaktion
         let hit = |pos: Pos2| markers.iter().filter(|m| m.2.distance(pos) <= r + 4.0).min_by(|a, b| a.2.distance(pos).total_cmp(&b.2.distance(pos))).map(|m| m.0);
         let mut set_pos: Option<(u64, [f32; 2])> = None;
-        if resp.drag_started_by(egui::PointerButton::Primary) && !scaling {
+        let mut erase: Option<u64> = None;
+        // Punkte ziehen nur mit dem Messpunkt-Werkzeug
+        if measuring && tool == PlanTool::Measure && resp.drag_started_by(egui::PointerButton::Primary) {
             self.plan_drag = resp.interact_pointer_pos().and_then(hit);
             if self.plan_drag.is_some() {
                 self.push_undo(t!("Punkt verschoben", "Point moved"));
@@ -1034,62 +848,88 @@ impl WifiApp {
                 set_pos = Some((id, to_norm(img, pos)));
             }
         }
-        // Verschieben: auf freier Fläche ziehen oder mit rechter/mittlerer Maustaste
+        // Verschieben: auf freier Fläche ziehen, mit der Hand oder mit rechter/mittlerer Maustaste
         let panning = resp.dragged() && self.plan_drag.is_none() && self.plan_zoom > 1.0;
         if panning {
             self.plan_pan += resp.drag_delta();
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
         }
         if resp.drag_stopped() && self.plan_drag.is_some() {
             self.plan_drag = None;
             self.survey_changed();
         }
-        let mut scale_click: Option<[f32; 2]> = None;
-        if resp.clicked() && scaling {
-            scale_click = resp.interact_pointer_pos().filter(|p| img.contains(*p)).map(|p| to_norm(img, p));
-        } else if resp.clicked() {
-            if let Some(pos) = resp.interact_pointer_pos() {
-                match hit(pos) {
-                    Some(id) => self.plan_sel = if self.plan_sel == Some(id) { None } else { Some(id) },
-                    None => {
-                        if let (Some(id), true) = (self.plan_sel, img.contains(pos)) {
+        let click = if resp.clicked() { resp.interact_pointer_pos() } else { None };
+        if let Some(pos) = click {
+            if !measuring {
+                if let (true, Some(sd)) = (img.contains(pos), self.plan_scale.as_mut()) {
+                    let c = to_norm(img, pos);
+                    if sd.a.is_none() || sd.b.is_some() {
+                        sd.a = Some(c);
+                        sd.b = None;
+                    } else {
+                        sd.b = Some(c);
+                    }
+                }
+            } else {
+                match (tool, hit(pos)) {
+                    (PlanTool::Erase, Some(id)) => erase = Some(id),
+                    (PlanTool::Measure, Some(id)) => self.plan_sel = if self.plan_sel == Some(id) { None } else { Some(id) },
+                    (PlanTool::Measure, None) if img.contains(pos) => {
+                        // nur ein Punkt OHNE Position wird per Klick gesetzt – platzierte Punkte verschiebt man durch Ziehen
+                        let place = self.plan_sel.filter(|id| next_ids.contains(id));
+                        if self.plan_sel.is_some() && place.is_none() {
+                            self.plan_sel = None;
+                        }
+                        if let Some(id) = place {
                             self.push_undo(t!("Punkt gesetzt", "Point placed"));
                             set_pos = Some((id, to_norm(img, pos)));
                             self.survey_changed();
                             // weiter zum nächsten Punkt ohne Position
                             self.plan_sel = next_ids.iter().copied().find(|x| *x != id);
-                        } else if running && img.contains(pos) && self.meas_point.is_none() {
-                            // Grundriss-Messung: hier stehe ich -> Messpunkt an dieser Stelle erfassen
+                        } else if running && self.meas_point.is_none() {
+                            // hier stehe ich -> Messpunkt an dieser Stelle erfassen
                             click_measure = Some(to_norm(img, pos));
+                        } else if draft {
+                            self.toast(Sev::Info, t!("Zuerst „Messung starten“ – dann an deiner Position klicken.", "Click \"Start survey\" first – then click your position.").into());
                         }
                     }
+                    _ => {}
                 }
             }
         }
-        if let (Some(c), Some(sd)) = (scale_click, self.plan_scale.as_mut()) {
-            if sd.a.is_none() || sd.b.is_some() {
-                sd.a = Some(c);
-                sd.b = None;
-            } else {
-                sd.b = Some(c);
-            }
+        // Entf löscht den ausgewählten Messpunkt
+        if measuring && !typing && self.meas_point.is_none() && ui.input(|i| i.key_pressed(egui::Key::Delete)) {
+            erase = erase.or(self.plan_sel.filter(|id| markers.iter().any(|mk| mk.0 == *id)));
         }
-        if let Some(pos) = resp.hover_pos().filter(|_| !panning) {
-            if scaling {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
-            } else if let Some(id) = hit(pos) {
+        // keine Tooltips hinter dem Messpunkt-Dialog
+        if let Some(pos) = resp.hover_pos().filter(|_| !panning && self.meas_point.is_none()) {
+            let over = if measuring { hit(pos) } else { None };
+            if !measuring {
+                ctx.set_cursor_icon(if img.contains(pos) { egui::CursorIcon::Crosshair } else { egui::CursorIcon::Default });
+            } else if let Some(id) = over {
                 if let Some((_, no, _, rssi, name)) = markers.iter().find(|mk| mk.0 == id) {
-                    let txt = match rssi {
+                    let mut txt = match rssi {
                         Some(v) => format!("{no}. {name}\n{v:.0} dBm · {}", Quality::of(*v).label()),
                         None => format!("{no}. {name}"),
                     };
+                    if tool == PlanTool::Erase {
+                        txt.push_str(t!("\nKlick = löschen", "\nClick = delete"));
+                    }
                     resp.clone().on_hover_text_at_pointer(txt);
                 }
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                ctx.set_cursor_icon(match tool {
+                    PlanTool::Measure => egui::CursorIcon::Grab,
+                    PlanTool::Hand => egui::CursorIcon::Grab,
+                    PlanTool::Erase => egui::CursorIcon::PointingHand,
+                });
             } else if img.contains(pos) {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                ctx.set_cursor_icon(match tool {
+                    PlanTool::Measure if running || self.plan_sel.is_some() => egui::CursorIcon::Crosshair,
+                    PlanTool::Hand if self.plan_zoom > 1.0 => egui::CursorIcon::Grab,
+                    _ => egui::CursorIcon::Default,
+                });
                 // geschätzter Wert unter dem Mauszeiger
-                if self.plan_heat && !heat_pts.is_empty() {
+                if self.plan_heat && !heat_pts.is_empty() && tool != PlanTool::Erase {
                     let n = to_norm(img, pos);
                     let wm = plan_m.0.unwrap_or(heatmap::DEFAULT_WIDTH_M);
                     let hm = wm * img.height() / img.width();
@@ -1110,90 +950,177 @@ impl WifiApp {
                 pt.floor = floor;
             }
         }
-        let (mut change, mut start_scale, mut toggle_table) = (false, false, false);
-        let full_table = self.plan_full_table;
+        if let Some(id) = erase {
+            let idx = self.meas.as_ref().and_then(|m| m.points.iter().position(|pt| pt.id == id));
+            if let Some(i) = idx {
+                self.push_undo(t!("Messpunkt gelöscht", "Point deleted"));
+                if let Some(m) = self.meas.as_mut() {
+                    m.remove_point(i);
+                }
+                self.plan_sel = None;
+                self.heat_tex = None;
+                self.survey_changed();
+            }
+        }
+
+        // ---------------------------------------------------------------- Hinweis oben in der Mitte
+        let hint: Option<(String, Color32)> = if !measuring {
+            self.plan_scale.as_ref().map(|sd| match (sd.a, sd.b) {
+                (None, _) => (t!("\u{E6B8}  Anfang einer bekannten Strecke anklicken", "\u{E6B8}  Click the start of a known distance").to_string(), p.accent),
+                (Some(_), None) => (t!("\u{E6B8}  Jetzt das Ende der Strecke anklicken", "\u{E6B8}  Now click the end of the distance").to_string(), p.accent),
+                (Some(_), Some(_)) => (t!("\u{E6B8}  Länge links eingeben und übernehmen", "\u{E6B8}  Enter the length on the left and apply").to_string(), p.accent),
+            })
+        } else if draft {
+            None
+        } else {
+            Some(match tool {
+                PlanTool::Hand => (t!("\u{E298}  Ziehen = Plan verschieben · Mausrad = zoomen", "\u{E298}  Drag = pan · mouse wheel = zoom").to_string(), p.text),
+                PlanTool::Erase => (t!("\u{E21E}  Messpunkt anklicken = löschen · Strg+Z holt ihn zurück", "\u{E21E}  Click a point = delete · Ctrl+Z brings it back").to_string(), p.warning),
+                PlanTool::Measure => match sel_no {
+                    Some(n) => (tf!("\u{E316}  Klick in den Plan setzt Messpunkt {n}", "\u{E316}  Click the plan to place point {n}"), p.accent),
+                    None if unplaced > 0 => (tf!("{unplaced} Messpunkte ohne Position – rechts anklicken, dann im Plan setzen", "{unplaced} points without position – click one on the right, then place it"), p.warning),
+                    None if running => (t!("\u{E316}  Klick an deiner Position = Messpunkt · Punkte lassen sich ziehen", "\u{E316}  Click your position = point · points can be dragged").to_string(), p.text),
+                    None => (t!("Messung beendet – Punkte lassen sich noch verschieben", "Survey finished – points can still be moved").to_string(), p.weak),
+                },
+            })
+        };
+        if let Some((txt, col)) = hint {
+            let galley = painter.layout_no_wrap(txt, FontId::proportional(13.0), col);
+            let w = galley.size().x + 24.0;
+            let pill = Rect::from_center_size(Pos2::new(area.center().x + inset_l / 2.0, area.min.y + 24.0), Vec2::new(w, 30.0));
+            painter.rect(pill, 15.0, p.surface.gamma_multiply(0.95), Stroke::new(1.0f32, p.border));
+            painter.galley(pill.center() - galley.size() / 2.0, galley, col);
+        }
+
+        // ---------------------------------------------------------------- Werkzeugleiste links
+        let mut zoom_btn: Option<f32> = None;
+        let mut toggle_fs = false;
         let mut heat = self.plan_heat;
         let mut layer = self.plan_layer;
         let mut opacity = self.settings.heat_opacity;
-        // schwebende Werkzeugleiste oben links im Plan
-        let mut tb = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(area.min + Vec2::new(8.0, 8.0), Pos2::new(area.max.x - 210.0, area.min.y + 46.0))).layout(egui::Layout::left_to_right(egui::Align::Min)));
-        overlay_frame(&p).show(&mut tb, |ui| {
-            ui.horizontal(|ui| {
-            ui.checkbox(&mut heat, t!("Heatmap", "Heatmap"));
-            ui.add_enabled_ui(heat, |ui| {
-                ui.spacing_mut().slider_width = 70.0;
-                ui.add(egui::Slider::new(&mut opacity, 0.2..=0.9).show_value(false)).on_hover_text(tf!(
-                    "Deckkraft der Heatmap: {:.0} % – weniger, damit der Plan (Raumnamen) lesbar bleibt",
-                    "Heatmap opacity: {:.0} % – lower it to keep the plan (room names) readable",
-                    opacity * 100.0
-                ));
-            });
-            let opts: Vec<(Layer, String)> = Layer::ALL
-                .iter()
-                .map(|l| (*l, if *l == Layer::Measured || with_data.contains(l) { l.label().to_string() } else { format!("{} –", l.label()) }))
-                .collect();
-            let opts_ref: Vec<(Layer, &str)> = opts.iter().map(|(l, s)| (*l, s.as_str())).collect();
-            crate::widgets::segmented(ui, &mut layer, &opts_ref);
-            ui.separator();
-            let scale_btn = ui.button(t!("\u{E6B8} Maßstab", "\u{E6B8} Scale")).on_hover_text(t!(
-                "Zwei Punkte einer bekannten Strecke anklicken (z. B. eine Wand) und die Länge in Metern eingeben",
-                "Click two points of a known distance (e.g. a wall) and enter its length in metres"
-            ));
-            if scale_btn.clicked() {
-                start_scale = true;
-            }
-            if ui.button(t!("\u{E6C8} Farbskala", "\u{E6C8} Colour scale")).on_hover_text(t!("dBm-Schwellen und Farben der Heatmap einstellen", "Set the dBm thresholds and colours of the heatmap")).clicked() {
-                self.show_scale_editor = !self.show_scale_editor;
-            }
-            if ui.button(t!("\u{E31A} Anderer Grundriss …", "\u{E31A} Other floor plan …")).clicked() {
-                change = true;
-            }
-            // bei voller Tabelle zurück zur Liste (sonst steht der Umschalter im Kopf der Liste)
-            if !draft && full_table && ui.button(t!("\u{EC24} Liste daneben", "\u{EC24} List beside")).on_hover_text(t!("Kompakte Messpunkt-Liste rechts neben dem Plan", "Compact point list to the right of the plan")).clicked() {
-                toggle_table = true;
-            }
-            });
-        });
-        // Zoom und Vollbild oben rechts
+        let mut undo = false;
+        let mut new_tool = tool;
+        let undo_label = if measuring { self.undo_label() } else { None };
         let zoom = self.plan_zoom;
-        let mut zoom_btn: Option<f32> = None;
-        let mut toggle_fs = false;
-        let mut zb = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(Pos2::new(area.max.x - 260.0, area.min.y + 8.0), Pos2::new(area.max.x - 8.0, area.min.y + 46.0))).layout(egui::Layout::right_to_left(egui::Align::Min)));
-        overlay_frame(&p).show(&mut zb, |ui| {
-            ui.horizontal(|ui| {
-                let tip = t!(
-                    "Mausrad = zoomen · ziehen = verschieben (auf freier Fläche oder mit rechter/mittlerer Maustaste) · Taste 0 = einpassen",
-                    "Mouse wheel = zoom · drag = pan (on empty space or with the right/middle button) · key 0 = fit"
-                );
-                let (icon, tip_fs) = if self.plan_fullscreen { ("\u{E1CE}", t!("Vollbild verlassen (F11 oder Esc)", "Leave full screen (F11 or Esc)")) } else { ("\u{E1D0}", t!("Vollbild für die Begehung (F11)", "Full screen for the walk-through (F11)")) };
-                if ui.button(icon).on_hover_text(tip_fs).clicked() {
+        let fullscreen = self.plan_fullscreen;
+        let pop_id = egui::Id::new("plan_layers_pop");
+        let layers_open = ui.memory(|m| m.is_popup_open(pop_id));
+        let (mut layers_toggle, mut layers_anchor) = (false, None::<Rect>);
+        let mut tb = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(area.min + Vec2::new(8.0, 8.0), Pos2::new(area.min.x + 56.0, area.max.y - 8.0))).layout(egui::Layout::top_down(egui::Align::Center)));
+        overlay_frame(&p).inner_margin(egui::Margin::same(4.0)).show(&mut tb, |ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
+            if measuring {
+                for (t_, icon, tip) in [
+                    (PlanTool::Measure, "\u{E316}", t!("Messpunkt: an deiner Position in den Plan klicken · Punkte ziehen = verschieben", "Point: click your position on the plan · drag points to move them")),
+                    (PlanTool::Hand, "\u{E298}", t!("Hand: Plan verschieben, ohne versehentlich zu messen", "Hand: pan the plan without measuring by accident")),
+                    (PlanTool::Erase, "\u{E21E}", t!("Löschen: Messpunkt anklicken (Entf löscht den ausgewählten)", "Delete: click a point (Del deletes the selected one)")),
+                ] {
+                    if tool_button(ui, icon, tool == t_, tip).clicked() {
+                        new_tool = t_;
+                    }
+                }
+                ui.separator();
+                let undo_tip = match &undo_label {
+                    Some(w) => tf!("Rückgängig (Strg+Z): {w}", "Undo (Ctrl+Z): {w}"),
+                    None => t!("Nichts rückgängig zu machen", "Nothing to undo").to_string(),
+                };
+                if ui.add_enabled_ui(undo_label.is_some(), |ui| tool_button(ui, "\u{E08A}", false, &undo_tip)).inner.clicked() {
+                    undo = true;
+                }
+                ui.separator();
+                if tool_button(ui, "\u{E242}", heat, t!("Heatmap ein/aus", "Heatmap on/off")).clicked() {
+                    heat = !heat;
+                }
+                // Ebene, Deckkraft und Farbskala in einem Menü
+                let resp_layers = tool_button(ui, "\u{E466}", layers_open, t!("Ebene, Deckkraft und Farbskala der Heatmap", "Heatmap layer, opacity and colour scale"));
+                if resp_layers.clicked() {
+                    layers_toggle = true;
+                }
+                layers_anchor = Some(resp_layers.rect);
+                ui.separator();
+            }
+            if tool_button(ui, "\u{E310}", false, t!("Vergrößern (Mausrad)", "Zoom in (mouse wheel)")).clicked() {
+                zoom_btn = Some(zoom * 1.25);
+            }
+            ui.label(RichText::new(format!("{:.0}%", zoom * 100.0)).size(10.5).color(p.weak));
+            if ui.add_enabled_ui(zoom > 1.0, |ui| tool_button(ui, "\u{E30E}", false, t!("Verkleinern", "Zoom out"))).inner.clicked() {
+                zoom_btn = Some(zoom / 1.25);
+            }
+            if ui.add_enabled_ui(zoom > 1.0, |ui| tool_button(ui, "\u{E626}", false, t!("Einpassen (Taste 0)", "Fit (key 0)"))).inner.clicked() {
+                zoom_btn = Some(1.0);
+            }
+            if measuring {
+                let (icon, tip) = if fullscreen { ("\u{E1CE}", t!("Vollbild verlassen (F11 oder Esc)", "Leave full screen (F11 or Esc)")) } else { ("\u{E1D0}", t!("Vollbild für die Begehung (F11)", "Full screen for the walk-through (F11)")) };
+                if tool_button(ui, icon, fullscreen, tip).clicked() {
                     toggle_fs = true;
                 }
-                if ui.button("\u{E310}").on_hover_text(t!("Vergrößern", "Zoom in")).clicked() {
-                    zoom_btn = Some(zoom * 1.25);
-                }
-                if ui.add(egui::Button::new(RichText::new(format!("{:.0} %", zoom * 100.0)).color(p.weak)).frame(false)).on_hover_text(tip).clicked() {
-                    zoom_btn = Some(1.0);
-                }
-                if ui.add_enabled(zoom > 1.0, egui::Button::new("\u{E30E}")).on_hover_text(t!("Verkleinern", "Zoom out")).clicked() {
-                    zoom_btn = Some(zoom / 1.25);
+            }
+        });
+
+        // Menü der Heatmap: Ebene, Deckkraft, Farbskala – rechts neben der Werkzeugleiste
+        if layers_toggle {
+            ui.memory_mut(|m| m.toggle_popup(pop_id));
+        }
+        if let (true, Some(anchor)) = (ui.memory(|m| m.is_popup_open(pop_id)), layers_anchor) {
+            let area_resp = egui::Area::new(pop_id).order(egui::Order::Foreground).fixed_pos(anchor.right_top() + Vec2::new(10.0, -4.0)).show(&ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_width(260.0);
+                    ui.label(RichText::new(t!("Heatmap zeigt", "Heatmap shows")).small().color(p.weak));
+                    for l in Layer::ALL {
+                        let has = l == Layer::Measured || with_data.contains(&l);
+                        let txt = if has { l.label().to_string() } else { tf!("{} (keine Werte)", "{} (no values)", l.label()) };
+                        if ui.selectable_label(layer == l, txt).clicked() {
+                            layer = l;
+                            heat = true;
+                        }
+                    }
+                    ui.separator();
+                    ui.label(RichText::new(t!("Deckkraft – weniger, damit Raumnamen lesbar bleiben", "Opacity – lower it to keep room names readable")).small().color(p.weak));
+                    ui.add(egui::Slider::new(&mut opacity, 0.2..=0.9).show_value(false));
+                    ui.separator();
+                    if ui.button(t!("\u{E6C8} Farbskala einstellen …", "\u{E6C8} Colour scale …")).clicked() {
+                        self.show_scale_editor = true;
+                        ui.memory_mut(|m| m.close_popup());
+                    }
+                });
+            });
+            let pointer = ui.input(|i| i.pointer.interact_pos());
+            let outside = ui.input(|i| i.pointer.any_click()) && !area_resp.response.contains_pointer() && !pointer.is_some_and(|q| anchor.contains(q));
+            if outside {
+                ui.memory_mut(|m| m.close_popup());
+            }
+        }
+
+        // ---------------------------------------------------------------- Vorbereitung fertig: Start im Plan
+        if measuring && draft {
+            let card_rect = Rect::from_center_size(Pos2::new(area.center().x + inset_l / 2.0, area.min.y + 70.0), Vec2::new(420.0f32.min(area.width() - inset_l - 20.0), 108.0));
+            let mut c = ui.new_child(egui::UiBuilder::new().max_rect(card_rect).layout(egui::Layout::top_down(egui::Align::Center)));
+            overlay_frame(&p).inner_margin(egui::Margin::symmetric(18.0, 12.0)).show(&mut c, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(t!("Alles bereit", "All set")).size(16.0).family(crate::theme::semibold()).color(p.text));
+                ui.label(RichText::new(t!("Messung starten, dann an deiner Position in den Plan klicken.", "Start the survey, then click your position on the plan.")).color(p.weak));
+                ui.add_space(4.0);
+                if primary_button(ui, t!("\u{E3D0}  Messung starten", "\u{E3D0}  Start survey"), p.accent).clicked() {
+                    start_clicked = true;
                 }
             });
-        });
+        }
+
         if let Some(z) = zoom_btn {
-            let new = z.clamp(1.0, 8.0);
-            self.plan_pan = if new <= 1.0 { Vec2::ZERO } else { self.plan_pan * (new / self.plan_zoom) };
-            self.plan_zoom = new;
+            self.zoom_plan_at(z, Vec2::ZERO);
         }
         if toggle_fs {
-            self.set_plan_fullscreen(ui.ctx(), !self.plan_fullscreen);
+            self.set_plan_fullscreen(&ctx, !self.plan_fullscreen);
         }
-        self.plan_heat = heat;
-        if change {
-            self.load_plan(&ui.ctx().clone(), false);
+        if new_tool != tool {
+            self.plan_tool = new_tool;
+            self.plan_drag = None;
         }
-        if toggle_table {
-            self.plan_full_table = !self.plan_full_table;
+        if undo {
+            self.undo_points();
+        }
+        if heat != self.plan_heat {
+            self.plan_heat = heat;
         }
         if opacity != self.settings.heat_opacity {
             self.settings.heat_opacity = opacity;
@@ -1203,13 +1130,74 @@ impl WifiApp {
             self.plan_layer = layer;
             self.heat_tex = None;
         }
-        if start_scale {
-            self.plan_scale = Some(ScaleDraft::default());
-            self.plan_sel = None;
-        }
         if let Some(pos) = click_measure {
             self.open_point_dialog_at(Some(pos));
         }
+        self.scale_editor_window(&ctx);
+        start_clicked
+    }
+
+    /// Zoom ändern; `rel` = Punkt relativ zur Mitte des eingepassten Plans, der stehen bleiben soll
+    fn zoom_plan_at(&mut self, z: f32, rel: Vec2) {
+        let (old, new) = (self.plan_zoom, z.clamp(1.0, 8.0));
+        let rel = rel - self.plan_pan;
+        self.plan_pan += rel - rel * (new / old);
+        self.plan_zoom = new;
+        if new <= 1.0 {
+            self.plan_pan = Vec2::ZERO;
+        }
+    }
+
+    /// Maßstab aus der gezeichneten Strecke übernehmen; danach zum nächsten Stockwerk ohne Maßstab
+    pub(super) fn apply_scale(&mut self, meters: f32) {
+        let Some(size) = self.plan_tex.as_ref().map(|t| t.size) else { return };
+        let Some((a, b)) = self.plan_scale.as_ref().and_then(|sd| Some((sd.a?, sd.b?))) else { return };
+        let len_px = (((b[0] - a[0]) * size[0] as f32).powi(2) + ((b[1] - a[1]) * size[1] as f32).powi(2)).sqrt();
+        if len_px <= 2.0 {
+            self.toast(Sev::Warning, t!("Die Strecke ist zu kurz – bitte länger ziehen.", "The distance is too short – please draw a longer one.").into());
+            return;
+        }
+        let wm = meters * size[0] as f32 / len_px;
+        if let Some(m) = self.meas.as_mut() {
+            if let Some(pl) = m.plan_mut() {
+                pl.width_m = Some(wm);
+                pl.scale_line = Some([a, b]);
+                pl.scale_len_m = Some(meters);
+            }
+            self.last_plans = m.plans.clone();
+        }
+        self.heat_tex = None;
+        self.survey_changed();
+        let next = self.meas.as_ref().and_then(|m| m.plans.iter().position(|f| f.width_m.is_none()).map(|i| (i, m.plans[i].title().to_string())));
+        match next {
+            Some((i, name)) => {
+                self.show_floor(i);
+                self.plan_scale = Some(ScaleDraft::default());
+                self.toast(Sev::Info, tf!("Maßstab gesetzt ({wm:.1} m breit) – jetzt „{name}“", "Scale set ({wm:.1} m wide) – now \"{name}\""));
+            }
+            None => {
+                self.plan_scale = Some(ScaleDraft::default());
+                self.toast(Sev::Info, tf!("Maßstab gesetzt: Plan ist {wm:.1} m breit", "Scale set: plan is {wm:.1} m wide"));
+            }
+        }
+    }
+
+    /// Vorschaubild eines Stockwerks (für die Übersicht der Pläne)
+    pub(super) fn plan_thumb(&mut self, ctx: &egui::Context, idx: usize) -> Option<(egui::TextureId, [usize; 2])> {
+        let plan = self.meas.as_ref()?.plans.get(idx)?;
+        let key = (plan.name.clone(), plan.data.len());
+        if !self.plan_thumbs.contains_key(&key) {
+            let img = heatmap::decode_plan(&plan.data).ok()?;
+            let img = image::imageops::thumbnail(&img, 480, (480 * img.height() / img.width().max(1)).max(1));
+            let size = [img.width() as usize, img.height() as usize];
+            let color = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+            let tex = ctx.load_texture(format!("plan_thumb_{}_{}", key.0, key.1), color, TextureOptions::LINEAR);
+            if self.plan_thumbs.len() > 40 {
+                self.plan_thumbs.clear();
+            }
+            self.plan_thumbs.insert(key.clone(), (tex, size));
+        }
+        self.plan_thumbs.get(&key).map(|(t, s)| (t.id(), *s))
     }
 
     /// Vollbild der Grundriss-Seite ein-/ausschalten (ohne Kopfleiste, Seitenleiste und Statusleiste)

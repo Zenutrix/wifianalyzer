@@ -302,7 +302,7 @@ impl WifiApp {
                     ui.label(RichText::new(AUTHOR).strong());
                     ui.end_row();
                     ui.label(RichText::new("Website").color(p.weak));
-                    ui.hyperlink_to("wifianalyzer.schoepf-tirol.at", WEBSITE);
+                    ui.hyperlink_to("schoepf-tirol.at/Project/WifiAnalyzer", WEBSITE);
                     ui.end_row();
                     ui.label(RichText::new("GitHub").color(p.weak));
                     ui.hyperlink_to("github.com/zenutrix/wifianalyzer", REPO);

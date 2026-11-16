@@ -1,10 +1,10 @@
-# Website wifianalyzer.schoepf-tirol.at
+# Website schoepf-tirol.at/Project/WifiAnalyzer
 
 Statische Landingpage ohne Build-Schritt, ohne externe Skripte und ohne Google Fonts
 (keine Datenübertragung an Dritte – DSGVO-freundlich).
 
-**Veröffentlichen:** den kompletten Ordner (`index.html`, `icon.png`, `img/`) in das Web-Verzeichnis
-von `wifianalyzer.schoepf-tirol.at` hochladen. Fertig.
+**Veröffentlichen:** den kompletten Inhalt (`index.html`, `logo.svg`, `icon.png`, `img/`) in das Verzeichnis
+`/Project/WifiAnalyzer/` auf `schoepf-tirol.at` hochladen. Fertig.
 
 - Die Download-Buttons zeigen auf `…/releases/latest/download/WiFiAnalyzer-Setup.exe` bzw. `WiFiAnalyzer.exe`
   und liefern damit immer die neueste Version, ohne dass die Seite angepasst werden muss.

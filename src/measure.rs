@@ -355,6 +355,33 @@ impl Measurement {
         }
         self.floor = self.floor.min(self.plans.len().saturating_sub(1));
     }
+
+    /// Stockwerk `from` an die Stelle `to` verschieben; die Messpunkte wandern mit
+    pub fn move_floor(&mut self, from: usize, to: usize) {
+        let n = self.plans.len();
+        if from >= n || to >= n || from == to {
+            return;
+        }
+        let plan = self.plans.remove(from);
+        self.plans.insert(to, plan);
+        let map = |f: usize| {
+            if f == from {
+                to
+            } else if from < to && f > from && f <= to {
+                f - 1
+            } else if to < from && f >= to && f < from {
+                f + 1
+            } else {
+                f
+            }
+        };
+        for p in &mut self.points {
+            if p.pos.is_some() {
+                p.floor = map(p.floor);
+            }
+        }
+        self.floor = map(self.floor);
+    }
 }
 
 /// Was die App beim Erfassen eines Punktes aus dem aktuellen Scan beisteuert
@@ -376,6 +403,8 @@ struct SurveyFile {
     #[serde(default)]
     plan_mode: bool,
     app_version: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    project: String,
     ssid: String,
     /// RFC 3339
     started: String,
@@ -413,6 +442,8 @@ pub struct Stats {
 }
 
 pub struct Measurement {
+    /// Projekt (Kunde/Objekt), z. B. „Hotel Post, 3. OG“ – leer bei Rundgängen
+    pub project: String,
     pub ssid: String,
     pub running: bool,
     pub started_wall: DateTime<Local>,
@@ -440,6 +471,7 @@ pub struct Measurement {
 impl Measurement {
     pub fn new(ssid: String, now_t: f64) -> Self {
         Self {
+            project: String::new(),
             ssid,
             running: true,
             started_wall: Local::now(),
@@ -637,6 +669,7 @@ impl Measurement {
             format: 2,
             plan_mode: self.plan_mode,
             app_version: env!("CARGO_PKG_VERSION").into(),
+            project: self.project.clone(),
             ssid: self.ssid.clone(),
             started: self.started_wall.to_rfc3339(),
             duration: self.elapsed(now_t),
@@ -659,6 +692,7 @@ impl Measurement {
         let plans: Vec<FloorPlan> = if f.plans.is_empty() { f.plan.into_iter().collect() } else { f.plans };
         let started = DateTime::parse_from_rfc3339(&f.started).map(|d| d.with_timezone(&Local)).unwrap_or_else(|_| Local::now());
         let mut m = Self {
+            project: f.project,
             ssid: f.ssid,
             running: false,
             started_wall: started,
@@ -1035,6 +1069,32 @@ mod tests {
         assert_eq!(m.plans.len(), 1);
         assert_eq!((m.points[0].pos, m.points[1].floor), (None, 0));
         assert_eq!(m.floor, 0);
+    }
+
+    #[test]
+    fn move_floor_keeps_points_and_project_roundtrips() {
+        let ctx = ScanContext::default();
+        let mut m = Measurement::new("Net".into(), 0.0);
+        m.project = "Hotel Post".into();
+        m.plans = ["eg", "og1", "og2"].iter().map(|n| FloorPlan::new(n.to_string(), vec![1])).collect();
+        for f in 0..3 {
+            m.floor = f;
+            m.add_point(f as f64 + 1.0, 1.0, &format!("p{f}"), "", Some([0.5, 0.5]), &ctx);
+        }
+        m.add_point(5.0, 1.0, "ohne", "", None, &ctx);
+        m.floor = 0;
+        // EG nach oben ans Ende: og1, og2, eg
+        m.move_floor(0, 2);
+        assert_eq!(m.plans.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["og1", "og2", "eg"]);
+        assert_eq!(m.points.iter().take(3).map(|p| p.floor).collect::<Vec<_>>(), [2, 0, 1]);
+        assert_eq!(m.floor, 2, "angezeigtes Stockwerk wandert mit");
+        assert_eq!(m.points[3].pos, None);
+        // und zurück
+        m.move_floor(2, 0);
+        assert_eq!(m.points.iter().take(3).map(|p| p.floor).collect::<Vec<_>>(), [0, 1, 2]);
+
+        let back = Measurement::from_file(&m.to_file(9.0)).unwrap();
+        assert_eq!(back.project, "Hotel Post");
     }
 
     #[test]

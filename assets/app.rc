@@ -23,7 +23,7 @@ BEGIN
       VALUE "FileVersion", APP_VERSION
       VALUE "ProductVersion", APP_VERSION
       VALUE "LegalCopyright", "(c) 2026 Thomas Schoepf - GPL-3.0-or-later"
-      VALUE "Comments", "https://wifianalyzer.schoepf-tirol.at"
+      VALUE "Comments", "https://schoepf-tirol.at/Project/WifiAnalyzer"
       VALUE "OriginalFilename", "WiFiAnalyzer.exe"
       VALUE "InternalName", "wifi-analyzer"
     END

@@ -21,7 +21,7 @@
 #define AppName      "WiFi Analyzer"
 #define AppExe       "WiFiAnalyzer.exe"
 #define AppPublisher "Thomas Schöpf"
-#define AppWebsite   "https://wifianalyzer.schoepf-tirol.at"
+#define AppWebsite   "https://schoepf-tirol.at/Project/WifiAnalyzer"
 #define AppRepo      "https://github.com/zenutrix/wifianalyzer"
 
 [Setup]

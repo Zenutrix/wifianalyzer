@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>WLAN-Analyse für Techniker unter Windows</b> · <i>Wi-Fi analysis for technicians on Windows</i><br>
-  <a href="https://wifianalyzer.schoepf-tirol.at">wifianalyzer.schoepf-tirol.at</a> ·
+  <a href="https://schoepf-tirol.at/Project/WifiAnalyzer">schoepf-tirol.at/Project/WifiAnalyzer</a> ·
   <a href="https://github.com/zenutrix/wifianalyzer/releases/latest">Download</a> ·
   <a href="#english">English</a>
 </p>
@@ -156,7 +156,7 @@ apps with **location access**. The app asks for it on first start and explains w
 
 ## Lizenz / License
 
-Copyright © 2026 **Thomas Schöpf** · [wifianalyzer.schoepf-tirol.at](https://wifianalyzer.schoepf-tirol.at)
+Copyright © 2026 **Thomas Schöpf** · [schoepf-tirol.at/Project/WifiAnalyzer](https://schoepf-tirol.at/Project/WifiAnalyzer)
 
 Dieses Programm ist freie Software: Du kannst es unter den Bedingungen der **GNU General Public License**
 Version 3 oder (nach deiner Wahl) jeder späteren Version weitergeben und/oder ändern.
