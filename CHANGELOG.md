@@ -18,6 +18,9 @@ Versionen nach [Semantic Versioning](https://semver.org/lang/de/).
 - Neue Webadresse: **https://schoepf-tirol.at/Project/WifiAnalyzer** (App, Berichte, Installer, Website).
 - Website mit neuen Screenshots im aktuellen Design.
 
+### Behoben
+- Der automatische Build auf GitHub scheiterte an der Versionsinfo der EXE; die Dateiversion in den Windows-Eigenschaften stimmt jetzt auch (2.1.0 statt 2.0.0).
+
 ## [2.0.0] – 2026-11-04
 
 Erste öffentliche Version.

@@ -1,6 +1,6 @@
 #include <winver.h>
 
-/* Pfade relativ zum Projektordner (Arbeitsverzeichnis des Build-Skripts) */
+/* Versionsnummer und absolute Pfade setzt build.rs beim Bauen ein */
 1 ICON "assets/icon.ico"
 /* MinGW bringt ein eigenes Standard-Manifest mit; unseres nur beim MSVC-Build (offizielle Releases) */
 #ifdef APP_MANIFEST
@@ -8,8 +8,8 @@
 #endif
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 2,0,0,0
-PRODUCTVERSION 2,0,0,0
+FILEVERSION APP_FILEVERSION
+PRODUCTVERSION APP_FILEVERSION
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
